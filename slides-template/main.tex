@@ -1,0 +1,321 @@
+\documentclass[aspectratio=169,xcolor=table]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lipsum, lmodern}
+\usepackage{csquotes}
+\usepackage{xcolor}
+\usepackage[portuguese]{babel}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% ------------------------------------------------
+% Tema e Configurações do Beamer
+% ------------------------------------------------
+\usetheme{DCC}
+
+% Ajuste de espaçamento entre itens
+\setbeamertemplate{itemize items}[circle]
+\setbeamertemplate{itemize subitem}[circle]
+\setlength{\itemsep}{0.8em}
+\setlength{\parskip}{0.5em}
+
+\graphicspath{{imgs/}{./imgs/}}
+
+\author[Luis, João, Victoria, Vinicius]{%
+  \textbf{Luis} \and \textbf{João} \and \textbf{Victoria} \and \textbf{Vinicius}
+}
+\title{Desinformação no Meio de Segurança}
+\subtitle{Uma Perspectiva da Ciência da Computação}
+\institute{Universidade Federal da Bahia \\ Instituto de Computação}
+\date{\today}
+
+\begin{document}
+
+%-------------------------------------------------
+%  SLIDE DE TÍTULO
+%-------------------------------------------------
+\begin{frame}[plain,noframenumbering]
+    \titlepage
+\end{frame}
+
+%-------------------------------------------------
+%  SLIDE DE AGENDA
+%-------------------------------------------------
+\begin{frame}{Agenda}
+    \begin{table}
+        \begin{tabularx}{\textwidth}{|l|X|}
+            \hline
+            \textbf{Tempo} & \textbf{Conteúdo} \\
+            \hline
+            0–15 min  & \textbf{Fundamentos técnicos} (ecossistema, arquitetura de disseminação, modelos de ameaça, tecnologias de detecção) \\
+            \hline
+            15–30 min & \textbf{Estudo de caso:} Análise de Benevenuto \& Melo (CACM 2024) sobre campanhas de desinformação via WhatsApp/Telegram \\
+            \hline
+        \end{tabularx}
+    \end{table}
+\end{frame}
+
+\setlength{\parskip}{1em}
+
+%=================================================
+\section{Fundamentos Técnicos}
+%=================================================
+\begin{frame}{Ecossistema \& Vetores de Desinformação}
+    \begin{itemize}
+        \item \textbf{Ecossistema de Desinformação:} Rede interconectada de atores, plataformas e tecnologias
+        \item \textbf{Vetores Primários:} Redes sociais, aplicativos de mensagem, sites de notícias falsas
+        \item \textbf{Vetores Secundários:} Influenciadores, bots automatizados, redes de amplificação
+        \item \textbf{Superfície de Ataque:} Múltiplas plataformas com diferentes modelos de moderação
+        \item \textbf{Cadeia de Suprimentos:} Criação → Amplificação → Disseminação → Persistência
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Impactos na Segurança Cibernética}
+    \begin{itemize}
+        \item \textbf{Ataques de Engenharia Social:} Desinformação como vetor para phishing e malware
+        \item \textbf{Comprometimento de Infraestrutura Crítica:} Manipulação de opinião pública sobre sistemas essenciais
+        \item \textbf{Operações de Inteligência:} HUMINT e SIGINT comprometidas por narrativas falsas
+        \item \textbf{Ataques à Cadeia de Suprimentos:} Desinformação sobre fornecedores e parceiros
+        \item \textbf{Degradação da Confiança:} Erosão da credibilidade em sistemas de segurança
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Arquitetura de Disseminação}
+    \begin{itemize}
+        \item \textbf{Modelo Hub-and-Spoke:} Contas centrais distribuem para múltiplas contas periféricas
+        \item \textbf{Redes em Cascata:} Propagação através de múltiplos níveis hierárquicos
+        \item \textbf{Cross-Platform Seeding:} Sincronização coordenada entre diferentes plataformas
+        \item \textbf{Amplificação Artificial:} Uso de bots e sockpuppets para simular engajamento orgânico
+        \item \textbf{Timing Coordenado:} Sincronização temporal para maximizar impacto algorítmico
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Modelo de Ameaça: MDM Kill Chain}
+    \begin{itemize}
+        \item \textbf{Reconnaissance:} Identificação de alvos, temas sensíveis e vulnerabilidades narrativas
+        \item \textbf{Weaponization:} Criação de conteúdo falso, deepfakes e narrativas manipuladas
+        \item \textbf{Delivery:} Distribuição via bots, influenciadores pagos e redes coordenadas
+        \item \textbf{Exploitation:} Aproveitamento de vieses cognitivos e câmaras de eco
+        \item \textbf{Installation:} Estabelecimento de narrativas persistentes no discurso público
+        \item \textbf{Command \& Control:} Coordenação de campanhas via canais privados
+        \item \textbf{Actions on Objectives:} Manipulação de comportamento, eleições ou políticas públicas
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Tecnologias de Detecção \& Mitigação}
+    \begin{itemize}
+        \item \textbf{Natural Language Processing:} BERT, GPT e modelos transformer para classificação de texto
+        \item \textbf{Computer Vision:} Detecção de deepfakes e manipulação de imagens
+        \item \textbf{Network Analysis:} Identificação de comportamento coordenado inautêntico
+        \item \textbf{Temporal Analysis:} Detecção de padrões de burst e sincronização anômala
+        \item \textbf{Graph Neural Networks:} Análise de propagação e estruturas de rede
+        \item \textbf{Ensemble Methods:} Combinação de múltiplas abordagens para robustez
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Arquitetura de Inteligência de Ameaças}
+    \begin{itemize}
+        \item \textbf{Framework MITRE ATT\&CK} adaptado para desinformação
+        \item \textbf{Modelo Diamante:} Adversário - Infraestrutura - Capacidade - Vítima
+        \item \textbf{Cadeia Cibernética de Ataque:} Reconhecimento → Armamento → Entrega → Exploração → Instalação → C2 → Ações
+        \item \textbf{Threat Intelligence Feeds:} Integração com OSINT e IOCs específicos
+        \item \textbf{Attribution Analysis:} Correlação de TTPs e infraestrutura adversarial
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Taxonomia de Táticas e Técnicas Adversariais}
+    \begin{table}
+        \begin{tabularx}{\textwidth}{|l|X|}
+            \hline
+            \textbf{Tática} & \textbf{Técnicas Específicas} \\
+            \hline
+            \textbf{Armamento} & Fabricação de deepfakes, manipulação de contexto, criação de narrativas falsas \\
+            \hline
+            \textbf{Entrega} & Spam coordenado, fazendas de bots, contas falsas, astroturfing \\
+            \hline
+            \textbf{Persistência} & Disseminação multiplataforma, câmaras de eco, bolhas de filtro \\
+            \hline
+            \textbf{Comando e Controle} & Coordenação via canais privados, amplificação de sinais, manipulação de tendências \\
+            \hline
+            \textbf{Evasão} & Migração entre plataformas, mutação de conteúdo, ofuscação semântica \\
+            \hline
+        \end{tabularx}
+    \end{table}
+\end{frame}
+
+\begin{frame}{Técnicas de Detecção Aplicadas}
+    \begin{itemize}
+        \item \textbf{Content-Based Detection:} Análise semântica, estilometria e fact-checking automatizado
+        \item \textbf{Network-Based Detection:} Identificação de clusters coordenados e padrões de propagação
+        \item \textbf{Behavioral Analysis:} Detecção de bots através de padrões de atividade anômalos
+        \item \textbf{Multimodal Fusion:} Combinação de texto, imagem e metadados para detecção robusta
+        \item \textbf{Temporal Correlation:} Análise de sincronização e timing patterns suspeitos
+        \item \textbf{Cross-Platform Tracking:} Rastreamento de narrativas entre diferentes plataformas
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Padrões, Regulamentos \& Ética}
+    \begin{itemize}
+        \item \textbf{GDPR e LGPD:} Compliance em coleta e processamento de dados pessoais
+        \item \textbf{IEEE Standards:} Padrões para sistemas de IA éticos e transparentes
+        \item \textbf{ISO 27001:} Gestão de segurança da informação em sistemas de detecção
+        \item \textbf{Princípios Éticos:} Fairness, accountability, transparency, explicabilidade
+        \item \textbf{Content Policy:} Diretrizes de plataformas e moderação de conteúdo
+        \item \textbf{Academic Ethics:} IRB approval e consentimento informado para pesquisa
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Casos de Uso Globais em Desinformação}
+    \begin{itemize}
+        \item \textbf{Agência de Pesquisa da Internet (IRA) - Rússia:} Interferência nas eleições americanas 2016/2020
+        \begin{itemize}
+            \item 126 milhões de usuários alcançados no Facebook, 20 milhões no Instagram
+            \item Coordenação multiplataforma (Facebook, Twitter, Instagram, YouTube)
+            \item Investimento de \$1.25 milhão/mês, 3.393 anúncios pagos
+            \item Técnicas: personas falsas, eventos organizados, amplificação artificial
+        \end{itemize}
+        \item \textbf{SolarWinds/Sunburst (APT29):} Ataques à cadeia de suprimentos + desinformação
+        \begin{itemize}
+            \item 18.000 organizações comprometidas globalmente (Microsoft, FireEye, Cisco)
+            \item Desinformação sobre atribuição, minimização do impacto real
+            \item Operação orquestrada por 18 meses sem detecção
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Casos de Uso Globais em Desinformação (cont.)}
+    \begin{itemize}
+        \item \textbf{Campanhas Anti-Vacina e COVID-19:} Desinformação em saúde pública
+        \begin{itemize}
+            \item "Dozen Disinformers": 12 indivíduos geraram 65\% da desinformação anti-vacina
+            \item Movimento coordenado internacional com receita estimada em \$36 milhões
+            \item Técnicas: cherry-picking de estudos, apelos emocionais, teorias conspiratórias
+        \end{itemize}
+        \item \textbf{Guerra na Ucrânia (2022-presente):} Operações de informação em tempo real
+        \begin{itemize}
+            \item Vídeos falsificados profundos de autoridades ucranianas (Zelensky)
+            \item Narrativas falsas: "laboratórios biológicos", "nazistas", "genocídio"
+            \item Coordenação RT, Sputnik: 7 milhões de interações/dia pré-guerra
+            \item Técnicas: bots multiplataforma, influenciadores pagos, deepfakes
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+%=================================================
+\section{Estudo de Caso: Benevenuto \& Melo (CACM 2024)}
+%=================================================
+\begin{frame}{Metodologia Científica do Estudo}
+    \textbf{Artigo:} "Misinformation Campaigns Through WhatsApp and Telegram in Presidential Elections in Brazil" (CACM 2024)
+    \begin{itemize}
+        \item \textbf{Conjunto de Dados:} 1.2M mensagens WhatsApp + 3M tweets (2018-2022)
+        \item \textbf{Rotulação:} Colaboração com Lupa e Aos Fatos (verificadores certificados)
+        \item \textbf{Metodologia:} Abordagem de métodos mistos combinando análise quantitativa e qualitativa
+        \item \textbf{Aprovação do CEP} e considerações éticas para dados sensíveis
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Arquitetura Técnica de Coleta}
+    \begin{itemize}
+        \item \textbf{WhatsApp:} Selenium WebDriver + engenharia reversa da API WhatsApp Web
+        \item \textbf{Telegram:} API Bot Oficial + raspagem de canais públicos
+        \item \textbf{Twitter:} API de Pesquisa Acadêmica v2 com limitação de taxa
+        \item \textbf{Pré-processamento:} Normalização UTF-8, desduplicação via MinHash LSH
+        \item \textbf{Armazenamento:} MongoDB para dados não-estruturados, PostgreSQL para metadados
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Algoritmos de Detecção Implementados}
+    \begin{itemize}
+        \item \textbf{Baseado em BERT:} Ajuste fino do BERTimbau para classificação de português
+        \item \textbf{Análise de Redes:} PageRank modificado para detecção de influenciadores
+        \item \textbf{Análise Temporal:} Janela deslizante + detecção de rajadas (burst detection)
+        \item \textbf{Detecção de Bots:} Features engenheiradas baseadas em comportamento temporal
+        \item \textbf{Métodos de Conjunto:} Random Forest + Gradient Boosting com vote weighting
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Resultados Quantitativos do Artigo}
+    \begin{table}
+        \begin{tabularx}{\textwidth}{|l|X|}
+            \hline
+            \textbf{Métrica} & \textbf{Resultado} \\
+            \hline
+            F1-score (BERTimbau) & 0.92 (±0.03) \\
+            \hline
+            Acurácia Detecção de Bots & 0.89 usando Botometer-PT \\
+            \hline
+            Precisão@10 (classificação) & 0.87 para conteúdo viral falso \\
+            \hline
+            Correlação Temporal & ρ = 0.74 entre eventos políticos e picos de desinformação \\
+            \hline
+        \end{tabularx}
+    \end{table>
+    \textbf{Significância Estatística:} Todos os resultados com p < 0.01
+\end{frame}
+
+\begin{frame}{Resposta Institucional}
+    \begin{itemize}
+        \item \textbf{Tribunal Superior Eleitoral (TSE):} Programa de Enfrentamento à Desinformação
+        \item \textbf{Fact-Checking Organizations:} Lupa, Aos Fatos, Comprova - verificação colaborativa
+        \item \textbf{Plataformas Digitais:} WhatsApp, Facebook, Twitter - políticas de moderação
+        \item \textbf{Academia:} Pesquisa colaborativa com universidades e institutos
+        \item \textbf{Sociedade Civil:} ONGs e organizações de monitoramento de mídia
+        \item \textbf{Legislação:} Marco Civil da Internet e regulamentação de plataformas
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Mapeando Teoria-Prática}
+    \begin{itemize}
+        \item \textbf{Gap Teoria-Prática:} Algoritmos acadêmicos vs. implementação em escala real
+        \item \textbf{Desafios de Deploy:} Latência, throughput e custo computacional
+        \item \textbf{Adaptação Adversarial:} Evolução contínua de táticas de evasão
+        \item \textbf{Validação em Produção:} A/B testing e métricas de negócio
+        \item \textbf{Human-in-the-Loop:} Integração de moderadores humanos com sistemas automatizados
+        \item \textbf{Feedback Loops:} Melhoria contínua baseada em dados de produção
+    \end{itemize}
+\end{frame>
+
+\begin{frame}{Lições Aprendidas \& Futuro}
+    \begin{itemize}
+        \item \textbf{Lições Aprendidas:}
+        \begin{itemize}
+            \item Necessidade de abordagem multidisciplinar (CS + Sociologia + Psicologia)
+            \item Importância de datasets eticamente coletados e representativos
+            \item Trade-offs entre precisão, explicabilidade e fairness
+        \end{itemize}
+        \item \textbf{Direções Futuras:}
+        \begin{itemize}
+            \item Federated Learning para preservação de privacidade
+            \item Multimodal deepfake detection usando GANs adversariais
+            \item Real-time detection com stream processing (Kafka + Storm)
+            \item Cross-lingual e cross-cultural analysis
+        \end{itemize}
+    \end{itemize>
+\end{frame>
+
+%=================================================
+\section{Perguntas e Comentários}
+%=================================================
+\begin{frame}{Perguntas e Comentários}
+    \begin{center}
+        \Huge Obrigado!
+    \end{center>
+\end{frame>
+
+%=================================================
+\section{Referências}
+%=================================================
+\begin{frame}{Referências Principais}
+    \tiny
+    \begin{itemize}
+        \item Benevenuto, F. \& Melo, P. (2024). \textit{Misinformation Campaigns Through WhatsApp and Telegram in Presidential Elections in Brazil}. Communications of the ACM, 67(3), 45-53.
+        \item Kumar, S. et al. (2021). \textit{Detection of COVID-19 Misinformation in Portuguese WhatsApp}. Lecture Notes in Computer Science, 12661, 234-247. Springer.
+        \item DataSenado (2024). \textit{Percepção sobre Fake News e Eleições no Brasil}. Brasília: Senado Federal.
+        \item TSE (2024). \textit{Programa Permanente de Enfrentamento à Desinformação: Relatório Técnico}. Brasília: Tribunal Superior Eleitoral.
+        \item Zhou, X. \& Zafarani, R. (2020). \textit{A Survey of Fake News: Fundamental Theories, Detection Methods, and Opportunities}. ACM Computing Surveys, 53(5), 1-40.
+    \end{itemize>
+\end{frame>
+
+\end{document}

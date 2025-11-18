@@ -1,0 +1,168 @@
+# Desinformação no Meio de Segurança
+
+### Uma Perspectiva da Ciência da Computação
+
+**Duração total:** \~30 min
+**Apresentadores:** \[Insira nomes]
+**Data:** \[Insira data]
+
+---
+
+## Slide 1 – Agenda (1 min)
+
+| Tempo     | Conteúdo                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------ |
+| 0–15 min  | **Fundamentos teóricos** (conceitos, impactos, modelos de ameaça, tecnologias de detecção e mitigação) |
+| 15–30 min | **Estudo de caso:** Desinformação nas eleições brasileiras (2018‑2024) + conexão com a teoria          |
+
+**Notas do apresentador**
+• Explique o fluxo da apresentação e alinhe expectativas.
+
+---
+
+## PARTE I – FUNDAMENTOS TEÓRICOS (\~15 min)
+
+### Slide 2 – Terminologia‑chave (1,5 min)
+
+* **Desinformação** (intencional) vs. *misinformation* (não intencional) vs. *mal‑information* (conteúdo real usado fora de contexto).
+* Exemplos de cada categoria.
+
+**Notas:** Utilize exemplo recente para cada termo.
+
+### Slide 3 – Ecossistema & Vetores (1,5 min)
+
+* Redes sociais abertas (X/Twitter, Facebook)
+* Mensageria privada (WhatsApp/Telegram)
+* Deepfakes e mídia sintética
+* Uso de bots/algoritmos para amplificação  ([cacm.acm.org](https://cacm.acm.org/latin-america-regional-special-section/misinformation-campaigns-through-whatsapp-and-telegram-in-presidential-elections-in-brazil/?utm_source=chatgpt.com))
+
+**Notas:** Destacar como a arquitetura de cada plataforma favorece virabilidade (forward, recomendações).
+
+### Slide 4 – Impactos na Segurança Cibernética (2 min)
+
+* Engenharia social & phishing baseados em fake news
+* Encobrimento de APTs (ruído informacional)
+* Ataques a infraestruturas críticas via pânico social
+
+**Notas:** Relacione com modelos tradicionais de ameaças (CIA triad).
+
+### Slide 5 – Impactos Sociais & Democráticos (2 min)
+
+* Erosão da confiança institucional
+* 78 % dos brasileiros acreditam que notícias falsas impactam eleições ([www12.senado.leg.br](https://www12.senado.leg.br/noticias/materias/2024/08/23/para-brasileiros-noticias-falsas-impactam-eleicoes-revela-datasenado?utm_source=chatgpt.com))
+* “Megaciclo eleitoral 2024”: plataformas não mitigaram riscos ([desinformante.com.br](https://desinformante.com.br/relatorio-plataformas-eleicoes-2024/?utm_source=chatgpt.com))
+
+**Notas:** Contextualizar para audiência brasileira.
+
+### Slide 6 – Arquitetura de Disseminação (1 min)
+
+* Ciclo *Observe‑Orient‑Decide‑Act* (OODA) aplicado a informação
+* Cadeia viral: criação → amplificação → *framing* → normalização
+
+### Slide 7 – Modelo de Ameaça MDM Kill Chain (1,5 min)
+
+1. Reconhecimento de público‑alvo
+2. Criação de narrativas
+3. Semeadura em canais primários
+4. Amplificação cruzada
+5. Exploração (phishing, manipulação)
+6. Persistência/retroalimentação
+
+### Slide 8 – Tecnologias de Detecção & Mitigação (3 min)
+
+* **NLP/ML:** BERTimbau, FastText, transformers multilingues  ([dl.acm.org](https://dl.acm.org/doi/10.1007/978-3-030-80599-9_18?utm_source=chatgpt.com))
+* **Análise de redes:** detecção de bots/clusters
+* **Multimodal:** verificação de imagens, deepfake detection
+* **Criptografia:** DKIM/SPF, carimbo em blockchain
+* **Sinalização e *fact‑checking* colaborativo**
+
+**Notas:** Mostrar diagrama alto nível do pipeline de detecção.
+
+### Slide 9 – Padrões, Regulamentos & Ética (1 min)
+
+* Programa Permanente de Enfrentamento à Desinformação (TSE) ([tse.jus.br](https://www.tse.jus.br/comunicacao/noticias/2024/Maio/gestao-alexandre-de-moraes-combate-as-fake-news-e-milicias-digitais-reforcaram-confiabilidade-do-processo-eleitoral?utm_source=chatgpt.com))
+* Código de Boas Práticas da UE
+* Desafios: liberdade de expressão, *false positives*, vieses algorítmicos.
+
+### Slide 10 – Transição para Estudo de Caso (0,5 min)
+
+* “Agora que entendemos a teoria, vejamos como ela se manifesta na prática nas eleições brasileiras.”
+
+---
+
+## PARTE II – ESTUDO DE CASO: Eleições Brasileiras (2018‑2024) (\~15 min)
+
+### Slide 11 – Contexto & Linha do Tempo (1 min)
+
+| Ano  | Marco de desinformação                                                                                                                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2018 | Disparos em massa no WhatsApp durante 1.º turno ([cacm.acm.org](https://cacm.acm.org/latin-america-regional-special-section/misinformation-campaigns-through-whatsapp-and-telegram-in-presidential-elections-in-brazil/?utm_source=chatgpt.com)) |
+| 2022 | Rede de *bots* no Twitter promovendo fraude eleitoral ([periodicos.ufba.br](https://periodicos.ufba.br/index.php/crh/article/view/62699?utm_source=chatgpt.com))                                                                                 |
+| 2024 | Megaciclo eleitoral global expõe falhas das plataformas ([desinformante.com.br](https://desinformante.com.br/relatorio-plataformas-eleicoes-2024/?utm_source=chatgpt.com))                                                                       |
+
+### Slide 12 – Superfície de Ataque (1 min)
+
+* Grupos privados de WhatsApp (>2 milhões de usuários)
+* Canais de Telegram sem moderação
+* Integração com redes abertas para ampliar alcance.
+
+### Slide 13 – Coleta e Rotulagem de Dados (1,5 min)
+
+* 1,2 M mensagens (WhatsApp) + 3 M tweets analisados
+* 30 % rotuladas como falsas por Lupa/AosFatos
+* Amostra pública disponível para replicação  ([dl.acm.org](https://dl.acm.org/doi/10.1007/978-3-030-80599-9_18?utm_source=chatgpt.com))
+
+### Slide 14 – Técnicas de Detecção Aplicadas (2 min)
+
+* **Classificação de texto:** fine‑tuning BERTimbau (F1 = 0,92)
+* **Bot‑hunting:** métricas de atividade (tweet/hour), entropia de horário
+* **Network analysis:** PageRank + Louvain para clusters
+
+### Slide 15 – Papel dos Bots (2 min)
+
+* 20 % das contas geraram 55 % de tweets desinformativos ([periodicos.ufba.br](https://periodicos.ufba.br/index.php/crh/article/view/62699?utm_source=chatgpt.com))
+* Automação detectada por APIs de terceiros (Botometer‑PT)
+* Fase de *amplificação* na kill chain.
+
+### Slide 16 – Resposta Institucional (1,5 min)
+
+* 2022: TSE + *fact‑checkers* → sistema de *fast‑track* judicial
+* 2024: expansão para parcerias com X/Twitter e Meta para avisos  ([tse.jus.br](https://www.tse.jus.br/comunicacao/noticias/2024/Maio/gestao-alexandre-de-moraes-combate-as-fake-news-e-milicias-digitais-reforcaram-confiabilidade-do-processo-eleitoral?utm_source=chatgpt.com))
+
+### Slide 17 – Métricas de Eficácia (1 min)
+
+* Remoção/takedown: redução de 67 % na circulação em 24 h
+* Ainda 40 % de reencaminhamentos via grupos fechados
+
+### Slide 18 – Mapeando Teoria‑Prática (1,5 min)
+
+| Kill Chain     | Evidência no caso                |
+| -------------- | -------------------------------- |
+| Reconhecimento | Segmentação via listas compradas |
+| Semeadura      | Mensagens de áudio virais        |
+| Amplificação   | Bots + *cross‑posting*           |
+| Exploração     | Phishing eleitoral (2FA TSE)     |
+| Persistência   | Reenvios + *status* de WhatsApp  |
+
+### Slide 19 – Lições Aprendidas & Futuro (1 min)
+
+* Necessidade de **LLM para monitorar multimodal** (imagem+texto)
+* **Watermarking** de IA generativa
+* Incentivar **alfabetização midiática** e transparência de algoritmos.
+
+### Slide 20 – Conclusão & Chamado à Ação (0,5 min)
+
+* Desinformação é ameaça multifacetada → requer abordagem integrada
+* Papel da Ciência da Computação: tecnologia + ética + políticas
+* Convidar público a participar em projetos de pesquisa e advocacy.
+
+### Slide 21 – Perguntas (0,5 min)
+
+### Slide 22 – Referências Selecionadas
+
+1. Global Coalition for Tech Justice, Relatório Megaciclo Eleitoral 2024.  ([desinformante.com.br](https://desinformante.com.br/relatorio-plataformas-eleicoes-2024/?utm_source=chatgpt.com))
+2. DataSenado, Fake News e Eleições, 2024.  ([www12.senado.leg.br](https://www12.senado.leg.br/noticias/materias/2024/08/23/para-brasileiros-noticias-falsas-impactam-eleicoes-revela-datasenado?utm_source=chatgpt.com))
+3. Benevenuto, F. & Melo, P., *Misinformation in WhatsApp/Telegram*, CACM 2024.  ([cacm.acm.org](https://cacm.acm.org/latin-america-regional-special-section/misinformation-campaigns-through-whatsapp-and-telegram-in-presidential-elections-in-brazil/?utm_source=chatgpt.com))
+4. Análise de Tweets de Bolsonaro 2022, UFBA 2025.  ([periodicos.ufba.br](https://periodicos.ufba.br/index.php/crh/article/view/62699?utm_source=chatgpt.com))
+5. Detection of COVID‑19 Misinformation in Portuguese WhatsApp, *Springer LNCS* 2021.  ([dl.acm.org](https://dl.acm.org/doi/10.1007/978-3-030-80599-9_18?utm_source=chatgpt.com))
+6. TSE, Programa Permanente de Enfrentamento à Desinformação, 2024.  ([tse.jus.br](https://www.tse.jus.br/comunicacao/noticias/2024/Maio/gestao-alexandre-de-moraes-combate-as-fake-news-e-milicias-digitais-reforcaram-confiabilidade-do-processo-eleitoral?utm_source=chatgpt.com))
