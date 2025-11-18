@@ -47,3 +47,7 @@ Thumbs.db
 *.pt
 models/
 checkpoints/
+
+# Logs
+logs/
+*.log

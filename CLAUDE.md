@@ -380,3 +380,10 @@ Ver TODO.md para plano completo detalhado.
 
 **Última Atualização:** 2025-11-18
 **Status:** Fase 0 (Setup) concluída, pronto para Fase 1
+
+## Active Technologies
+- Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing) (001-webots-setup)
+- File-based (world files .wbt, controller scripts, test logs) (001-webots-setup)
+
+## Recent Changes
+- 001-webots-setup: Added Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing)

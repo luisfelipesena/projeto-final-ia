@@ -42,11 +42,13 @@ Desenvolver sistema autônomo para YouBot que:
 **Objetivo:** Familiarização com Webots e sensores do YouBot
 
 #### 1.1 Setup do Webots
-- [ ] Instalar/atualizar Webots
-- [ ] Verificar versão do Python (compatibilidade com Webots)
-- [ ] Testar abertura do mundo IA_20252.wbt
-- [ ] Verificar spawn de cubos pelo supervisor
-- [ ] Documentar setup em DECISIONS.md
+- [ ] Instalar/atualizar Webots (manual - seguir quickstart.md)
+- [x] Verificar versão do Python (compatibilidade com Webots) - Script criado em tests/
+- [ ] Testar abertura do mundo IA_20252.wbt (manual - após instalação Webots)
+- [ ] Verificar spawn de cubos pelo supervisor (manual - após instalação Webots)
+- [x] Documentar setup em DECISIONS.md (DECISÃO 005-008 adicionadas)
+- [x] Criar documentação de setup (specs/001-webots-setup/* completo)
+- [x] Criar testes de validação automatizados (tests/test_webots_setup.py)
 
 **Deliverable:** Simulação rodando sem erros
 
