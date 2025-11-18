@@ -93,8 +93,9 @@
 ❌ **PROIBIDO:**
 1. **Modificar `supervisor.py`** - Spawn de cubos é fixo
 2. **Mostrar código-fonte no vídeo** - Perda de 3-10 pontos
-3. **Usar GPS** - Navegação só com LIDAR + câmera RGB
-4. **Código sem fundamentação teórica** - Toda escolha justificada
+3. **Mostrar texto excessivo nos slides** - Foco em imagens e processos
+4. **Usar GPS na demo final** - Pode treinar, mas apresentação SEM GPS
+5. **Código sem fundamentação teórica** - Toda escolha justificada
 
 ✅ **PERMITIDO:**
 - Modelos pré-treinados (transfer learning)
@@ -103,39 +104,46 @@
 - Arquiteturas de RNA já existentes
 - **Condição:** Tudo explicado no vídeo com citações
 
-### VI. Workflow SpecKit
+### VI. Workflow SpecKit (MANDATÓRIO)
 
-**Para cada tarefa (task) do TODO.md:**
+**Para cada fase do TODO.md, seguir ciclo completo:**
 
 1. **Specify** (`/speckit.specify`):
-   - Criar `spec/<task-name>/spec.md`
-   - Descrever requisitos técnicos
-   - Referenciar DECISIONS.md e REFERENCIAS.md
+   - Branch: `00X-feature-name`
+   - Criar `specs/<feature>/spec.md`
+   - Consultar DECISIONS.md para contexto de decisões anteriores
+   - Referenciar REFERENCIAS.md para base teórica
 
 2. **Clarify** (`/speckit.clarify`):
    - Identificar ambiguidades
-   - Fazer perguntas de esclarecimento
-   - Atualizar spec.md com respostas
+   - Perguntas de esclarecimento
+   - Atualizar spec.md
 
 3. **Plan** (`/speckit.plan`):
-   - Gerar `spec/<task-name>/plan.md`
-   - Quebrar em subtarefas
-   - Definir ordem de implementação
+   - Gerar `specs/<feature>/plan.md`
+   - Pesquisa (research.md) e design (data-model.md)
+   - Ordem de implementação
 
 4. **Tasks** (`/speckit.tasks`):
-   - Gerar `spec/<task-name>/tasks.md`
-   - Checklist granular de subtarefas
-   - Dependências entre tarefas
+   - Gerar `specs/<feature>/tasks.md`
+   - Checklist granular (~40-50 tasks)
+   - Dependências claras
 
 5. **Implement** (`/speckit.implement`):
-   - Executar implementação guiada
-   - Seguir plan.md e tasks.md
-   - Atualizar DECISIONS.md se necessário
+   - Executar tasks sequencialmente
+   - **ANTES de decisões técnicas:** Ler DECISIONS.md seções relevantes
+   - **DURANTE implementação:** Documentar novas decisões em DECISIONS.md
+   - Commit incremental por milestone
 
 6. **Validate**:
-   - Testes passando
-   - Métricas aceitáveis
-   - Checklist completa
+   - Testes passando (pytest)
+   - `/speckit.analyze` para consistência
+   - Merge to main após validação
+
+**Aprendizado Contínuo:**
+- Ler DECISIONS.md completo antes de começar nova fase
+- Cada decisão técnica = consultar papers em REFERENCIAS.md
+- Atualizar DECISIONS.md ANTES de implementar
 
 ---
 
@@ -220,19 +228,30 @@
 6. **Demo (4 min):** Robô coletando 15 cubos
 7. **Resultados (1 min):** Métricas e conclusões
 
-**Material Visual Permitido:**
-- Diagramas de arquitetura
-- Gráficos de performance
-- Vídeos da simulação
-- Visualizações de dados (LIDAR, detecção)
-- Equações matemáticas
-- Funções de pertinência fuzzy
-- Tabelas comparativas
+**Template de Slides:**
+- **Arquivo:** `slides-template/main.tex` (LaTeX Beamer)
+- **Tema:** DCC (já configurado)
+- **Formato:** 16:9, português, bibliografia integrada
 
-**Material PROIBIDO:**
-- Código-fonte Python/C
-- Screenshots de código
+**Material Visual Permitido:**
+- Diagramas de arquitetura e processos (Draw.io, TikZ)
+- Gráficos de performance (matplotlib, seaborn)
+- Vídeos da simulação (OBS Studio)
+- Visualizações de dados (LIDAR point clouds, detecções)
+- Equações matemáticas (LaTeX)
+- Funções de pertinência fuzzy (plots)
+- Tabelas comparativas (resultados, métricas)
+- Fluxogramas e state machines
+
+**Material PROIBIDO (PERDE PONTOS):**
+- Código-fonte Python/C/C++
+- Screenshots de código ou IDE
 - Prints de terminal com código
+- Texto excessivo (máx 3-4 bullet points por slide)
+- Parágrafos longos (usar tópicos curtos)
+- Slides "wall of text" (texto deve ser APOIO, não foco)
+
+**FILOSOFIA:** Apresentador (Luis Felipe) explica verbalmente, slides só reforçam visualmente
 
 ---
 

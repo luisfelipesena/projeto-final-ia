@@ -18,7 +18,8 @@ Desenvolver um sistema autônomo para robô YouBot no simulador Webots que execu
 
 ### Restrições Técnicas
 - **Sensores permitidos:** LIDAR (detecção de obstáculos/mapeamento) + Câmera RGB (identificação de cores)
-- **Proibido:** GPS (navegação baseada exclusivamente em percepção sensorial)
+- **GPS:** Pode usar para treinar modelos, mas PROIBIDO na demonstração/apresentação final
+- **Critério:** Sistema final deve funcionar com GPS desabilitado
 - **Podem adicionar:** sensores complementares se necessário
 
 ### Requisitos Obrigatórios de IA
@@ -109,7 +110,8 @@ IA_20252/
 - Explicar desenvolvimento conceitual do projeto
 - Demonstrar robô realizando tarefa na arena fornecida
 - **PROIBIDO:** Mostrar código-fonte (desconto de 3-10 pontos)
-- **Foco:** Figuras, gráficos, vídeos, demonstrações (pouco texto)
+- **Foco:** Imagens, processos, diagramas - MÍNIMO texto
+- **Template:** `slides-template/main.tex` (LaTeX Beamer) já configurado
 - **Submissão:** Link do Youtube + código desenvolvido
 
 ### Permitido Usar
@@ -129,17 +131,18 @@ IA_20252/
 6. **Otimização:** Refinar navegação e eficiência
 7. **Documentação:** Preparar material visual para apresentação
 
-## SpecKit Integration
+## SpecKit Workflow (OBRIGATÓRIO)
 
-Este projeto pode usar os comandos SpecKit para organização:
-- `/speckit.constitution` - Estabelecer princípios do projeto
-- `/speckit.specify` - Criar especificação baseline
-- `/speckit.plan` - Criar plano de implementação
-- `/speckit.tasks` - Gerar tarefas acionáveis
-- `/speckit.implement` - Executar implementação
-- `/speckit.clarify` (opcional) - Esclarecer ambiguidades antes do planejamento
-- `/speckit.analyze` (opcional) - Relatório de consistência entre artefatos
-- `/speckit.checklist` (opcional) - Validar completude dos requisitos
+**Workflow para cada fase:**
+1. `/speckit.specify` → Criar spec para nova feature
+2. `/speckit.clarify` → Resolver ambiguidades
+3. `/speckit.plan` → Gerar plano detalhado
+4. `/speckit.tasks` → Quebrar em tasks
+5. `/speckit.implement` → Executar
+6. `/speckit.analyze` → Validar consistência (opcional)
+
+**Branch strategy:** `00X-feature-name` por fase
+**Aprendizado:** Ler DECISIONS.md antes de cada nova decisão técnica
 
 ---
 

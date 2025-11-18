@@ -30,6 +30,7 @@ Este arquivo rastreia **todas as decisões técnicas e teóricas** tomadas duran
 6. [Estratégia de Integração Python-Webots](#decisão-006-estratégia-de-integração-python-webots)
 7. [Framework de Testes Automatizados](#decisão-007-framework-de-testes-automatizados)
 8. [Abordagem de Validação de Sensores](#decisão-008-abordagem-de-validação-de-sensores)
+9. [Restrição GPS e Estratégia de Apresentação Visual](#decisão-009-restrição-gps-e-estratégia-de-apresentação-visual)
 
 ---
 
@@ -589,7 +590,124 @@ Utilizar **validação multi-estágio**:
 
 ---
 
-## Template para Novas Decisões
+## DECISÃO 009: Restrição GPS e Estratégia de Apresentação Visual
+
+**Data:** 2025-11-18
+**Fase:** Fase 0-8 (Cross-cutting)
+**Status:** ✅ Implementado
+
+### O que foi decidido
+
+**GPS:**
+- **Permitido:** Usar GPS durante coleta de dados para treinar modelos
+- **Proibido:** Usar GPS na demonstração final e apresentação
+- **Critério:** Sistema final deve funcionar com GPS completamente desabilitado
+
+**Apresentação (15 min):**
+- **Template:** `slides-template/main.tex` (LaTeX Beamer tema DCC)
+- **Formato:** Imagens, processos, diagramas - MÍNIMO texto
+- **Proibido:** Código-fonte, texto excessivo (máx 3-4 bullet points/slide)
+- **Estrutura:** 7 seções (Intro, Teoria, Arquitetura, Percepção, Controle, Demo, Resultados)
+
+### Por que foi decidido
+
+**Motivação:**
+- Professor clarificou restrição GPS: treinamento OK, demo PROIBIDA
+- Ênfase em visual storytelling vs explicação textual/código
+- Template LaTeX já existe (`slides-template/`) - aproveitar estrutura
+- Projeto acadêmico foca em RNA + Fuzzy, não localização GPS
+
+**Justificativa Técnica:**
+1. **GPS para Training:** Dados ground truth melhoram treinamento de modelos
+2. **GPS na Demo:** Viola espírito do projeto (percepção sensorial)
+3. **Visual-first Slides:** Apresentações técnicas eficazes usam diagramas > texto
+4. **LaTeX Beamer:** Padrão acadêmico, fácil gestão de bibliografia
+
+### Base teórica
+
+**Referências Pedagógicas:**
+- **Nielsen Heuristics:** "Recognition rather than recall" - diagramas facilitam compreensão
+- **Tufte, E. (2001):** "The Visual Display of Quantitative Information" - minimize text, maximize data-ink ratio
+- **Presentation Zen (Reynolds, 2008):** Less text, more visuals for technical talks
+
+**Referências Robóticas:**
+- **Thrun et al. (2005):** "Probabilistic Robotics" - Cap 7: Sensor-based navigation vs GPS
+- Sistemas robóticos indoor: LIDAR + odometria > GPS (ruído, multipath)
+
+**Template LaTeX:**
+- Beamer class: Padrão para apresentações científicas
+- Tema DCC: Já integrado com bibliografia ABNT
+
+### Alternativas consideradas
+
+**GPS:**
+1. **Proibir completamente (inclusive treinamento):**
+   - ❌ Dificulta coleta de ground truth
+   - ❌ Reduz qualidade de modelos treinados
+   - **Veredicto:** Excessivamente restritivo
+
+2. **Permitir GPS na demo (sensor auxiliar):**
+   - ❌ Viola requisito do professor
+   - ❌ Reduz mérito de percepção sensorial
+   - **Veredicto:** Não aceitável academicamente
+
+**Apresentação:**
+1. **PowerPoint template:**
+   - ❌ Menos controle tipográfico
+   - ❌ Bibliografia manual
+   - **Veredicto:** LaTeX superior para trabalho acadêmico
+
+2. **Slides com código comentado:**
+   - ❌ Professor desconta 3-10 pontos
+   - ❌ Audiência perde foco
+   - **Veredicto:** Proibido explicitamente
+
+3. **Texto detalhado por slide:**
+   - ❌ Baixa retenção de informação
+   - ❌ Professor pediu foco em imagens
+   - **Veredicto:** Contradiz guideline
+
+### Impacto esperado
+
+**GPS:**
+- ✅ Treinar modelos com ground truth GPS
+- ✅ Demo final puramente sensorial (LIDAR + camera)
+- ✅ Apresentação honesta: "Treinamos com GPS, mas sistema final não usa"
+
+**Slides:**
+- ✅ Apresentação visual impactante
+- ✅ Template DCC profissional
+- ✅ Bibliografia integrada (Top 10 REFERENCIAS.md)
+- ✅ Foco em: Diagramas arquitetura, plots fuzzy, vídeos demo, gráficos métricas
+
+**Métricas de sucesso:**
+- Apresentação: 0 slides com código, <5 palavras/bullet point
+- Demo: GPS sensor desabilitado no world file
+- Avaliação: Sem perda de pontos por código/texto excessivo
+
+### Notas adicionais
+
+**Workflow SpecKit atualizado:**
+- Constitution.md Princípio VI agora enfatiza: "Ler DECISIONS.md antes de novas decisões"
+- Cada fase: Consultar decisões anteriores para contexto
+- Aprendizado incremental: DECISIONS.md como knowledge base
+
+**Slides template (`slides-template/main.tex`):**
+- Já configurado: aspectratio=169, babel português, hyperref
+- Estrutura exemplo: Agenda, seções temáticas, bibliografia
+- TODO Fase 8: Adaptar para projeto YouBot
+
+**Roteiro de fala (`slides-template/falas.txt`):**
+- Ajustar para apresentação individual de Luis Felipe (15 min)
+- Sincronizar com estrutura de slides
+- Lembrar: Você explica, slides só apoiam visualmente
+- **Texto excessivo em slides = PERDA DE PONTOS**
+
+**IA_20252 execution:**
+- World file (`IA_20252/worlds/IA_20252.wbt`) deve ter GPS sensor DISABLED para demo final
+- Controllers (`IA_20252/controllers/youbot/`) implementam percepção sensorial pura
+
+---
 
 ```markdown
 ## DECISÃO XXX: [Título da Decisão]
@@ -682,6 +800,7 @@ Utilizar **validação multi-estágio**:
 |------|---------|-------|
 | 2025-11-18 | Criação inicial com decisões 001-004 | Luis Felipe |
 | 2025-11-18 | Adicionadas decisões 005-008 (Fase 1.1 - Setup do Webots) | Luis Felipe |
+| 2025-11-18 | DECISÃO 009: GPS nuance + apresentação visual (CLAUDE.md, constitution.md, TODO.md atualizados) | Luis Felipe |
 
 ---
 

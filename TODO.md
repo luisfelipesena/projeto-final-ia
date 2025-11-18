@@ -462,6 +462,19 @@ while cubos_coletados < 15:
   - [ ] Análise de resultados
 
 #### 8.2 Material Visual (SEM CÓDIGO!)
+
+**REGRA DE OURO:** Slides = IMAGENS E FIGURAS. Texto excessivo perde pontos!
+
+- [ ] Adaptar template LaTeX: `slides-template/main.tex`
+  - [ ] Atualizar título: "YouBot Autônomo - Sistema de Coleta com RNA + Fuzzy"
+  - [ ] Autor: Luis Felipe Cordeiro Sena
+  - [ ] Estrutura: 7 seções (Intro, Teoria, Arquitetura, Percepção, Controle, Demo, Resultados)
+  - [ ] Integrar bibliografia (Top 10 de REFERENCIAS.md)
+  - [ ] **Máximo 3-4 bullet points por slide, NUNCA parágrafos**
+- [ ] Roteiro de fala: `slides-template/falas.txt`
+  - [ ] Ajustar para apresentação individual de 15 min
+  - [ ] Sincronizar com estrutura de slides
+  - [ ] Foco: Você explica verbalmente, slides só apoiam visualmente
 - [ ] Diagramas:
   - [ ] Arquitetura do sistema
   - [ ] Pipeline de percepção
