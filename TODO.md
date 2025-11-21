@@ -52,37 +52,37 @@ Desenvolver sistema autônomo para YouBot que:
 
 **Deliverable:** ✅ Simulação rodando sem erros | DECISÃO 010: World file R2025a funciona em R2023b com warnings não-críticos
 
-#### 1.2 Exploração dos Controles Base
-- [ ] Testar movimentos da base (forward, backward, strafe, rotate)
-- [ ] Testar comandos do braço (set_height, set_orientation)
-- [ ] Testar garra (grip, release)
-- [ ] Documentar limites de movimento
-- [ ] Criar script de teste básico: `tests/test_basic_controls.py`
+#### 1.2 Exploração dos Controles Base ✅ CONCLUÍDO
+- [x] Testar movimentos da base (forward, backward, strafe, rotate)
+- [x] Testar comandos do braço (set_height, set_orientation)
+- [x] Testar garra (grip, release)
+- [x] Documentar limites de movimento
+- [x] Criar script de teste básico: `tests/test_basic_controls.py`
 
-**Deliverable:** Script de teste validando todos os controles
+**Deliverable:** ✅ Script de teste validando todos os controles (13/13 testes implementados)
 
-#### 1.3 Análise dos Sensores
-- [ ] **LIDAR:**
-  - [ ] Ler dados brutos (range_image)
-  - [ ] Entender formato (número de pontos, range, FOV)
-  - [ ] Visualizar varredura (matplotlib/plot)
-  - [ ] Identificar obstáculos na visualização
-- [ ] **Câmera RGB:**
-  - [ ] Capturar frames
-  - [ ] Verificar resolução e FPS
-  - [ ] Testar detecção de cores (threshold simples)
-  - [ ] Salvar imagens de exemplo
-- [ ] Criar notebook: `notebooks/01_sensor_exploration.ipynb`
+#### 1.3 Análise dos Sensores ✅ CONCLUÍDO
+- [x] **LIDAR:**
+  - [x] Ler dados brutos (range_image)
+  - [x] Entender formato (número de pontos, range, FOV)
+  - [x] Visualizar varredura (matplotlib/plot)
+  - [x] Identificar obstáculos na visualização
+- [x] **Câmera RGB:**
+  - [x] Capturar frames
+  - [x] Verificar resolução e FPS
+  - [x] Testar detecção de cores (threshold simples)
+  - [x] Salvar imagens de exemplo
+- [x] Criar notebook: `notebooks/01_sensor_exploration.ipynb`
 
-**Deliverable:** Notebook com visualizações e análises dos sensores
+**Deliverable:** ✅ Notebook com visualizações e análises dos sensores
 
-#### 1.4 Mapeamento da Arena
-- [ ] Medir dimensões da arena manualmente
-- [ ] Identificar posições aproximadas das caixas de depósito
-- [ ] Mapear distribuição típica de obstáculos
-- [ ] Documentar coordenadas em `docs/arena_map.md`
+#### 1.4 Mapeamento da Arena ✅ CONCLUÍDO
+- [x] Medir dimensões da arena manualmente
+- [x] Identificar posições aproximadas das caixas de depósito
+- [x] Mapear distribuição típica de obstáculos
+- [x] Documentar coordenadas em `docs/arena_map.md`
 
-**Deliverable:** Mapa esquemático da arena
+**Deliverable:** ✅ Mapa esquemático da arena (7.0×4.0m documentado)
 
 **Referências Fase 1:**
 - Bischoff et al. (2011): YouBot specifications
