@@ -92,95 +92,110 @@ Desenvolver sistema autônomo para YouBot que:
 
 ### Fase 2: Percepção com Redes Neurais
 **Prazo:** 10 dias
+**Status:** 🟡 INFRAESTRUTURA COMPLETA - Falta treinamento e integração final
 **Objetivo:** Implementar detecção de obstáculos (LIDAR) e classificação de cores (RGB)
+
+**📦 COMPLETADO (PR #3):**
+- [x] Infraestrutura de dados (coleta, anotação, augmentation, splits)
+- [x] Arquiteturas de redes neurais implementadas
+- [x] Data loaders PyTorch com augmentation
+- [x] Scripts de validação e testes
+- [x] Documentação completa (DECISÃO 016-017)
+
+**⚠️ PENDENTE (Retornar após Fase 3):**
 
 #### 2.1 Processamento LIDAR com RNA
 
-**2.1.1 Abordagem Simplificada (Recomendada)**
-- [ ] Converter LIDAR 2D para representação processável
-  - [ ] Grid ocupancy map (2D array)
-  - [ ] Polar representation (distância, ângulo)
-- [ ] Arquitetura MLP:
-  - [ ] Input: LIDAR ranges (normalized)
-  - [ ] Hidden layers: 2-3 camadas
-  - [ ] Output: Classificação de setores (livre/ocupado)
-- [ ] Treinar com dados sintéticos:
-  - [ ] Gerar cenários variados no Webots
-  - [ ] Coletar 1000+ exemplos de varreduras LIDAR
-  - [ ] Labels: obstáculo detectado em cada setor
-- [ ] Validar precisão (>90% em test set)
-- [ ] Implementar em: `src/perception/lidar_processor.py`
+**2.1.1 Abordagem Implementada: Hybrid MLP + 1D-CNN** ✅
+- [x] Arquitetura Hybrid: `src/perception/models/lidar_net.py`
+  - [x] CNN branch: Conv1D(1→32→64→64) + GlobalAvgPool
+  - [x] Hand-crafted features: min, mean, std, occupancy, symmetry, variance
+  - [x] MLP classifier: Fusion(70→128→64→9) + Sigmoid
+  - [x] ~250K parâmetros
+- [x] LIDARProcessor: `src/perception/lidar_processor.py`
+- [x] ObstacleMap: Estrutura 9-sector
+- [x] Data augmentation: noise, dropout, rotation
 
-**2.1.2 Abordagem Avançada (Opcional - se tempo permitir)**
-- [ ] Adaptar PointNet para LIDAR 2D
-  - [ ] Converter ranges para point cloud
-  - [ ] Simplificar arquitetura (menos layers)
-- [ ] Usar modelo pré-treinado e fine-tuning
-- [ ] Implementar em: `src/perception/lidar_pointnet.py`
-
-**Escolha:** Documentar abordagem escolhida em DECISIONS.md
+**⚠️ FALTA EXECUTAR:**
+- [ ] **T018:** Coletar 1000+ scans LIDAR no Webots
+  ```bash
+  python scripts/collect_lidar_data.py
+  ```
+- [ ] **T019:** Revisar/corrigir labels se necessário
+  ```bash
+  python scripts/annotate_lidar.py
+  ```
+- [ ] **T024-T025:** Criar notebook de treinamento LIDAR
+  - [ ] `notebooks/lidar_training.ipynb`
+  - [ ] Adam optimizer, BCE loss, 100-200 epochs
+  - [ ] Early stopping (patience=20)
+- [ ] **T026:** Treinar modelo e validar: >90% accuracy, <100ms latency
+- [ ] **T027-T028:** Exportar modelo treinado
+  - [ ] Salvar como TorchScript: `models/lidar_net.pt`
+  - [ ] Salvar metadata: `models/lidar_net_metadata.json`
 
 #### 2.1.3 Detecção de Obstáculos
-- [ ] Processar output da RNA para identificar obstáculos
-- [ ] Calcular distância e ângulo de cada obstáculo
-- [ ] Implementar filtro de ruído (média móvel)
-- [ ] Criar visualização em tempo real
+- [x] LIDARProcessor com inference implementado
+- [x] ObstacleMap com métodos de consulta
+- [ ] **T029-T033:** Integrar no controller Webots (após treinamento)
 
-**Deliverable:** Módulo LIDAR funcionando com >90% precisão
+**Deliverable:** ⏳ Módulo LIDAR funcionando com >90% precisão
 
-**2.2 Detecção de Cubos com CNN**
+#### 2.2 Detecção de Cubos com CNN
 
-**2.2.1 Escolha de Arquitetura**
-Opções (escolher UMA e documentar em DECISIONS.md):
-- [ ] **Opção A:** YOLO pré-treinado + transfer learning
-  - Rápido, tempo real
-  - Bom para detecção + classificação simultânea
-- [ ] **Opção B:** SSD (melhor para objetos pequenos)
-- [ ] **Opção C:** CNN customizada simples
-  - Sliding window + classificação de cores
-  - Menos overhead, mais controle
+**2.2.1 Arquitetura Implementada: Lightweight CNN** ✅
+- [x] **DECISÃO 017:** Custom Lightweight CNN escolhida
+- [x] Arquitetura: `src/perception/models/camera_net.py`
+  - [x] Conv2D(3→32→64→128) + BatchNorm + ReLU + MaxPool
+  - [x] GlobalAvgPool + FC(128→64→3) + Dropout(0.5)
+  - [x] ~250K parâmetros
+- [x] Fallback: ResNet18 transfer learning (se accuracy <93%)
+- [x] CameraDataset com augmentation
+- [x] Data augmentation: brightness, hue, flip, rotation
 
-**2.2.2 Implementação**
-- [ ] Preparar dataset:
-  - [ ] Coletar 500+ imagens da câmera no Webots
-  - [ ] Anotar bounding boxes de cubos
-  - [ ] Labels: cor (verde/azul/vermelho)
-  - [ ] Split: 70% treino, 15% validação, 15% teste
-- [ ] Treinar modelo:
-  - [ ] Se YOLO: fine-tune últimas camadas
-  - [ ] Se custom: treinar do zero com data augmentation
-  - [ ] Early stopping com validation loss
-  - [ ] Salvar melhor modelo em `models/cube_detector.pth`
-- [ ] Validar:
-  - [ ] Precisão por cor (>95%)
-  - [ ] FPS (target: >10 fps)
-  - [ ] Falsos positivos/negativos
-- [ ] Implementar em: `src/perception/cube_detector.py`
-
-**2.2.3 Classificação de Cores (Alternativa Simples)**
-Se detecção for muito complexa:
-- [ ] Usar threshold RGB simples
-- [ ] Definir ranges para verde, azul, vermelho
-- [ ] Aplicar em região detectada
-- [ ] Validar com imagens de teste
-
-**Deliverable:** Detector de cubos com >95% precisão em cores
-
-**2.3 Integração Percepção**
-- [ ] Classe `PerceptionSystem` que unifica:
-  - [ ] LIDAR → obstáculos
-  - [ ] Câmera → cubos coloridos
-- [ ] Output estruturado:
-  ```python
-  {
-    'obstacles': [(dist, angle), ...],
-    'cubes': [{'color': 'green', 'position': (x,y), 'distance': d}, ...]
-  }
+**⚠️ FALTA EXECUTAR:**
+- [ ] **T034:** Coletar 500+ imagens no Webots
+  ```bash
+  python scripts/collect_camera_data.py
   ```
-- [ ] Implementar em: `src/perception/perception_system.py`
-- [ ] Testes unitários: `tests/test_perception.py`
+- [ ] **T035:** Revisar/corrigir labels e bboxes
+  ```bash
+  python scripts/annotate_camera.py
+  ```
+- [ ] **T038-T039:** Criar notebook de treinamento Camera
+  - [ ] `notebooks/camera_training.ipynb`
+  - [ ] SGD+momentum, CrossEntropy loss, 30-50 epochs
+  - [ ] StepLR scheduler, class weighting
+- [ ] **T040:** Treinar e validar: >95% per-color, >10 FPS
+- [ ] **T041:** Se accuracy <93%, usar ResNet18 fallback
+- [ ] **T042-T043:** Exportar modelo treinado
+  - [ ] Salvar como TorchScript: `models/camera_net.pt`
+  - [ ] Salvar metadata: `models/camera_net_metadata.json`
 
-**Deliverable:** Sistema de percepção integrado e testado
+**2.2.3 Detecção e Localização de Cubos**
+- [ ] **T044-T048:** Implementar CubeDetector completo
+  - [ ] HSV color segmentation para region proposals
+  - [ ] Bbox + color classification
+  - [ ] Distance estimation (focal_length=462, cube_size=0.05m)
+  - [ ] Angle estimation (bearing)
+  - [ ] Non-Max Suppression (IoU=0.5)
+- [ ] **T049-T051:** Integrar no controller Webots (após treinamento)
+
+**Deliverable:** ⏳ Detector de cubos com >95% precisão em cores
+
+#### 2.3 Integração Percepção
+- [ ] **T052-T067:** Implementar PerceptionSystem completo (Fase 5)
+  - [ ] Classe que unifica LIDAR + Camera
+  - [ ] Output estruturado: obstacles + cubes
+  - [ ] WorldState tracking
+  - [ ] Sensor fusion e filtros
+- [ ] Implementar em: `src/perception/perception_system.py`
+- [ ] Testes de integração: `tests/test_perception_integration.py`
+
+**Deliverable:** ⏳ Sistema de percepção integrado e testado
+
+**📝 NOTA:** Infraestrutura completa permite desenvolvimento paralelo de Fase 3 (Controle Fuzzy).
+Retornar aqui após Fase 3 para executar coleta de dados e treinamento.
 
 **Referências Fase 2:**
 - Goodfellow et al. (2016): Deep Learning fundamentals
