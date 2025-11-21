@@ -1090,6 +1090,112 @@ Implementar suite de testes pytest para validar controle do braço 5-DOF e garra
 
 ---
 
+## DECISÃO 013: LIDAR Analysis Methodology (Jupyter Notebook)
+
+**Data:** 2025-11-21
+**Fase:** Fase 1.3 - Sensor Analysis (LIDAR)
+**Status:** ✅ Implementado (Phase 5 - notebook created)
+
+### O que foi decidido
+
+Criar Jupyter notebook para análise interativa de dados LIDAR, incluindo:
+- Capture de especificações (horizontal resolution, FOV, range)
+- Visualização polar plots (matplotlib)
+- Detecção de obstáculos (distance threshold)
+- Análise de ranges empíricos (min, max, mean, std)
+
+**Arquivos:** `notebooks/01_sensor_exploration.ipynb` (seção 1: LIDAR Analysis)
+
+### Por que foi decidido
+
+**Motivação:**
+- FR-014 to FR-019: Spec exige documentação completa de LIDAR data
+- Jupyter notebooks permitem análise interativa + visualizações inline
+- Polar plots são representação natural para LIDAR scans 2D
+- Foundation para Phase 2: Neural network input preprocessing
+
+**Justificativa:** Polar coordinates natural para LIDAR, matplotlib permite customização, threshold-based obstacle detection é baseline simples.
+
+### Base teórica
+
+- **Thrun et al. (2005):** Probabilistic Robotics - LIDAR sensor models, polar representation
+- **Bradski & Kaehler (2008):** OpenCV - Visualization best practices
+
+---
+
+## DECISÃO 014: Camera Color Detection Methodology (HSV Thresholding)
+
+**Data:** 2025-11-21
+**Fase:** Fase 1.3 - Sensor Analysis (Camera)
+**Status:** ✅ Implementado (Phase 6 - notebook created)
+
+### O que foi decidido
+
+Implementar HSV color thresholding para detecção de cubos (green, blue, red):
+- Conversão RGB→HSV (cv2.cvtColor)
+- Thresholds calibráveis: green (40-80°), blue (90-130°), red (0-10° + 170-180°)
+- Accuracy evaluation: >80% target (SC-008)
+- Baseline para comparação com CNN (Phase 2)
+
+**Arquivos:** `notebooks/01_sensor_exploration.ipynb` (seção 2: Camera Analysis)
+
+### Por que foi decidido
+
+**Motivação:**
+- FR-020 to FR-026: Camera RGB analysis requerido
+- HSV mais robusto que RGB para variações de iluminação
+- Red color wraparound (hue 0°/180°) tratado explicitamente
+- Baseline simples antes de deep learning (Phase 2)
+
+**Justificativa:** HSV separates color from intensity, threshold method is fast and interpretable, suitable baseline for Phase 2 CNN comparison.
+
+### Base teórica
+
+- **Bradski & Kaehler (2008):** Learning OpenCV - HSV color space, cv2.inRange()
+- **Shapiro & Stockman (2001):** Computer Vision - Color thresholding principles
+
+---
+
+## DECISÃO 015: Arena Mapping Strategy (World File Parsing)
+
+**Data:** 2025-11-21
+**Fase:** Fase 1.4 - Arena Mapping
+**Status:** ✅ Implementado (Phase 7 - parser created)
+
+### O que foi decidido
+
+Criar Python script para parse do arquivo `.wbt` (VRML97 format):
+- Regex patterns para RectangleArena (dimensions)
+- Regex patterns para PlasticFruitBox (deposit boxes com recognitionColors)
+- Regex patterns para WoodenBox (obstacles)
+- Output: Markdown documentation (`docs/arena_map.md`)
+
+**Arquivos:** `scripts/parse_arena.py`
+
+### Por que foi decidido
+
+**Motivação:**
+- FR-027 to FR-030: Arena mapping documentation requerido
+- World file é ground truth para arena layout
+- Automated parsing evita erros de documentação manual
+- Markdown output facilita integração em apresentação
+
+**Justificativa:** Regex parsing appropriate for structured VRML97, markdown documentation is human-readable and version-controllable.
+
+### Base teórica
+
+- **Michel (2004):** Webots documentation - VRML97 world file format
+- **ISO/IEC 14772-1:** VRML97 specification - node structure
+
+### Notas adicionais
+
+**Parser limitations:**
+- Regex patterns may need adjustment for complex .wbt structures
+- Manual verification recommended (compare with Webots GUI)
+- Fallback to default dimensions if parsing fails
+
+---
+
 ```markdown
 ## DECISÃO XXX: [Título da Decisão]
 
@@ -1185,6 +1291,7 @@ Implementar suite de testes pytest para validar controle do braço 5-DOF e garra
 | 2025-11-18 | DECISÃO 010: World file R2025a vs R2023b - compatibilidade confirmada, warnings não-críticos | Luis Felipe |
 | 2025-11-21 | DECISÃO 011: Base control validation methodology (pytest + Webots integration, FR-001 to FR-007 implemented) | Luis Felipe |
 | 2025-11-21 | DECISÃO 012: Arm/gripper control validation methodology (preset validation, FR-008 to FR-013 implemented) | Luis Felipe |
+| 2025-11-21 | DECISÃO 013-015: Sensor analysis (LIDAR polar plots, camera HSV) + arena mapping (world file parser) | Luis Felipe |
 
 ---
 
