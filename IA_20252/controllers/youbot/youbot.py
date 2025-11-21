@@ -23,5 +23,13 @@ class YouBotController:
         raise NotImplementedError("This method should be implemented")
 
 if __name__ == "__main__":
-    controller = YouBotController()
-    #controller.run()
+    # Phase 1.2-1.4: Run control validation tests automatically
+    print("\n🤖 YouBot Controller - Phase 1.2 Validation")
+    print("Starting automated tests in 3 seconds...\n")
+
+    from test_controller import main as run_tests
+    run_tests()
+
+    # After tests complete, normal operation would continue
+    # controller = YouBotController()
+    # controller.run()
