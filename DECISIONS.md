@@ -1886,4 +1886,3 @@ Criar sistema mock de percepção (`MockPerceptionSystem`) que simula outputs da
 - Testes mock podem continuar para validação rápida
 
 ---
-
