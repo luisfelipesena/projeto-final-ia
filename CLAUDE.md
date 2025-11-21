@@ -391,6 +391,8 @@ Ver TODO.md para plano completo detalhado.
 - File-based (test logs, sensor data CSVs, example images, Jupyter notebooks) (002-sensor-exploration)
 - Python 3.8+ (Webots R2023b controller requirement) + PyTorch 2.0+, NumPy, SciPy, OpenCV, Matplotlib, scikit-learn (003-neural-networks)
 - File-based (models/*.pth for trained models, data/ for datasets, logs/ for experiment tracking) (003-neural-networks)
+- Python 3.8+ (compatible with Webots R2023b controller API) (004-fuzzy-control)
+- File-based logging (logs/fuzzy_decisions.log, logs/state_transitions.log) (004-fuzzy-control)
 
 ## Recent Changes
 - 001-webots-setup: Added Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing)
