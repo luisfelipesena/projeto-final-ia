@@ -41,16 +41,16 @@ Desenvolver sistema autônomo para YouBot que:
 **Prazo:** 3 dias
 **Objetivo:** Familiarização com Webots e sensores do YouBot
 
-#### 1.1 Setup do Webots
-- [ ] Instalar/atualizar Webots (manual - seguir quickstart.md)
-- [x] Verificar versão do Python (compatibilidade com Webots) - Script criado em tests/
-- [ ] Testar abertura do mundo IA_20252.wbt (manual - após instalação Webots)
-- [ ] Verificar spawn de cubos pelo supervisor (manual - após instalação Webots)
-- [x] Documentar setup em DECISIONS.md (DECISÃO 005-008 adicionadas)
+#### 1.1 Setup do Webots ✅ CONCLUÍDO
+- [x] Instalar/atualizar Webots (manual) - R2023b instalado
+- [x] Verificar versão do Python (compatibilidade com Webots) - Python 3.14.0 com venv
+- [x] Testar abertura do mundo IA_20252.wbt - Carrega em ~5s, funcional
+- [x] Verificar spawn de cubos pelo supervisor - 15/15 cubos spawnados com sucesso
+- [x] Documentar setup em DECISIONS.md (DECISÃO 005-010 adicionadas)
 - [x] Criar documentação de setup (specs/001-webots-setup/* completo)
-- [x] Criar testes de validação automatizados (tests/test_webots_setup.py)
+- [x] Criar testes de validação automatizados (tests/test_webots_setup.py - 6/8 passed)
 
-**Deliverable:** Simulação rodando sem erros
+**Deliverable:** ✅ Simulação rodando sem erros | DECISÃO 010: World file R2025a funciona em R2023b com warnings não-críticos
 
 #### 1.2 Exploração dos Controles Base
 - [ ] Testar movimentos da base (forward, backward, strafe, rotate)

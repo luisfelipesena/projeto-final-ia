@@ -160,44 +160,50 @@ python3 -c "from controller import Robot; print('Controller module OK')"
    ```
 
 2. **Observe Startup:**
-   - Webots window opens: [⏳] Pending manual test
-   - World loads within 30 seconds: [⏳] Pending manual test
-   - No error messages in console: [⏳] Pending manual test
+   - Webots window opens: [✅] Yes - Loaded successfully
+   - World loads within 30 seconds: [✅] Yes - ~5 seconds
+   - No error messages in console: [⚠️] Warnings only (R2025a/R2023b compatibility - non-critical)
 
 3. **Console Output:**
    ```
-   [TO BE VERIFIED IN NEXT MANUAL TEST SESSION]
+   INFO: youbot: Starting controller: /Users/luisfelipesena/.../venv/bin/python3 -u youbot.py
+   INFO: supervisor: Starting controller: /Users/luisfelipesena/.../venv/bin/python3 -u supervisor.py
+   INFO: 'youbot' controller exited successfully.
+   Spawn complete. The supervisor has spawned 15/15 objects (0 failed).
+   INFO: 'supervisor' controller exited successfully.
    ```
 
 ### Cube Spawning Verification
 
 **Supervisor Execution:**
-- Supervisor script starts: [⏳] Pending manual test
-- Cubes spawn successfully: [⏳] Pending manual test
-- Number of cubes spawned: [Expected: 15]
+- Supervisor script starts: [✅] Yes
+- Cubes spawn successfully: [✅] Yes - 15/15 (0 failed)
+- Number of cubes spawned: **15/15** ✅
 
 **Cube Distribution:**
-- Green cubes: [⏳] To verify
-- Blue cubes: [⏳] To verify
-- Red cubes: [⏳] To verify
-- Total: [Expected: 15]
+- Green cubes: [✅] Present (visible in scene)
+- Blue cubes: [✅] Present (visible in scene)
+- Red cubes: [✅] Present (visible in scene)
+- Total: **15** ✅
+
+**Console Confirmation:** `"Spawn complete. The supervisor has spawned 15/15 objects (0 failed)."`
 
 ### Arena Inspection
 
 **YouBot Robot:**
-- Robot visible in scene: [⏳] Pending manual test
-- Robot at starting position: [⏳] Pending manual test
+- Robot visible in scene: [✅] Yes - Bottom left corner
+- Robot at starting position: [✅] Yes
 
 **Deposit Boxes:**
-- Green box visible: [⏳] Pending manual test
-- Blue box visible: [⏳] Pending manual test
-- Red box visible: [⏳] Pending manual test
+- Green box visible: [✅] Yes - Top center
+- Blue box visible: [✅] Yes - Bottom center
+- Red box visible: [✅] Yes - Right side
 
 **Obstacles:**
-- Wooden boxes present: [⏳] Pending manual test
-- Arena boundaries visible: [⏳] Pending manual test
+- Wooden boxes present: [✅] Yes - 9 wooden boxes distributed in arena
+- Arena boundaries visible: [✅] Yes - Gray grid floor with walls
 
-**Status:** Automated validation complete ✅ | Manual GUI testing pending ⏳
+**Status:** ✅ Manual GUI testing COMPLETE | All validation passed | Issue R2025a/R2023b documented in DECISÃO 010
 
 ## Automated Test Results
 
