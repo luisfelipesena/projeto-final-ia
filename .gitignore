@@ -40,13 +40,15 @@ Thumbs.db
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# ML Models
+# ML Models (allow directory structure, ignore weights)
 *.h5
 *.pkl
 *.pth
 *.pt
-models/
+!models/.gitkeep
 checkpoints/
+# Allow model metadata but ignore weights
+!models/*metadata.json
 
 # Logs
 logs/
