@@ -98,249 +98,180 @@ class StateMachine:
             grasp_success=False,
             deposit_complete=False
         )
-
-        new_state = sm.update(conditions)
-        if new_state != sm.current_state:
-            print(f"Transition: {sm.current_state} → {new_state}")
+        sm.update(conditions)
+        current_state = sm.current_state
     """
 
-    def __init__(self, initial_state: RobotState = RobotState.SEARCHING):
+    def __init__(self, initial_state: RobotState = RobotState.SEARCHING, timeout_seconds: float = 120.0):
         """
         Initialize state machine
 
         Args:
             initial_state: Starting state (default: SEARCHING)
+            timeout_seconds: Maximum time per state before timeout (default: 120s, FR-022)
         """
-        self._current_state = initial_state
-        self._previous_state: Optional[RobotState] = None
-        self._state_start_time = time.time()
-        self._transition_count = 0
-        self._grasp_attempts = 0
-        self._cubes_collected = 0
-        self._target_cube_color: Optional[str] = None
-
-        # State timeout limits (FR-022: max 120s per state)
-        self._timeout_limits: Dict[RobotState, float] = {
-            RobotState.SEARCHING: 120.0,
-            RobotState.APPROACHING: 120.0,
-            RobotState.GRASPING: 120.0,
-            RobotState.NAVIGATING_TO_BOX: 120.0,
-            RobotState.DEPOSITING: 120.0,
-            RobotState.AVOIDING: 120.0,
-        }
-
-        # State transition callbacks
-        self._callbacks: Dict[RobotState, List[Callable[[RobotState, RobotState], None]]] = {
-            state: [] for state in RobotState
-        }
+        self.current_state = initial_state
+        self.previous_state: Optional[RobotState] = None
+        self.timeout_seconds = timeout_seconds
+        self.state_entry_time = time.time()
+        self.transition_count = 0
+        self.grasp_attempts = 0
+        self.tracked_cube_id: Optional[str] = None
+        self.tracked_cube_color: Optional[str] = None  # 'green' | 'blue' | 'red'
+        self.metrics = StateMetrics(
+            state=initial_state,
+            entry_time=time.time(),
+            duration=0.0,
+            transition_count=0,
+            timeout_triggered=False
+        )
 
         # Setup logging
         self.logger = logging.getLogger('state_machine')
         handler = logging.FileHandler('logs/state_transitions.log')
-        formatter = logging.Formatter('[%(asctime)s] %(message)s')
+        formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
         self.logger.setLevel(logging.INFO)
 
-    @property
-    def current_state(self) -> RobotState:
-        """Get current active state"""
-        return self._current_state
-
-    @property
-    def previous_state(self) -> Optional[RobotState]:
-        """Get previous state (for AVOIDING recovery)"""
-        return self._previous_state
-
-    def update(self, conditions: StateTransitionConditions) -> RobotState:
+    def transition_to(self, new_state: RobotState, context: Optional[Dict] = None) -> None:
         """
-        Evaluate transition conditions and update state if needed
-
-        Priority order:
-        1. AVOIDING override (obstacle_distance < 0.3m) - FR-011
-        2. Timeout check (>120s in state) - FR-022
-        3. Normal transition rules per current state
+        Transition to new state
 
         Args:
-            conditions: Current sensor readings and flags
-
-        Returns:
-            New active state (may be same as current)
-
-        Side Effects:
-            - Updates internal state tracking
-            - Logs state transitions
-            - Resets state timers on transition
+            new_state: Target state
+            context: Optional context dict with transition data
         """
-        # Priority 1: AVOIDING override (FR-011)
-        if conditions.obstacle_distance < 0.3:
-            if self._current_state != RobotState.AVOIDING:
-                self._transition_to(RobotState.AVOIDING, "Obstacle <0.3m detected")
-            return self._current_state
+        if new_state == self.current_state:
+            return  # No transition needed
 
-        # Priority 2: Timeout check (FR-022)
-        if self.is_timeout_exceeded():
-            self.logger.warning(f"State {self._current_state} timeout exceeded, returning to SEARCHING")
-            self._transition_to(RobotState.SEARCHING, "Timeout exceeded")
-            return self._current_state
+        self.previous_state = self.current_state
+        self.current_state = new_state
+        self.state_entry_time = time.time()
+        self.transition_count += 1
 
-        # Priority 3: Normal transitions (implementation in Phase 6)
-        # For now, return current state
-        return self._current_state
-
-    def force_transition(self, target_state: RobotState, reason: str = "") -> None:
-        """
-        Manually force transition to target state (for testing/recovery)
-
-        Args:
-            target_state: Desired state to enter
-            reason: Optional explanation for manual transition
-
-        Raises:
-            ValueError: If target_state not in allowed transitions
-        """
-        self._transition_to(target_state, reason or "Manual transition")
-
-    def reset(self) -> None:
-        """
-        Reset state machine to initial state
-
-        Clears:
-        - Current/previous state → SEARCHING
-        - Cube tracking data
-        - Grasp attempt counter
-        - State timers
-        """
-        self._previous_state = None
-        self._transition_to(RobotState.SEARCHING, "Reset")
-        self._grasp_attempts = 0
-        self._cubes_collected = 0
-        self._target_cube_color = None
-
-    def get_metrics(self) -> StateMetrics:
-        """
-        Get performance metrics for current state
-
-        Returns:
-            StateMetrics with timing and transition data
-        """
-        return StateMetrics(
-            state=self._current_state,
-            entry_time=self._state_start_time,
-            duration=time.time() - self._state_start_time,
-            transition_count=self._transition_count,
-            timeout_triggered=self.is_timeout_exceeded()
-        )
-
-    def set_target_cube_color(self, color: str) -> None:
-        """
-        Set color of cube being tracked (for box navigation)
-
-        Args:
-            color: 'green' | 'blue' | 'red'
-
-        Raises:
-            ValueError: If color not in valid set
-        """
-        if color not in ['green', 'blue', 'red']:
-            raise ValueError(f"Invalid cube color: {color}. Must be 'green', 'blue', or 'red'")
-        self._target_cube_color = color
-
-    def get_target_cube_color(self) -> Optional[str]:
-        """
-        Get color of currently tracked cube
-
-        Returns:
-            Color string or None if no cube held
-        """
-        return self._target_cube_color
-
-    def increment_grasp_attempt(self) -> int:
-        """
-        Increment failed grasp counter
-
-        Returns:
-            Current grasp attempt count (resets after successful deposit)
-
-        Raises:
-            RuntimeError: If called when not in GRASPING state
-        """
-        if self._current_state != RobotState.GRASPING:
-            raise RuntimeError(f"Cannot increment grasp attempts in state {self._current_state}")
-        self._grasp_attempts += 1
-        return self._grasp_attempts
-
-    def get_cubes_collected(self) -> int:
-        """
-        Get total cubes successfully deposited this session
-
-        Returns:
-            Cube count (0-15)
-        """
-        return self._cubes_collected
-
-    def register_state_callback(self, state: RobotState, callback: Callable[[RobotState, RobotState], None]) -> None:
-        """
-        Register callback for state entry/exit
-
-        Args:
-            state: State to monitor
-            callback: Function(from_state, to_state) called on transitions
-
-        Example:
-            def on_grasping(from_state, to_state):
-                print(f"Entered GRASPING from {from_state}")
-
-            sm.register_state_callback(RobotState.GRASPING, on_grasping)
-        """
-        self._callbacks[state].append(callback)
-
-    def get_allowed_transitions(self) -> Dict[RobotState, List[RobotState]]:
-        """
-        Get complete transition table
-
-        Returns:
-            Dict mapping state → list of allowed next states
-        """
-        # Implementation in Phase 6
-        return {
-            RobotState.SEARCHING: [RobotState.APPROACHING, RobotState.AVOIDING],
-            RobotState.APPROACHING: [RobotState.GRASPING, RobotState.SEARCHING, RobotState.AVOIDING],
-            RobotState.GRASPING: [RobotState.NAVIGATING_TO_BOX, RobotState.SEARCHING],
-            RobotState.NAVIGATING_TO_BOX: [RobotState.DEPOSITING, RobotState.AVOIDING],
-            RobotState.DEPOSITING: [RobotState.SEARCHING],
-            RobotState.AVOIDING: [RobotState.SEARCHING, RobotState.APPROACHING, RobotState.GRASPING,
-                                  RobotState.NAVIGATING_TO_BOX, RobotState.DEPOSITING],
-        }
-
-    def is_timeout_exceeded(self) -> bool:
-        """
-        Check if current state has exceeded 120s timeout
-
-        Returns:
-            True if timeout exceeded (FR-022)
-        """
-        duration = time.time() - self._state_start_time
-        timeout_limit = self._timeout_limits.get(self._current_state, 120.0)
-        return duration > timeout_limit
-
-    # ========================================================================
-    # Private Helper Methods
-    # ========================================================================
-
-    def _transition_to(self, new_state: RobotState, reason: str) -> None:
-        """Internal method to perform state transition"""
-        if new_state == self._current_state:
-            return
-
-        old_state = self._current_state
-        self._previous_state = old_state
-        self._current_state = new_state
-        self._state_start_time = time.time()
-        self._transition_count += 1
+        # Update metrics
+        self.metrics.state = new_state
+        self.metrics.entry_time = self.state_entry_time
+        self.metrics.transition_count = self.transition_count
 
         # Log transition
-        self.logger.info(f"State transition: {old_state.name} → {new_state.name} ({reason})")
+        self.logger.info(
+            f"Transition: {self.previous_state.name} → {new_state.name} "
+            f"(context: {context})"
+        )
+
+        # Handle state-specific initialization
+        if new_state == RobotState.GRASPING:
+            self.grasp_attempts += 1
+        elif new_state == RobotState.SEARCHING:
+            # Reset cube tracking when searching
+            if self.previous_state != RobotState.AVOIDING:
+                self.tracked_cube_id = None
+                self.tracked_cube_color = None
+                self.grasp_attempts = 0
+
+    def update(self, conditions: StateTransitionConditions) -> None:
+        """
+        Update state machine based on sensor conditions
+
+        Args:
+            conditions: Current sensor-based conditions
+
+        State Transition Logic:
+        - AVOIDING override: Always check first (FR-011)
+        - State-specific transitions: Based on current state
+        - Timeout handling: Reset to SEARCHING if timeout exceeded (FR-022)
+        """
+        # Check timeout (FR-022)
+        elapsed = time.time() - self.state_entry_time
+        if elapsed > self.timeout_seconds:
+            self.logger.warning(
+                f"State timeout ({elapsed:.1f}s > {self.timeout_seconds}s) in {self.current_state.name}, "
+                f"transitioning to SEARCHING"
+            )
+            self.metrics.timeout_triggered = True
+            self.transition_to(RobotState.SEARCHING, {'reason': 'timeout'})
+            return
+
+        # Update metrics duration
+        self.metrics.duration = elapsed
+
+        # Priority 1: AVOIDING override (FR-011)
+        if conditions.obstacle_distance < 0.3:
+            if self.current_state != RobotState.AVOIDING:
+                self.transition_to(RobotState.AVOIDING, {
+                    'obstacle_distance': conditions.obstacle_distance,
+                    'previous_state': self.previous_state
+                })
+            return  # Stay in AVOIDING until obstacle clears
+
+        # Priority 2: Exit AVOIDING when safe
+        if self.current_state == RobotState.AVOIDING:
+            if conditions.obstacle_distance > 0.5:
+                # Return to previous state or SEARCHING
+                target_state = self.previous_state if self.previous_state else RobotState.SEARCHING
+                self.transition_to(target_state, {'reason': 'obstacle_cleared'})
+            return
+
+        # Priority 3: State-specific transitions
+        if self.current_state == RobotState.SEARCHING:
+            if conditions.cube_detected:
+                self.transition_to(RobotState.APPROACHING, {
+                    'cube_distance': conditions.cube_distance,
+                    'cube_angle': conditions.cube_angle
+                })
+
+        elif self.current_state == RobotState.APPROACHING:
+            if not conditions.cube_detected:
+                # Lost cube detection
+                self.transition_to(RobotState.SEARCHING, {'reason': 'cube_lost'})
+            elif conditions.cube_distance < 0.15 and abs(conditions.cube_angle) < 5.0:
+                # Within grasping range
+                self.transition_to(RobotState.GRASPING, {
+                    'cube_distance': conditions.cube_distance,
+                    'cube_angle': conditions.cube_angle
+                })
+
+        elif self.current_state == RobotState.GRASPING:
+            if conditions.grasp_success:
+                self.transition_to(RobotState.NAVIGATING_TO_BOX, {
+                    'cube_color': self.tracked_cube_color
+                })
+            elif self.grasp_attempts >= 3:
+                # Max retries exceeded
+                self.transition_to(RobotState.SEARCHING, {'reason': 'grasp_failed'})
+
+        elif self.current_state == RobotState.NAVIGATING_TO_BOX:
+            if conditions.at_target_box:
+                self.transition_to(RobotState.DEPOSITING, {
+                    'cube_color': self.tracked_cube_color
+                })
+
+        elif self.current_state == RobotState.DEPOSITING:
+            if conditions.deposit_complete:
+                self.transition_to(RobotState.SEARCHING, {'reason': 'deposit_complete'})
+
+    def get_state(self) -> RobotState:
+        """Get current state"""
+        return self.current_state
+
+    def get_metrics(self) -> StateMetrics:
+        """Get current state metrics"""
+        self.metrics.duration = time.time() - self.metrics.entry_time
+        return self.metrics
+
+    def set_cube_tracking(self, cube_id: str, cube_color: str) -> None:
+        """
+        Track cube for navigation (FR-012)
+
+        Args:
+            cube_id: Unique identifier for cube
+            cube_color: Color of cube ('green' | 'blue' | 'red')
+        """
+        self.tracked_cube_id = cube_id
+        self.tracked_cube_color = cube_color
+        self.logger.info(f"Tracking cube {cube_id} (color: {cube_color})")
 
         # Call registered callbacks
         for callback in self._callbacks.get(new_state, []):

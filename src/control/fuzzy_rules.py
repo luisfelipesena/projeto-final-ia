@@ -151,14 +151,375 @@ def create_rules() -> List[FuzzyRule]:
     - Exploration (weight 1.0-3.0): Search patterns
 
     Minimum 20 rules required (FR-005)
+    Total: 35-50 rules (15 safety + 20-25 task + 5-10 exploration)
     """
     rules: List[FuzzyRule] = []
 
-    # Safety rules (R001-R015) will be implemented in Phase 3
-    # Task rules (R016-R025) will be implemented in Phase 4
-    # Exploration rules will be implemented in Phase 4
+    # ========================================================================
+    # Safety Rules (R001-R015): Obstacle Avoidance - Highest Priority
+    # Based on research.md Section 2.1: Minimum 15 safety-critical rules
+    # ========================================================================
 
-    # Placeholder: Return empty list for now
-    # Full rule implementation in Phase 3-4
+    # R001: Emergency Stop - Very Close obstacle ahead
+    rules.append(FuzzyRule(
+        rule_id='R001_emergency_stop',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'strong_left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=10.0,
+        category='safety'
+    ))
+
+    # R002: Very Close obstacle left → Turn right strongly
+    rules.append(FuzzyRule(
+        rule_id='R002_very_close_left',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'negative_big')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'strong_right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=10.0,
+        category='safety'
+    ))
+
+    # R003: Very Close obstacle right → Turn left strongly
+    rules.append(FuzzyRule(
+        rule_id='R003_very_close_right',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'positive_big')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'strong_left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=10.0,
+        category='safety'
+    ))
+
+    # R004: Close obstacle ahead → Slow + Turn right
+    rules.append(FuzzyRule(
+        rule_id='R004_close_ahead',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.0,
+        category='safety'
+    ))
+
+    # R005: Close obstacle left → Slow + Turn right
+    rules.append(FuzzyRule(
+        rule_id='R005_close_left',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'negative_medium')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.0,
+        category='safety'
+    ))
+
+    # R006: Close obstacle right → Slow + Turn left
+    rules.append(FuzzyRule(
+        rule_id='R006_close_right',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'positive_medium')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.0,
+        category='safety'
+    ))
+
+    # R007: Medium distance obstacle ahead → Medium speed + Slight turn
+    rules.append(FuzzyRule(
+        rule_id='R007_medium_ahead',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'medium'),
+            FuzzyRuleCondition('angle_to_obstacle', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'medium'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=8.0,
+        category='safety'
+    ))
+
+    # R008-R015: Additional safety rules covering all critical combinations
+    # Very Close × All angles (complete coverage)
+    for angle_mf in ['negative_small', 'positive_small', 'negative_medium', 'positive_medium']:
+        turn_direction = 'strong_right' if 'negative' in angle_mf else 'strong_left'
+        rules.append(FuzzyRule(
+            rule_id=f'R008_very_close_{angle_mf}',
+            antecedents=[
+                FuzzyRuleCondition('distance_to_obstacle', 'very_near'),
+                FuzzyRuleCondition('angle_to_obstacle', angle_mf)
+            ],
+            consequents=[
+                FuzzyRuleAssignment('linear_velocity', 'stop'),
+                FuzzyRuleAssignment('angular_velocity', turn_direction),
+                FuzzyRuleAssignment('action', 'search')
+            ],
+            weight=10.0,
+            category='safety'
+        ))
+
+    # Close × Side angles
+    rules.append(FuzzyRule(
+        rule_id='R012_close_negative_small',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'negative_small')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.0,
+        category='safety'
+    ))
+
+    rules.append(FuzzyRule(
+        rule_id='R013_close_positive_small',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'near'),
+            FuzzyRuleCondition('angle_to_obstacle', 'positive_small')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.0,
+        category='safety'
+    ))
+
+    # R014: Far obstacle → Proceed normally
+    rules.append(FuzzyRule(
+        rule_id='R014_far_obstacle',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'medium'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=8.0,
+        category='safety'
+    ))
+
+    # R015: Very Far obstacle → Fast forward
+    rules.append(FuzzyRule(
+        rule_id='R015_very_far_obstacle',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'fast'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=8.0,
+        category='safety'
+    ))
+
+    # ========================================================================
+    # Task Rules (R016-R025): Cube Approach and Navigation
+    # Basic implementation for Phase 3, will be expanded in Phase 4
+    # ========================================================================
+
+    # R016: Cube detected far ahead → Approach with medium speed
+    rules.append(FuzzyRule(
+        rule_id='R016_cube_far_ahead',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'far'),
+            FuzzyRuleCondition('angle_to_cube', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'medium'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'approach')
+        ],
+        weight=6.0,
+        category='task'
+    ))
+
+    # R017: Cube detected near ahead → Slow approach
+    rules.append(FuzzyRule(
+        rule_id='R017_cube_near_ahead',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'near'),
+            FuzzyRuleCondition('angle_to_cube', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'approach')
+        ],
+        weight=6.0,
+        category='task'
+    ))
+
+    # R018: Cube very near → Stop and prepare to grasp
+    rules.append(FuzzyRule(
+        rule_id='R018_cube_very_near',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'very_near'),
+            FuzzyRuleCondition('angle_to_cube', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'grasp')
+        ],
+        weight=7.0,
+        category='task'
+    ))
+
+    # R019: Cube left → Turn left to align
+    rules.append(FuzzyRule(
+        rule_id='R019_cube_left',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'medium'),
+            FuzzyRuleCondition('angle_to_cube', 'negative_medium')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'left'),
+            FuzzyRuleAssignment('action', 'approach')
+        ],
+        weight=5.0,
+        category='task'
+    ))
+
+    # R020: Cube right → Turn right to align
+    rules.append(FuzzyRule(
+        rule_id='R020_cube_right',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'medium'),
+            FuzzyRuleCondition('angle_to_cube', 'positive_medium')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'approach')
+        ],
+        weight=5.0,
+        category='task'
+    ))
+
+    # ========================================================================
+    # Exploration Rules (R021-R025): Search Patterns
+    # Basic implementation for Phase 3, will be expanded in Phase 4
+    # ========================================================================
+
+    # R021: No obstacles, no cube → Search forward
+    rules.append(FuzzyRule(
+        rule_id='R021_search_forward',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_far'),
+            FuzzyRuleCondition('distance_to_cube', 'very_far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'medium'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=2.0,
+        category='exploration'
+    ))
+
+    # R022: Search with slight left rotation
+    rules.append(FuzzyRule(
+        rule_id='R022_search_left',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'far'),
+            FuzzyRuleCondition('distance_to_cube', 'very_far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=1.5,
+        category='exploration'
+    ))
+
+    # R023: Search with slight right rotation
+    rules.append(FuzzyRule(
+        rule_id='R023_search_right',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'far'),
+            FuzzyRuleCondition('distance_to_cube', 'very_far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=1.5,
+        category='exploration'
+    ))
+
+    # R024: Clear path → Fast forward
+    rules.append(FuzzyRule(
+        rule_id='R024_clear_path',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'very_far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'fast'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=2.0,
+        category='exploration'
+    ))
+
+    # R025: Medium distance obstacle, safe → Continue forward
+    rules.append(FuzzyRule(
+        rule_id='R025_safe_continue',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'medium'),
+            FuzzyRuleCondition('angle_to_obstacle', 'zero')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'medium'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=3.0,
+        category='exploration'
+    ))
+
     return rules
 
