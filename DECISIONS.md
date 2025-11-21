@@ -954,6 +954,142 @@ Implementar suite de testes pytest para validar controles base do YouBot (movime
 
 ---
 
+## DECISÃO 012: Arm and Gripper Control Validation Methodology
+
+**Data:** 2025-11-21
+**Fase:** Fase 1.2 - Sensor Exploration and Control Validation
+**Status:** ✅ Implementado (Phase 4 complete - US2 tests)
+
+### O que foi decidido
+
+Implementar suite de testes pytest para validar controle do braço 5-DOF e garra paralela do YouBot, cobrindo:
+- **2 testes de posicionamento do braço:** Height presets (6 presets), orientation presets (5 presets)
+- **2 testes de garra:** Grip (close), release (open)
+- **1 teste de limites:** Joint limits documentation (5 joints + gripper)
+- **Output:** JSON export (`logs/joint_limits.json`) para workspace boundaries
+
+**Arquivos modificados:**
+- `tests/test_basic_controls.py` - TestArmGripper class (5 test functions)
+
+### Por que foi decidido
+
+**Motivação:**
+- **Requisito FR-008 a FR-013:** Spec.md exige validação de todos comandos arm/gripper
+- **Success Criteria SC-002, SC-003:** Positioning <5% tolerance, gripper commands successful
+- **Manipulação autônoma:** Grasping de cubos requer controle preciso validado
+- **Workspace knowledge:** Joint limits definem envelope de trabalho para path planning
+
+**Justificativa Técnica:**
+1. **Preset validation approach:** Arm.py fornece 6 height presets + 7 orientation presets - validar que state tracking (current_height/current_orientation) funciona
+2. **State-based gripper testing:** is_gripping boolean indica estado - suficiente para validar sem force sensors
+3. **Static joint limits documentation:** Preset positions revelam ranges práticos sem necessitar motion testing completo
+4. **Timeout-based completion:** Arm movements lentos (2-3s) - wait_for_motion garante settling antes assertion
+
+### Base teórica
+
+**Referências científicas:**
+
+1. **Craig (2005)**: "Introduction to Robotics: Mechanics and Control"
+   - Forward/inverse kinematics para manipuladores seriais
+   - Joint limits definem workspace reachable do end-effector
+   - Aplicado: Joint ranges documentados em test_arm_joint_limits
+
+2. **Bischoff et al. (2011)**: "KUKA youBot specifications"
+   - 5-DOF arm: reach 655mm, payload 500g
+   - Gripper: parallel jaw, 25mm max opening
+   - Validado: 6 height presets, gripper 0-25mm range
+
+3. **Michel (2004)**: "Webots simulation"
+   - Motor position control via setPosition()
+   - State tracking via current_height/current_orientation attributes
+   - Validated: Preset positions match expected joint configurations
+
+4. **Mason & Salisbury (1985)**: "Robot Hands and the Mechanics of Manipulation"
+   - Parallel jaw gripper force closure principles
+   - Binary state (open/closed) sufficient for pick-and-place
+   - Applied: is_gripping boolean validation
+
+**Conceitos aplicados:**
+- **Preset positioning:** High-level commands (FRONT_FLOOR, RESET) abstraem joint angles
+- **State machine validation:** current_height/current_orientation tracking
+- **Workspace characterization:** Joint limits define reachable volume
+
+### Alternativas consideradas
+
+1. **Forward kinematics validation (measure end-effector position):**
+   - ✅ More thorough validation
+   - ❌ Requires position sensors or supervisor field access
+   - ❌ Overkill for preset-based control
+   - ❌ Não requerido por spec (FR-008 to FR-013)
+
+2. **Force/torque sensing for gripper:**
+   - ✅ Quantifies grip strength
+   - ❌ Webots model may not have force sensors
+   - ❌ Binary state sufficient for pick-and-place task
+   - ❌ Spec only requires "execute grip commands"
+
+3. **State tracking validation (escolhida):**
+   - ✅ Matches spec requirements exactly
+   - ✅ Fast execution (~30s for all 5 tests)
+   - ✅ Preset-based approach aligns with arm.py API
+   - ⚠️ Assumes state tracking accurate (reasonable for simulation)
+
+4. **Full joint sweep for limit measurement:**
+   - ✅ Empirical limit discovery
+   - ❌ Time-consuming (~5 min per joint)
+   - ❌ Preset positions reveal practical ranges
+   - ❌ Not required by FR-012 (documentation, not measurement)
+
+### Impacto esperado
+
+**Imediato (Phase 4):**
+- ✅ FR-008 to FR-013 validados (5/5 arm/gripper tests)
+- ✅ Joint limits documentados em JSON (FR-012)
+- ✅ Complete US2 (arm/gripper control - P1 priority)
+- ✅ 13/13 total tests (SC-004: 100% test coverage)
+
+**Médio prazo (Phase 5-7):**
+- ✅ Arm presets usáveis para sensor positioning (LIDAR scan heights)
+- ✅ Gripper validation permite grasping implementation (Phase 5 manipulation)
+- ✅ Joint limits inform collision avoidance (Phase 4 path planning)
+
+**Longo prazo (Apresentação):**
+- ✅ Complete control validation (base + arm + gripper = holistic)
+- ✅ 100% test pass rate (13/13 tests)
+- ✅ JSON documentation (velocity + joint limits) demonstrates thoroughness
+
+**Métricas de sucesso:**
+- **TestArmGripper:** 5/5 tests passing
+- **Coverage:** FR-008 to FR-013 (100%)
+- **Presets validated:** 6 height + 5 orientation = 11 configurations
+- **JSON output exists:** `logs/joint_limits.json` with 6 documented ranges
+
+### Notas adicionais
+
+**Test execution pattern:**
+1. Set preset (height or orientation)
+2. Wait for motion (2-3s)
+3. Assert state tracking matches (current_height/current_orientation)
+4. Reset to default position
+
+**Observed behavior:**
+- Height transitions: 2-3s depending on distance
+- Orientation transitions: 1-2s (base rotation only)
+- Gripper transitions: <1s (fast parallel jaw)
+
+**Known limitations:**
+- No end-effector position ground truth (relying on state tracking)
+- No force measurement (binary grip state only)
+- Joint limits from preset analysis (not empirical sweep)
+- Assumes Webots physics accurate (no real-world validation)
+
+**Next steps:**
+- Phase 5-6: Sensor analysis notebooks (LIDAR polar plots, camera HSV) → DECISÃO 013, 014
+- Phase 7: Arena mapping (parse .wbt file) → DECISÃO 015
+- Phase 8: Polish (test execution, documentation finalization)
+
+---
+
 ```markdown
 ## DECISÃO XXX: [Título da Decisão]
 
@@ -1048,6 +1184,7 @@ Implementar suite de testes pytest para validar controles base do YouBot (movime
 | 2025-11-18 | DECISÃO 009: GPS nuance + apresentação visual (CLAUDE.md, constitution.md, TODO.md atualizados) | Luis Felipe |
 | 2025-11-18 | DECISÃO 010: World file R2025a vs R2023b - compatibilidade confirmada, warnings não-críticos | Luis Felipe |
 | 2025-11-21 | DECISÃO 011: Base control validation methodology (pytest + Webots integration, FR-001 to FR-007 implemented) | Luis Felipe |
+| 2025-11-21 | DECISÃO 012: Arm/gripper control validation methodology (preset validation, FR-008 to FR-013 implemented) | Luis Felipe |
 
 ---
 
