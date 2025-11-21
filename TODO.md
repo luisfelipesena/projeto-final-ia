@@ -41,14 +41,16 @@ Desenvolver sistema autônomo para YouBot que:
 **Prazo:** 3 dias
 **Objetivo:** Familiarização com Webots e sensores do YouBot
 
-#### 1.1 Setup do Webots
-- [ ] Instalar/atualizar Webots
-- [ ] Verificar versão do Python (compatibilidade com Webots)
-- [ ] Testar abertura do mundo IA_20252.wbt
-- [ ] Verificar spawn de cubos pelo supervisor
-- [ ] Documentar setup em DECISIONS.md
+#### 1.1 Setup do Webots ✅ CONCLUÍDO
+- [x] Instalar/atualizar Webots (manual) - R2023b instalado
+- [x] Verificar versão do Python (compatibilidade com Webots) - Python 3.14.0 com venv
+- [x] Testar abertura do mundo IA_20252.wbt - Carrega em ~5s, funcional
+- [x] Verificar spawn de cubos pelo supervisor - 15/15 cubos spawnados com sucesso
+- [x] Documentar setup em DECISIONS.md (DECISÃO 005-010 adicionadas)
+- [x] Criar documentação de setup (specs/001-webots-setup/* completo)
+- [x] Criar testes de validação automatizados (tests/test_webots_setup.py - 6/8 passed)
 
-**Deliverable:** Simulação rodando sem erros
+**Deliverable:** ✅ Simulação rodando sem erros | DECISÃO 010: World file R2025a funciona em R2023b com warnings não-críticos
 
 #### 1.2 Exploração dos Controles Base
 - [ ] Testar movimentos da base (forward, backward, strafe, rotate)
@@ -460,6 +462,19 @@ while cubos_coletados < 15:
   - [ ] Análise de resultados
 
 #### 8.2 Material Visual (SEM CÓDIGO!)
+
+**REGRA DE OURO:** Slides = IMAGENS E FIGURAS. Texto excessivo perde pontos!
+
+- [ ] Adaptar template LaTeX: `slides-template/main.tex`
+  - [ ] Atualizar título: "YouBot Autônomo - Sistema de Coleta com RNA + Fuzzy"
+  - [ ] Autor: Luis Felipe Cordeiro Sena
+  - [ ] Estrutura: 7 seções (Intro, Teoria, Arquitetura, Percepção, Controle, Demo, Resultados)
+  - [ ] Integrar bibliografia (Top 10 de REFERENCIAS.md)
+  - [ ] **Máximo 3-4 bullet points por slide, NUNCA parágrafos**
+- [ ] Roteiro de fala: `slides-template/falas.txt`
+  - [ ] Ajustar para apresentação individual de 15 min
+  - [ ] Sincronizar com estrutura de slides
+  - [ ] Foco: Você explica verbalmente, slides só apoiam visualmente
 - [ ] Diagramas:
   - [ ] Arquitetura do sistema
   - [ ] Pipeline de percepção

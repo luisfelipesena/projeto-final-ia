@@ -47,3 +47,21 @@ Thumbs.db
 *.pt
 models/
 checkpoints/
+
+# Logs
+logs/
+*.log
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+slides-template/*.pdf

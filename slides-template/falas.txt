@@ -1,0 +1,158 @@
+ROTEIRO DE APRESENTAÇÃO - DESINFORMAÇÃO NO MEIO DE SEGURANÇA (30 minutos)
+ABORDAGEM TÉCNICA E CONCEITUAL
+
+========================================
+PARTE 1 - LUIS (Slides 1-4)
+========================================
+
+[Slide 1 - Agenda] (1 min)
+- "Bom dia. Hoje apresentaremos uma análise técnica sobre desinformação sob a perspectiva da Ciência da Computação, focando em fundamentos técnicos aplicados e um estudo de caso baseado no paper de Benevenuto & Melo publicado na Communications of the ACM em 2024."
+- "Na primeira parte, abordaremos ecossistema de ameaças, arquitetura de disseminação, modelos de ameaça e tecnologias de detecção. Na segunda parte, analisaremos em detalhes a metodologia e resultados do estudo sobre campanhas de desinformação via WhatsApp e Telegram nas eleições brasileiras."
+
+[Slide 2 - Ecossistema & Vetores de Desinformação] (2 min)
+- "Iniciamos mapeando o ecossistema de desinformação como uma rede interconectada de atores, plataformas e tecnologias. Os vetores primários incluem redes sociais, aplicativos de mensagem e sites de notícias falsas."
+- "Vetores secundários abrangem influenciadores pagos, bots automatizados e redes de amplificação coordenada."
+- "A superfície de ataque é ampla devido às múltiplas plataformas com diferentes modelos de moderação, criando oportunidades de evasão."
+- "A cadeia de suprimentos segue o fluxo: Criação → Amplificação → Disseminação → Persistência."
+
+[Slide 3 - Impactos na Segurança Cibernética] (2.5 min)
+- "A desinformação impacta diretamente a segurança cibernética através de múltiplos vetores. Serve como base para ataques de engenharia social, facilitando phishing e distribuição de malware."
+- "Pode comprometer infraestrutura crítica através da manipulação da opinião pública sobre sistemas essenciais, criando instabilidade operacional."
+- "Operações de HUMINT e SIGINT são comprometidas quando narrativas falsas contaminam fontes de inteligência."
+- "Ataques à cadeia de suprimentos se manifestam através de desinformação sobre fornecedores e parceiros de confiança."
+- "O impacto mais crítico é a degradação da confiança em sistemas de segurança, afetando toda a postura defensiva."
+
+[Slide 4 - Arquitetura de Disseminação] (2.5 min)
+- "Identificamos cinco padrões arquiteturais principais para disseminação. O modelo Hub-and-Spoke utiliza contas centrais que distribuem conteúdo para múltiplas contas periféricas."
+- "Redes em Cascata propagam informação através de múltiplos níveis hierárquicos, ampliando o alcance exponencialmente."
+- "Cross-Platform Seeding sincroniza campanhas entre diferentes plataformas para maximizar penetração."
+- "Amplificação Artificial usa bots e sockpuppets para simular engajamento orgânico e influenciar algoritmos."
+- "O Timing Coordenado sincroniza publicações para maximizar impacto algorítmico durante períodos de alta atividade."
+
+========================================
+PARTE 2 - JOÃO (Slides 5-9)
+========================================
+
+[Slide 5 - Modelo de Ameaça: MDM Kill Chain] (2.5 min)
+- "Aplicamos o conceito de Kill Chain ao domínio de desinformação. A fase de Reconnaissance identifica alvos, temas sensíveis e vulnerabilidades narrativas específicas."
+- "Weaponization envolve criação de conteúdo falso, deepfakes e narrativas cuidadosamente manipuladas para maximizar credibilidade."
+- "Delivery utiliza bots, influenciadores pagos e redes coordenadas para distribuição eficiente."
+- "Exploitation aproveita vieses cognitivos humanos e câmaras de eco para amplificar efeitos."
+- "Installation estabelece narrativas persistentes no discurso público, criando novas 'verdades'."
+- "Command & Control coordena campanhas via canais privados como Telegram e Discord."
+- "Actions on Objectives culmina em manipulação de comportamento, eleições ou políticas públicas."
+
+[Slide 6 - Tecnologias de Detecção & Mitigação] (3 min)
+- "As tecnologias de detecção abrangem múltiplas disciplinas. Natural Language Processing utiliza BERT, GPT e modelos transformer para classificação avançada de texto."
+- "Computer Vision detecta deepfakes e manipulação de imagens através de análise de artefatos e inconsistências."
+- "Network Analysis identifica comportamento coordenado inautêntico através de padrões topológicos anômalos."
+- "Temporal Analysis detecta burst patterns e sincronização anômala que indicam coordenação artificial."
+- "Graph Neural Networks analisam propagação e estruturas de rede para identificar campanhas."
+- "Ensemble Methods combinam múltiplas abordagens para robustez contra evasão adversarial."
+
+[Slide 7 - Arquitetura de Inteligência de Ameaças] (2.5 min)
+- "A arquitetura de threat intelligence adapta frameworks estabelecidos. O MITRE ATT&CK Framework foi especializado para categorizar táticas de desinformação."
+- "O Diamond Model estrutura análise em Adversário (quem), Infraestrutura (onde), Capacidade (como) e Vítima (contra quem)."
+- "A Cyber Kill Chain mapeia fases sequenciais de ataques informativos."
+- "Threat Intelligence Feeds integram OSINT e IOCs específicos para desinformação."
+- "Attribution Analysis correlaciona TTPs e infraestrutura adversarial para identificação de campanhas."
+
+[Slide 8 - Taxonomia de Táticas e Técnicas Adversariais] (2.5 min)
+- "A taxonomia adversarial organiza técnicas por objetivos táticos. Weaponization inclui fabricação de deepfakes usando GANs, manipulação de contexto temporal e criação de narrativas híbridas."
+- "Delivery emprega spam coordenado, bot farms para amplificação artificial, sockpuppet accounts e astroturfing."
+- "Persistence utiliza cross-platform seeding, criação de echo chambers e filter bubbles para reinforcement."
+- "Command & Control coordena via canais privados, signal boosting e trending manipulation."
+- "Evasion emprega platform hopping, content mutation e semantic obfuscation."
+
+[Slide 9 - Técnicas de Detecção Aplicadas] (2.5 min)
+- "As técnicas aplicadas cobrem múltiplas dimensões. Content-Based Detection usa análise semântica, estilometria e fact-checking automatizado."
+- "Network-Based Detection identifica clusters coordenados e padrões de propagação anômalos."
+- "Behavioral Analysis detecta bots através de padrões de atividade temporal não-humanos."
+- "Multimodal Fusion combina texto, imagem e metadados para detecção robusta."
+- "Temporal Correlation analisa sincronização e timing patterns suspeitos."
+- "Cross-Platform Tracking rastreia narrativas entre diferentes plataformas."
+
+========================================
+PARTE 3 - VICTORIA (Slides 10-13)
+========================================
+
+[Slide 10 - Padrões, Regulamentos & Ética] (2.5 min)
+- "O framework regulatório abrange múltiplas dimensões. GDPR e LGPD garantem compliance em coleta e processamento de dados pessoais."
+- "IEEE Standards estabelecem padrões para sistemas de IA éticos e transparentes."
+- "ISO 27001 fornece gestão de segurança da informação para sistemas de detecção."
+- "Princípios éticos fundamentais incluem fairness, accountability, transparency e explicabilidade."
+- "Content Policy das plataformas estabelece diretrizes de moderação."
+- "Academic Ethics exige IRB approval e consentimento informado para pesquisa responsável."
+
+[Slide 11 - Casos de Uso Globais] (3 min)
+- "Analisamos casos emblemáticos. A Internet Research Agency russa demonstrou interferência sistemática nas eleições americanas 2016/2020, alcançando 126 milhões de usuários no Facebook."
+- "Coordenação multiplataforma envolveu Facebook, Twitter, Instagram e YouTube com investimento de $1.25 milhão mensais."
+- "O caso SolarWinds/Sunburst (APT29) combinou ataques à cadeia de suprimentos com desinformação sobre atribuição, afetando 18.000 organizações."
+- "Campanhas anti-vacina demonstram desinformação em saúde pública, com 12 indivíduos gerando 65% do conteúdo anti-vacina."
+- "A guerra na Ucrânia exemplifica operações de informação em tempo real, incluindo deepfakes de autoridades e narrativas coordenadas."
+
+[Slide 12 - Metodologia Científica do Estudo] (2 min)
+- "Agora analisamos o paper de Benevenuto & Melo na CACM 2024. O dataset compreende 1.2 milhão de mensagens WhatsApp e 3 milhões de tweets coletados entre 2018-2022."
+- "Rotulação foi realizada com fact-checkers certificados Lupa e Aos Fatos."
+- "Metodologia mixed-methods combina análise quantitativa e qualitativa."
+- "Fundamental: IRB approval e protocolos éticos rigorosos para dados sensíveis."
+
+[Slide 13 - Arquitetura Técnica de Coleta] (2.5 min)
+- "A infraestrutura utilizou Selenium WebDriver com reverse engineering da WhatsApp Web API."
+- "Telegram empregou Official Bot API complementada por scraping de canais públicos."
+- "Twitter utilizou Academic Research API v2 com rate limiting adequado."
+- "Preprocessing incluiu normalização UTF-8, deduplicação via MinHash LSH."
+- "Storage híbrido: MongoDB para dados não-estruturados, PostgreSQL para metadados."
+
+========================================
+PARTE 4 - VINICIUS (Slides 14-18)
+========================================
+
+[Slide 14 - Algoritmos de Detecção Implementados] (2.5 min)
+- "O paper implementou algoritmos estado-da-arte. Fine-tuning do BERTimbau para classificação de português brasileiro."
+- "Network analysis utilizou PageRank modificado para identificação de influenciadores."
+- "Temporal analysis empregou sliding windows com burst detection para campanhas coordenadas."
+- "Bot detection engineered features baseadas em comportamento temporal anômalo."
+- "Ensemble methods combinaram Random Forest e Gradient Boosting com vote weighting."
+
+[Slide 15 - Resultados Quantitativos] (2 min)
+- "Resultados demonstram performance state-of-the-art. BERTimbau alcançou F1-score 0.92 com desvio ±0.03."
+- "Bot detection atingiu accuracy 0.89 usando Botometer-PT."
+- "Precision@10 de 0.87 para ranking de conteúdo viral falso."
+- "Correlação temporal ρ=0.74 entre eventos políticos e picos de desinformação."
+- "Todos os resultados estatisticamente significantes com p<0.01."
+
+[Slide 16 - Resposta Institucional] (2.5 min)
+- "O estudo documenta resposta institucional coordenada. TSE implementou Programa de Enfrentamento à Desinformação."
+- "Fact-checking organizations como Lupa, Aos Fatos e Comprova estabeleceram verificação colaborativa."
+- "Plataformas digitais implementaram políticas de moderação específicas."
+- "Academia desenvolveu pesquisa colaborativa entre universidades."
+- "Sociedade civil através de ONGs monitora mídia sistematicamente."
+- "Legislação através do Marco Civil da Internet regula plataformas."
+
+[Slide 17 - Mapeando Teoria-Prática] (2.5 min)
+- "Identificamos gap significativo entre teoria acadêmica e implementação real. Algoritmos acadêmicos enfrentam desafios de latência, throughput e custo em produção."
+- "Adaptação adversarial evolui continuamente, exigindo sistemas adaptativos."
+- "Validação em produção requer A/B testing e métricas de negócio."
+- "Human-in-the-loop integra moderadores humanos com sistemas automatizados."
+- "Feedback loops permitem melhoria contínua baseada em dados de produção."
+
+[Slide 18 - Lições Aprendidas & Futuro] (2 min)
+- "Lições aprendidas incluem necessidade de abordagem multidisciplinar integrando CS, Sociologia e Psicologia."
+- "Importância crítica de datasets eticamente coletados e representativos."
+- "Trade-offs inevitáveis entre precisão, explicabilidade e fairness."
+- "Direções futuras incluem Federated Learning para preservação de privacidade."
+- "Multimodal deepfake detection usando GANs adversariais."
+- "Real-time detection com stream processing usando Kafka e Storm."
+- "Cross-lingual e cross-cultural analysis para aplicação global."
+
+[Slide 19 - Perguntas] (0.5 min)
+- "Obrigado pela atenção. Estamos prontos para discussão técnica."
+
+DICAS TÉCNICAS AJUSTADAS:
+- Usar terminologia técnica de segurança cibernética
+- Focar em conceitos aplicados ao invés de fórmulas matemáticas
+- Referenciar o paper Benevenuto & Melo constantemente
+- Demonstrar conhecimento de threat intelligence e arquiteturas de segurança
+- Mostrar familiaridade com tecnologias de detecção práticas
+- Incorporar terminologia sugerida pela Victoria: ecossistema, vetores, arquitetura de disseminação, etc. 
