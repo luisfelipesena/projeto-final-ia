@@ -393,6 +393,8 @@ Ver TODO.md para plano completo detalhado.
 - File-based (models/*.pth for trained models, data/ for datasets, logs/ for experiment tracking) (003-neural-networks)
 - Python 3.8+ (compatible with Webots R2023b controller API) (004-fuzzy-control)
 - File-based logging (logs/fuzzy_decisions.log, logs/state_transitions.log) (004-fuzzy-control)
+- Python 3.14 (Webots-compatible controller runtime) + PyTorch 2.x, Torchvision, NumPy, OpenCV, Matplotlib, scikit-learn, Pandas, custom scripts in `scripts/` (001-perception-training)
+- Local filesystem datasets (`data/lidar/`, `data/camera/`) with metadata JSON/CSV; model artifacts in `models/` (001-perception-training)
 
 ## Recent Changes
 - 001-webots-setup: Added Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing)

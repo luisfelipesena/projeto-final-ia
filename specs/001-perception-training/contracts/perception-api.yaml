@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: Perception Training Service
+  version: 0.1.0
+  description: >
+    Logical API contract that mirrors the CLI workflows for Phase 2 perception.
+    Used to reason about data flow, validation, and reproducibility requirements.
+servers:
+  - url: http://localhost:8000
+paths:
+  /datasets/lidar:
+    post:
+      summary: Submit LIDAR capture session metadata
+      operationId: createLidarDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LidarDatasetRequest'
+      responses:
+        '201':
+          description: Dataset accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetResponse'
+        '400':
+          description: Validation failed (insufficient scans, schema mismatch)
+  /datasets/camera:
+    post:
+      summary: Submit camera capture session metadata
+      operationId: createCameraDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CameraDatasetRequest'
+      responses:
+        '201':
+          description: Dataset accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetResponse'
+        '400':
+          description: Validation failed (class imbalance, missing labels)
+  /training/lidar:
+    post:
+      summary: Launch LIDAR training run
+      operationId: trainLidarModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainingRequest'
+      responses:
+        '202':
+          description: Training started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingRun'
+        '422':
+          description: Dataset validation not satisfied
+  /training/camera:
+    post:
+      summary: Launch camera training run
+      operationId: trainCameraModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainingRequest'
+      responses:
+        '202':
+          description: Training started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingRun'
+        '422':
+          description: Dataset validation not satisfied
+  /artifacts/{artifactId}:
+    get:
+      summary: Retrieve model artifact metadata
+      operationId: getArtifact
+      parameters:
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifact found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelArtifact'
+        '404':
+          description: Artifact not found
+
+components:
+  schemas:
+    LidarDatasetRequest:
+      type: object
+      required: [sessionId, scans, robotPoses, scenarioTags]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        scans:
+          type: array
+          minItems: 1000
+          items:
+            type: object
+            required: [sampleId, ranges, sectorLabels, timestamp]
+            properties:
+              sampleId: { type: string, format: uuid }
+              ranges:
+                type: array
+                items: { type: number, format: float }
+                minItems: 360
+                maxItems: 360
+              sectorLabels:
+                type: array
+                items: { type: boolean }
+                minItems: 9
+                maxItems: 9
+              timestamp: { type: string, format: date-time }
+        robotPoses:
+          type: array
+          items:
+            type: object
+            properties:
+              x: { type: number }
+              y: { type: number }
+              theta: { type: number }
+        scenarioTags:
+          type: array
+          items: { type: string }
+    CameraDatasetRequest:
+      type: object
+      required: [sessionId, frames]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        frames:
+          type: array
+          minItems: 500
+          items:
+            type: object
+            required: [sampleId, imagePath, boxes]
+            properties:
+              sampleId: { type: string, format: uuid }
+              imagePath: { type: string }
+              boxes:
+                type: array
+                items:
+                  type: object
+                  required: [id, color, bbox]
+                  properties:
+                    id: { type: string }
+                    color: { type: string, enum: [red, green, blue] }
+                    bbox:
+                      type: object
+                      properties:
+                        x: { type: number }
+                        y: { type: number }
+                        w: { type: number }
+                        h: { type: number }
+                    distance: { type: number }
+    TrainingRequest:
+      type: object
+      required: [modelType, datasetHash, hyperparameters]
+      properties:
+        modelType:
+          type: string
+          enum: [lidar, camera]
+        datasetHash:
+          type: string
+        hyperparameters:
+          type: object
+          properties:
+            optimizer: { type: string }
+            learningRate: { type: number }
+            batchSize: { type: integer }
+            epochs: { type: integer }
+            augmentations: { type: array, items: { type: string } }
+        notes:
+          type: string
+    DatasetResponse:
+      type: object
+      properties:
+        datasetHash: { type: string }
+        samplesAccepted: { type: integer }
+        validationReport: { type: string }
+    TrainingRun:
+      type: object
+      properties:
+        runId: { type: string, format: uuid }
+        modelType: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        metricsUri: { type: string }
+        artifactIds:
+          type: array
+          items: { type: string, format: uuid }
+    ModelArtifact:
+      type: object
+      properties:
+        artifactId: { type: string, format: uuid }
+        modelType: { type: string }
+        format: { type: string }
+        fileUri: { type: string }
+        checksum: { type: string }
+        metricsSnapshot:
+          type: object
+          properties:
+            accuracy: { type: number }
+            recallByClass:
+              type: object
+              additionalProperties: { type: number }
+            latencyMs: { type: number }
+            fps: { type: number }
+        preprocessing:
+          type: object
+          properties:
+            normalization: { type: array, items: { type: number } }
+            resolution: { type: array, items: { type: integer } }
+        calibration:
+          type: object
+          properties:
+            focalLength: { type: number }
+            principalPoint: { type: array, items: { type: number } }
+            sectorAngles: { type: array, items: { type: number } }
+
