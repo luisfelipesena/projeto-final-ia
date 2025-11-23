@@ -1,0 +1,276 @@
+{
+  "generated_at": "2025-11-23T13:20:48.282983",
+  "dataset_type": "camera",
+  "root_dir": "/Users/luisfelipesena/Development/Personal/projeto-final-ia/data/camera_test",
+  "type": "camera",
+  "count": 20,
+  "stats": {
+    "class_counts": {
+      "green": 0,
+      "blue": 0,
+      "red": 0
+    }
+  },
+  "samples": [
+    {
+      "id": "img_00000",
+      "image_path": "images/img_00000.png",
+      "label_path": "labels/img_00000.json",
+      "image_hash": "7cba89cb8f3d58057c91299a52ed82b9cbc4e3c6fa123d8d8feae0ff3a6131a5",
+      "label_hash": "a833143453790841479a419ba9f08222f2f4075186ceef839b99aef50abed94a",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00001",
+      "image_path": "images/img_00001.png",
+      "label_path": "labels/img_00001.json",
+      "image_hash": "bd29e5c8e538cd40e0a01cb7e13b2cbc1523da2dedc0cea602269778cfde6edd",
+      "label_hash": "a1563b464cb9c9aca54408e632640740bcf332b079897e7525e161efb8523702",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00002",
+      "image_path": "images/img_00002.png",
+      "label_path": "labels/img_00002.json",
+      "image_hash": "1a38e9e2d28cff60d8a45ba333f2458f23b8309f9139170e1033affb38d9a567",
+      "label_hash": "6f0bd0baff05b0bfdf470e883d34890c8f9c5e4c6c514962afebc6f8d86feb29",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00003",
+      "image_path": "images/img_00003.png",
+      "label_path": "labels/img_00003.json",
+      "image_hash": "034787cf1c2449fdbf70d4a03c9267208f561bce51e568b5aa8f57cd4bac64bb",
+      "label_hash": "d9f9407825bc13a87a6a37ace787fe4d0cb2da47d3fb1a673dcd8e24d1e9fd28",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00004",
+      "image_path": "images/img_00004.png",
+      "label_path": "labels/img_00004.json",
+      "image_hash": "93ff4a867359ac4713ed2f810393c44dd7b4fabb87ac92b6c1297fab8df15d6b",
+      "label_hash": "6a674dc9920276c1f5118ac2015417ae10942d6db43a59873072796b445d05fa",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00005",
+      "image_path": "images/img_00005.png",
+      "label_path": "labels/img_00005.json",
+      "image_hash": "423ff61f007108e31b527ca090f51774069898c9f9371108ae4efd54e6324511",
+      "label_hash": "8f7d931db26705c27933a184e5e990e35e1be182c4d8f9551c0af610a71ae69f",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00006",
+      "image_path": "images/img_00006.png",
+      "label_path": "labels/img_00006.json",
+      "image_hash": "91a906ecf61a24ce0e8dc0172069b58fdad9480c59527a99d8a79acb1d2507fa",
+      "label_hash": "25f93abda5605f64ab2bb05d05b071fd0e7943a1b5f04ccff20fa55223f5e1e5",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00007",
+      "image_path": "images/img_00007.png",
+      "label_path": "labels/img_00007.json",
+      "image_hash": "7cfe1ba26064639aa6cefc45f1b79957b8fd44befd34f7a9d16e2efe7c2cd012",
+      "label_hash": "596370a46afe6c4cf3a658525347e879fbb083f607c50abb6827bb6f9e60d4c2",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00008",
+      "image_path": "images/img_00008.png",
+      "label_path": "labels/img_00008.json",
+      "image_hash": "58c55b6125b74916cf286ea278ed7e06f4a5b54744853dace59031f421f29924",
+      "label_hash": "cc935586970c12fdf99e1b05f54053063e95285c0dab0a0f0c515a278b840244",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00009",
+      "image_path": "images/img_00009.png",
+      "label_path": "labels/img_00009.json",
+      "image_hash": "3fe7eb54e0a968e98cb3f98c5051190f3bf1025885df7dd9921e3fa36b65788c",
+      "label_hash": "a746a6965373b9cc3035aa42dc781369791e4b623e4f44bb0c012e09ccc46be8",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00010",
+      "image_path": "images/img_00010.png",
+      "label_path": "labels/img_00010.json",
+      "image_hash": "5d67272900cc71c288d2b36d63c2e6f11ffec793ce151c83fe248271876bb146",
+      "label_hash": "5aa3dc81ab4f7c6f7f2d051806cbc1ddd7583b44867505ecc6577a9834de7585",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00011",
+      "image_path": "images/img_00011.png",
+      "label_path": "labels/img_00011.json",
+      "image_hash": "5d108aba7fd295cef741d34fc9e03a8fe653bc5e98cdc838619f2c3b8f11436e",
+      "label_hash": "a9ce4c7e295fe4cfa5824f8fc35c556edc7843a87fd01a7ad8e4d8aaad10521a",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00012",
+      "image_path": "images/img_00012.png",
+      "label_path": "labels/img_00012.json",
+      "image_hash": "c98d2b122874673c973c9169aa235d89b992041a2197f6102bff05ef06ca2b32",
+      "label_hash": "273716eb2d736c2fd6773ae0404af6aade355cb1fc3b154eaf7c9138fbc057df",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00013",
+      "image_path": "images/img_00013.png",
+      "label_path": "labels/img_00013.json",
+      "image_hash": "ec3d609a4181316a4672dc2d4b29d75c62f3846fb1c55c3a10edda8cfabe6dd9",
+      "label_hash": "2ec9005a6fc8a0a703714255144f66239b8119936119f2bea8976b4ace49e8af",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00014",
+      "image_path": "images/img_00014.png",
+      "label_path": "labels/img_00014.json",
+      "image_hash": "a7828c814695231e26766bdf4aa6a5311e2d77ab83ffbc5e2bd6a2e1161a6a17",
+      "label_hash": "ade4b2a06e695672b7a9a5abc9c56c076b9c8b2bbb3143a81fbc7c14d3575833",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00015",
+      "image_path": "images/img_00015.png",
+      "label_path": "labels/img_00015.json",
+      "image_hash": "7a4bfc46d54f8425a8da2e26219ddc6cd90f095cfdc8091c8159e4c6ac799c82",
+      "label_hash": "35f2535f4cc4792237205219a7759c90122d58bb04e78db28e4c1482020d0b2c",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00016",
+      "image_path": "images/img_00016.png",
+      "label_path": "labels/img_00016.json",
+      "image_hash": "a89011455611f28248ae8a265eb7259187f1ca6aaae368e87bc47085ffc82fdd",
+      "label_hash": "85dec347e61a69171264f39782106e313aad00c7bd5f34963dbf13afad57f62c",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00017",
+      "image_path": "images/img_00017.png",
+      "label_path": "labels/img_00017.json",
+      "image_hash": "b5db24c5a151cfc8bf3186a79015ad3f85c5fc8c76e8f70669dd33b01cf034c5",
+      "label_hash": "76e46484d9faf0d9511485651e068a84541f039363697328478f8803c340bee3",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00018",
+      "image_path": "images/img_00018.png",
+      "label_path": "labels/img_00018.json",
+      "image_hash": "4a5ab7ba86bad067ecf4afb2b9c837b50044cba98dfa9505d20eee21dab91d4a",
+      "label_hash": "4c58d59a73f34012dd6d536d54d3d2b4e877f769dd14062f1ccfd953cb099708",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    },
+    {
+      "id": "img_00019",
+      "image_path": "images/img_00019.png",
+      "label_path": "labels/img_00019.json",
+      "image_hash": "88db277b9228cfa237830918bbc66f06eaf10df77d0919d996790773802ba989",
+      "label_hash": "689b9758894253ef51c5ed0a68c630692dfdfc888681637c40c6f6cb52d4ac08",
+      "cubes": [],
+      "classes": [],
+      "metadata": {
+        "auto_labeled": true,
+        "timestamp": "2025-11-23T16:20:48"
+      }
+    }
+  ]
+}

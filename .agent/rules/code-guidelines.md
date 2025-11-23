@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # MATA64 - Projeto Final de IA: YouBot Autônomo
 
 **Aluno:** Luis Felipe Cordeiro Sena
@@ -322,79 +326,3 @@ projeto-final-ia/
 Ver REFERENCIAS.md para lista completa (80+ papers organizados por tópico).
 
 ---
-
-## 📅 Timeline e Checkpoints
-
-**Fase 0 - Setup:** ✅ CONCLUÍDO (2025-11-18)
-- [x] CLAUDE.md criado
-- [x] REFERENCIAS.md compilado
-- [x] TODO.md planejado
-- [x] DECISIONS.md inicializado
-
-**Próximas Fases:** Ver TODO.md
-
-**Prazo Final:** 06/01/2026, 23:59 ⚠️
-
----
-
-## ⚙️ Dependências e Setup
-
-### Requisitos do Sistema
-- Webots R2023a ou superior
-- Python 3.8+
-- CUDA (opcional, para treinamento de CNNs)
-
-### Bibliotecas Python
-```bash
-pip install -r requirements.txt
-```
-
-Principais:
-- `numpy`, `scipy`, `matplotlib`
-- `torch`, `torchvision` (PyTorch)
-- `scikit-fuzzy` (Lógica Fuzzy)
-- `opencv-python` (Visão)
-- `pytest` (Testes)
-
-Ver `requirements.txt` para lista completa.
-
----
-
-## 🎯 Próximos Passos Imediatos
-
-1. **Setup do Webots** (Fase 1)
-   - Instalar/verificar Webots
-   - Testar simulação IA_20252.wbt
-   - Explorar sensores (LIDAR, câmera)
-
-2. **Familiarização** (Fase 1)
-   - Testar controles básicos (base, arm, gripper)
-   - Coletar dados de sensores
-   - Criar notebook de exploração
-
-3. **Decisão Arquitetural** (Fase 2)
-   - Escolher abordagem para LIDAR (MLP vs PointNet)
-   - Escolher modelo para detecção (YOLO vs SSD vs custom)
-   - Documentar em DECISIONS.md
-
-Ver TODO.md para plano completo detalhado.
-
----
-
-**Última Atualização:** 2025-11-18
-**Status:** Fase 0 (Setup) concluída, pronto para Fase 1
-
-## Active Technologies
-- Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing) (001-webots-setup)
-- File-based (world files .wbt, controller scripts, test logs) (001-webots-setup)
-- Python 3.14.0 (validated in Phase 1.1) (002-sensor-exploration)
-- File-based (test logs, sensor data CSVs, example images, Jupyter notebooks) (002-sensor-exploration)
-- Python 3.8+ (Webots R2023b controller requirement) + PyTorch 2.0+, NumPy, SciPy, OpenCV, Matplotlib, scikit-learn (003-neural-networks)
-- File-based (models/*.pth for trained models, data/ for datasets, logs/ for experiment tracking) (003-neural-networks)
-- Python 3.8+ (compatible with Webots R2023b controller API) (004-fuzzy-control)
-- File-based logging (logs/fuzzy_decisions.log, logs/state_transitions.log) (004-fuzzy-control)
-- Python 3.14 (Webots-compatible controller runtime) + PyTorch 2.x, Torchvision, NumPy, OpenCV, Matplotlib, scikit-learn, Pandas, custom scripts in `scripts/` (001-perception-training)
-- Local filesystem datasets (`data/lidar/`, `data/camera/`) with metadata JSON/CSV; model artifacts in `models/` (001-perception-training)
-
-## Recent Changes
-- 001-webots-setup: Added Python 3.8+ (requirement for Webots R2023b controller compatibility) + Webots R2023b simulator, pytest (testing), numpy/scipy (sensor data processing)

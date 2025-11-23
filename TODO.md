@@ -102,6 +102,13 @@ Desenvolver sistema autônomo para YouBot que:
 - [x] Scripts de validação e testes
 - [x] Documentação completa (DECISÃO 016-017)
 
+**📦 COMPLETADO (PR #4 - specs/002-script-updates):**
+- [x] Scripts de coleta atualizados com suporte a mock e metadata externa
+- [x] Scripts de anotação com auto-labeling (LIDAR threshold, Camera HSV)
+- [x] Script de geração de manifests (`generate_dataset_manifest.py`)
+- [x] Script de split atualizado para usar manifests (`split_dataset.py`)
+- [x] Todos os scripts verificados com dados mock
+
 **⚠️ PENDENTE (Retornar após Fase 3):**
 
 #### 2.1 Processamento LIDAR com RNA
