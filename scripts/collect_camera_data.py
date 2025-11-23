@@ -7,20 +7,29 @@ Saves images with color labels (green/blue/red) for supervised learning.
 
 Usage:
     From Webots: Run this as a controller
+    CLI: python scripts/collect_camera_data.py --lighting default --sessions 15 --frames-per-session 40
     Target: 500+ images with balanced color distribution
 
-Data format:
-    - images: 512×512 RGB PNG files
-    - labels: JSON files with color class and bbox coordinates
-    - metadata: Camera parameters, timestamp, robot pose
+Data format (per data-model.md CameraSample):
+    - sample_id: UUID
+    - timestamp: ISO8601 string
+    - robot_pose: {x, y, theta}
+    - image_path: relative path to PNG file
+    - bounding_boxes: array of {id, x, y, w, h}
+    - colors: array of color enums (red/green/blue)
+    - distance_estimates: array of floats (meters)
+    - lighting_tag: enum (default/bright/dim) - T014
+    - split: enum (train/val/test)
 """
 
 import sys
 import os
 import numpy as np
+import argparse
 from datetime import datetime
 from pathlib import Path
 import json
+from uuid import uuid4
 
 # Add Webots controller path
 sys.path.append(os.path.join(os.environ.get('WEBOTS_HOME', ''), 'lib', 'controller', 'python'))
@@ -37,9 +46,13 @@ class CameraDataCollector:
         'red': 2
     }
 
-    def __init__(self, output_dir: str = "data/camera"):
+    def __init__(self, output_dir: str = "data/camera", lighting_tag: str = "default", session_id: str = None):
         self.robot = Robot()
         self.timestep = int(self.robot.getBasicTimeStep())
+
+        # Lighting tag for this session (T014)
+        self.lighting_tag = lighting_tag
+        self.session_id = session_id or str(uuid4())[:8]
 
         # Initialize camera
         self.camera = self.robot.getDevice("camera")
@@ -51,18 +64,18 @@ class CameraDataCollector:
         self.height = self.camera.getHeight()
         self.fov = self.camera.getFov()
 
-        # Initialize GPS for ground truth
+        # Initialize GPS for ground truth (T014)
         self.gps = self.robot.getDevice("gps")
         self.gps.enable(self.timestep)
 
-        # Initialize compass for orientation
+        # Initialize compass for orientation (T014)
         self.compass = self.robot.getDevice("compass")
         self.compass.enable(self.timestep)
 
         # Setup output directories
         self.output_dir = Path(output_dir)
-        self.images_dir = self.output_dir / "images"
-        self.labels_dir = self.output_dir / "labels"
+        self.images_dir = self.output_dir / "raw" / f"session_{self.session_id}" / "images"
+        self.labels_dir = self.output_dir / "raw" / f"session_{self.session_id}" / "labels"
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.labels_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,6 +84,8 @@ class CameraDataCollector:
         self.start_time = datetime.now()
 
         print(f"✓ Camera Data Collector initialized")
+        print(f"  Session: {self.session_id}")
+        print(f"  Lighting: {self.lighting_tag}")
         print(f"  Output: {self.output_dir}")
         print(f"  Resolution: {self.width}×{self.height}")
         print(f"  FOV: {self.fov:.2f} rad")
@@ -131,22 +146,26 @@ class CameraDataCollector:
         return cubes
 
     def get_metadata(self) -> dict:
-        """Get camera and robot metadata"""
+        """Get camera and robot metadata (T014)"""
         position = self.gps.getValues()
         compass_values = self.compass.getValues()
-        orientation = np.arctan2(compass_values[0], compass_values[1])
+        theta = np.arctan2(compass_values[0], compass_values[1])
 
         return {
-            'timestamp': datetime.now().isoformat(),
-            'image_id': self.image_count,
+            'sample_id': str(uuid4()),  # Unique ID per frame
+            'timestamp': datetime.now().isoformat() + "Z",
+            'robot_pose': {  # T014: x, y, theta structure
+                'x': float(position[0]),
+                'y': float(position[1]),
+                'theta': float(theta)
+            },
+            'lighting_tag': self.lighting_tag,  # T014: lighting tagging
+            'session_id': self.session_id,
+            'frame_index': self.image_count,
             'camera': {
                 'width': self.width,
                 'height': self.height,
                 'fov': self.fov
-            },
-            'robot_pose': {
-                'position': list(position),
-                'orientation': float(orientation)
             }
         }
 
@@ -258,8 +277,24 @@ class CameraDataCollector:
 
 def main():
     """Main entry point for Webots controller"""
-    collector = CameraDataCollector()
-    collector.run_collection(num_images=500, move_robot=False)
+    parser = argparse.ArgumentParser(description="Collect camera images with lighting tags")
+    parser.add_argument("--output", default="data/camera", help="Output directory")
+    parser.add_argument("--lighting", default="default",
+                        choices=["default", "bright", "dim"],
+                        help="Lighting condition tag for this session (T014)")
+    parser.add_argument("--frames-per-session", type=int, default=40, help="Number of frames per session")
+    parser.add_argument("--session-id", default=None, help="Session ID (auto-generated if not provided)")
+    parser.add_argument("--seed", type=int, default=1337, help="Random seed for reproducibility")
+
+    args = parser.parse_args()
+    np.random.seed(args.seed)
+
+    collector = CameraDataCollector(
+        output_dir=args.output,
+        lighting_tag=args.lighting,
+        session_id=args.session_id
+    )
+    collector.run_collection(num_images=args.frames_per_session, move_robot=False)
 
 
 if __name__ == "__main__":

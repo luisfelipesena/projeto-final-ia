@@ -3,14 +3,16 @@
 LIDAR Data Annotation Tool
 
 Interactive tool to review and correct 9-sector occupancy labels for LIDAR scans.
-Displays polar plot of LIDAR scan with sector boundaries and current labels.
+Auto-labeling mode (T013) computes 9-sector occupancy from raw ranges.
 
 Usage:
-    python scripts/annotate_lidar.py [--data-dir data/lidar]
+    Interactive: python scripts/annotate_lidar.py --data-dir data/lidar
+    Auto-label:  python scripts/annotate_lidar.py --auto-label --input data/lidar/raw --output data/lidar/annotated
 
-Controls:
+Controls (interactive mode):
     - Left/Right arrow: Navigate scans
     - 1-9: Toggle sector label (0→1 or 1→0)
+    - a: Auto-label current scan
     - s: Save current labels
     - q: Quit
 """
@@ -21,6 +23,38 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from matplotlib.patches import Wedge
 import json
+from tqdm import tqdm
+
+
+def compute_sector_labels_from_ranges(ranges: np.ndarray, obstacle_threshold: float = 2.0, num_sectors: int = 9) -> np.ndarray:
+    """
+    Compute 9-sector occupancy labels from raw LIDAR ranges (T013).
+
+    Args:
+        ranges: LIDAR range measurements (N points)
+        obstacle_threshold: Distance threshold to consider obstacle (meters)
+        num_sectors: Number of sectors (default 9)
+
+    Returns:
+        labels: [num_sectors] binary occupancy flags (True = occupied)
+    """
+    num_points = len(ranges)
+    points_per_sector = num_points // num_sectors
+    labels = np.zeros(num_sectors, dtype=bool)
+
+    for sector_idx in range(num_sectors):
+        start_idx = sector_idx * points_per_sector
+        end_idx = start_idx + points_per_sector
+        sector_ranges = ranges[start_idx:end_idx]
+
+        # Sector is occupied if ANY point is below threshold
+        # Filter out invalid readings (inf, nan)
+        valid_ranges = sector_ranges[np.isfinite(sector_ranges)]
+        if len(valid_ranges) > 0:
+            min_distance = np.min(valid_ranges)
+            labels[sector_idx] = min_distance < obstacle_threshold
+
+    return labels
 
 
 class LIDARAnnotator:
@@ -29,6 +63,7 @@ class LIDARAnnotator:
     SECTORS = 9
     SECTOR_ANGLE = 30.0  # degrees
     FOV = 270.0  # LIDAR field of view
+    OBSTACLE_THRESHOLD = 2.0  # meters
 
     def __init__(self, data_dir: str = "data/lidar"):
         self.data_dir = Path(data_dir)
@@ -52,6 +87,7 @@ class LIDARAnnotator:
         print(f"\nControls:")
         print("  ←/→ : Navigate scans")
         print("  1-9 : Toggle sector label")
+        print("  a   : Auto-label current scan (T013)")
         print("  s   : Save labels")
         print("  q   : Quit\n")
 
@@ -140,6 +176,16 @@ class LIDARAnnotator:
             print(f"  Sector {sector_idx+1}: {current:.0f} → {self.current_scan['labels'][sector_idx]:.0f}")
             self.plot_scan()
 
+    def auto_label_current(self):
+        """Auto-label current scan using threshold-based logic (T013)"""
+        ranges = self.current_scan['ranges']
+        auto_labels = compute_sector_labels_from_ranges(ranges, self.OBSTACLE_THRESHOLD, self.SECTORS)
+
+        self.current_scan['labels'] = auto_labels.astype(np.float32)
+        self.modified = True
+        print(f"  ✓ Auto-labeled: {int(np.sum(auto_labels))}/9 sectors occupied")
+        self.plot_scan()
+
     def save_labels(self):
         """Save modified labels to file"""
         if not self.modified:
@@ -190,6 +236,8 @@ class LIDARAnnotator:
         elif event.key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             sector_idx = int(event.key) - 1
             self.toggle_sector_label(sector_idx)
+        elif event.key == 'a':
+            self.auto_label_current()
         elif event.key == 's':
             self.save_labels()
         elif event.key == 'q':
@@ -202,14 +250,75 @@ class LIDARAnnotator:
         plt.show()
 
 
+def auto_label_batch(input_dir: str, output_dir: str, threshold: float = 2.0):
+    """
+    Batch auto-labeling of LIDAR scans (T013).
+
+    Args:
+        input_dir: Directory containing raw scans (.npz files)
+        output_dir: Directory to save annotated scans
+    """
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    scan_files = sorted(list(input_path.rglob("*.npz")))
+    if len(scan_files) == 0:
+        print(f"No scan files found in {input_path}")
+        return
+
+    print(f"✓ Auto-labeling {len(scan_files)} scans...")
+    print(f"  Input:  {input_path}")
+    print(f"  Output: {output_path}")
+    print(f"  Threshold: {threshold}m\n")
+
+    for scan_file in tqdm(scan_files, desc="Auto-labeling"):
+        # Load scan
+        data = np.load(scan_file, allow_pickle=True)
+        ranges = data['ranges']
+        metadata = data['metadata'].item() if 'metadata' in data else {}
+
+        # Compute labels (T013)
+        labels = compute_sector_labels_from_ranges(ranges, threshold)
+
+        # Save annotated scan
+        relative_path = scan_file.relative_to(input_path)
+        output_file = output_path / relative_path
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        np.savez_compressed(
+            output_file,
+            ranges=ranges,
+            sector_labels=labels,  # Use data-model.md field name
+            metadata=metadata
+        )
+
+    print(f"\n✓ Auto-labeling complete: {len(scan_files)} scans processed")
+    print(f"  Saved to: {output_path}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="LIDAR Data Annotation Tool")
+    parser = argparse.ArgumentParser(description="LIDAR Data Annotation Tool (T013)")
     parser.add_argument('--data-dir', type=str, default='data/lidar',
-                       help='Path to LIDAR data directory')
+                       help='Path to LIDAR data directory (interactive mode)')
+    parser.add_argument('--auto-label', action='store_true',
+                       help='Batch auto-labeling mode (non-interactive)')
+    parser.add_argument('--input', type=str, default='data/lidar/raw',
+                       help='Input directory for auto-labeling')
+    parser.add_argument('--output', type=str, default='data/lidar/annotated',
+                       help='Output directory for annotated scans')
+    parser.add_argument('--threshold', type=float, default=2.0,
+                       help='Obstacle distance threshold (meters)')
+
     args = parser.parse_args()
 
-    annotator = LIDARAnnotator(data_dir=args.data_dir)
-    annotator.run()
+    if args.auto_label:
+        # Batch auto-labeling mode
+        auto_label_batch(args.input, args.output, args.threshold)
+    else:
+        # Interactive annotation mode
+        annotator = LIDARAnnotator(data_dir=args.data_dir)
+        annotator.run()
 
 
 if __name__ == "__main__":

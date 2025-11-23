@@ -76,19 +76,19 @@ This document breaks down Phase 2 Perception Model Training into executable task
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Unit test for LIDAR dataset schema validation in `tests/perception/test_lidar_dataset.py`
-- [ ] T009 [P] [US1] Unit test for camera dataset schema validation in `tests/perception/test_camera_dataset.py`
-- [ ] T010 [US1] Integration test for dataset collection workflow in `tests/perception/test_dataset_collection.py` verifying quota completion
+- [x] T008 [P] [US1] Unit test for LIDAR dataset schema validation in `tests/perception/test_lidar_dataset.py`
+- [x] T009 [P] [US1] Unit test for camera dataset schema validation in `tests/perception/test_camera_dataset.py`
+- [x] T010 [US1] Integration test for dataset collection workflow in `tests/perception/test_dataset_collection.py` verifying quota completion
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Enhance LIDAR collection script in `scripts/collect_lidar_data.py` to capture robot pose metadata (x, y, theta) per scan
-- [ ] T012 [P] [US1] Enhance LIDAR collection script in `scripts/collect_lidar_data.py` to tag scenarios (clear, obstacle_front, corridor_left, etc.) per session
-- [ ] T013 [P] [US1] Implement LIDAR sector labeling logic in `scripts/annotate_lidar.py` computing 9-sector occupancy flags from raw ranges
-- [ ] T014 [P] [US1] Enhance camera collection script in `scripts/collect_camera_data.py` to capture robot pose and lighting tags per frame
-- [ ] T015 [P] [US1] Implement camera annotation workflow in `scripts/annotate_camera.py` supporting bounding box + color label per cube with distance estimation
-- [ ] T016 [US1] Create dataset manifest generator in `scripts/generate_dataset_manifest.py` producing JSON manifest with sample IDs, splits, and metadata hashes
-- [ ] T017 [US1] Implement dataset splitter in `scripts/split_dataset.py` assigning train/val/test splits with balanced distribution per sector/color
+- [x] T011 [P] [US1] Enhance LIDAR collection script in `scripts/collect_lidar_data.py` to capture robot pose metadata (x, y, theta) per scan
+- [x] T012 [P] [US1] Enhance LIDAR collection script in `scripts/collect_lidar_data.py` to tag scenarios (clear, obstacle_front, corridor_left, etc.) per session
+- [x] T013 [P] [US1] Implement LIDAR sector labeling logic in `scripts/annotate_lidar.py` computing 9-sector occupancy flags from raw ranges
+- [x] T014 [P] [US1] Enhance camera collection script in `scripts/collect_camera_data.py` to capture robot pose and lighting tags per frame
+- [x] T015 [P] [US1] Implement camera annotation workflow in `scripts/annotate_camera.py` supporting bounding box + color label per cube with distance estimation
+- [x] T016 [US1] Create dataset manifest generator in `scripts/generate_dataset_manifest.py` producing JSON manifest with sample IDs, splits, and metadata hashes
+- [x] T017 [US1] Implement dataset splitter in `scripts/split_dataset.py` assigning train/val/test splits with balanced distribution per sector/color
 - [ ] T018 [US1] Execute LIDAR data collection sessions in Webots producing ≥1,000 validated scans stored in `data/lidar/annotated/`
 - [ ] T019 [US1] Execute camera data collection sessions in Webots producing ≥500 validated frames stored in `data/camera/annotated/`
 - [ ] T020 [US1] Run dataset validation pipeline verifying schema compliance, balance thresholds, and split integrity for both LIDAR and camera datasets

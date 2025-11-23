@@ -7,19 +7,30 @@ Saves scans as .npz files with 667 range values and 9-sector occupancy labels.
 
 Usage:
     From Webots: Run this as a controller
+    CLI: python scripts/collect_lidar_data.py --scenario obstacle_front --sessions 20 --scans-per-session 60
     Target: 1000+ scans with varied obstacle configurations
 
 Data format:
     - ranges: [667] float32 (LIDAR measurements in meters)
     - labels: [9] float32 (binary occupancy per sector: 0=free, 1=occupied)
-    - metadata: dict with timestamp, position, orientation
+    - metadata: dict with timestamp, robot_pose {x, y, theta}, scenario_tag
+
+Scenario Tags (per T012):
+    - clear: No obstacles nearby
+    - obstacle_front: Obstacle ahead
+    - corridor_left: Left wall/corridor
+    - corridor_right: Right wall/corridor
+    - corner: Robot in corner configuration
+    - cluttered: Multiple obstacles
 """
 
 import sys
 import os
 import numpy as np
+import argparse
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 # Add Webots controller path
 sys.path.append(os.path.join(os.environ.get('WEBOTS_HOME', ''), 'lib', 'controller', 'python'))
@@ -34,35 +45,39 @@ class LIDARDataCollector:
     SECTOR_ANGLE = 30.0  # degrees
     OBSTACLE_THRESHOLD = 2.0  # meters - distance to consider obstacle
 
-    def __init__(self, output_dir: str = "data/lidar"):
+    def __init__(self, output_dir: str = "data/lidar", scenario_tag: str = "clear", session_id: str = None):
         self.robot = Robot()
         self.timestep = int(self.robot.getBasicTimeStep())
+
+        # Scenario tag for this collection session (T012)
+        self.scenario_tag = scenario_tag
+        self.session_id = session_id or str(uuid4())[:8]
 
         # Initialize LIDAR
         self.lidar = self.robot.getDevice("lidar")
         self.lidar.enable(self.timestep)
         self.lidar.enablePointCloud()
 
-        # Initialize GPS for ground truth positioning
+        # Initialize GPS for ground truth positioning (T011)
         self.gps = self.robot.getDevice("gps")
         self.gps.enable(self.timestep)
 
-        # Initialize compass for orientation
+        # Initialize compass for orientation (T011)
         self.compass = self.robot.getDevice("compass")
         self.compass.enable(self.timestep)
 
         # Setup output directories
         self.output_dir = Path(output_dir)
-        self.scans_dir = self.output_dir / "scans"
-        self.labels_dir = self.output_dir / "labels"
+        self.scans_dir = self.output_dir / "raw" / f"session_{self.session_id}"
         self.scans_dir.mkdir(parents=True, exist_ok=True)
-        self.labels_dir.mkdir(parents=True, exist_ok=True)
 
         self.scan_count = 0
         self.start_time = datetime.now()
 
         print(f"✓ LIDAR Data Collector initialized")
-        print(f"  Output: {self.output_dir}")
+        print(f"  Session: {self.session_id}")
+        print(f"  Scenario: {self.scenario_tag}")
+        print(f"  Output: {self.scans_dir}")
         print(f"  Sectors: {self.SECTORS}, Threshold: {self.OBSTACLE_THRESHOLD}m")
         print(f"  Target: 1000+ scans\n")
 
@@ -100,18 +115,24 @@ class LIDARDataCollector:
         return labels
 
     def get_metadata(self) -> dict:
-        """Get robot pose metadata from GPS and compass"""
+        """Get robot pose metadata from GPS and compass (T011)"""
         position = self.gps.getValues()
         compass_values = self.compass.getValues()
 
         # Compute orientation from compass
-        orientation = np.arctan2(compass_values[0], compass_values[1])
+        theta = np.arctan2(compass_values[0], compass_values[1])
 
         return {
-            'timestamp': datetime.now().isoformat(),
-            'position': list(position),
-            'orientation': float(orientation),
-            'scan_id': self.scan_count
+            'sample_id': str(uuid4()),  # Unique ID per scan
+            'timestamp': datetime.now().isoformat() + "Z",
+            'robot_pose': {  # T011: x, y, theta structure
+                'x': float(position[0]),
+                'y': float(position[1]),
+                'theta': float(theta)
+            },
+            'scenario_tag': self.scenario_tag,  # T012: scenario tagging
+            'session_id': self.session_id,
+            'scan_index': self.scan_count
         }
 
     def save_scan(self, ranges: np.ndarray, labels: np.ndarray, metadata: dict):
@@ -188,8 +209,24 @@ class LIDARDataCollector:
 
 def main():
     """Main entry point for Webots controller"""
-    collector = LIDARDataCollector()
-    collector.run_collection(num_scans=1000, move_robot=False)
+    parser = argparse.ArgumentParser(description="Collect LIDAR scans with scenario tags")
+    parser.add_argument("--output", default="data/lidar", help="Output directory")
+    parser.add_argument("--scenario", default="clear",
+                        choices=["clear", "obstacle_front", "corridor_left", "corridor_right", "corner", "cluttered"],
+                        help="Scenario tag for this session (T012)")
+    parser.add_argument("--scans-per-session", type=int, default=60, help="Number of scans per session")
+    parser.add_argument("--session-id", default=None, help="Session ID (auto-generated if not provided)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+
+    args = parser.parse_args()
+    np.random.seed(args.seed)
+
+    collector = LIDARDataCollector(
+        output_dir=args.output,
+        scenario_tag=args.scenario,
+        session_id=args.session_id
+    )
+    collector.run_collection(num_scans=args.scans_per_session, move_robot=False)
 
 
 if __name__ == "__main__":
