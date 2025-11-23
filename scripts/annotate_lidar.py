@@ -6,7 +6,7 @@ Interactive tool to review and correct 9-sector occupancy labels for LIDAR scans
 Displays polar plot of LIDAR scan with sector boundaries and current labels.
 
 Usage:
-    python scripts/annotate_lidar.py [--data-dir data/lidar]
+    python scripts/annotate_lidar.py [--data-dir data/lidar] [--auto]
 
 Controls:
     - Left/Right arrow: Navigate scans
@@ -29,10 +29,12 @@ class LIDARAnnotator:
     SECTORS = 9
     SECTOR_ANGLE = 30.0  # degrees
     FOV = 270.0  # LIDAR field of view
+    OBSTACLE_THRESHOLD = 2.0  # meters
 
-    def __init__(self, data_dir: str = "data/lidar"):
+    def __init__(self, data_dir: str = "data/lidar", auto_mode: bool = False):
         self.data_dir = Path(data_dir)
         self.scans_dir = self.data_dir / "scans"
+        self.auto_mode = auto_mode
 
         # Load all scan files
         self.scan_files = sorted(list(self.scans_dir.glob("*.npz")))
@@ -43,17 +45,64 @@ class LIDARAnnotator:
         self.current_scan = None
         self.modified = False
 
-        # Setup plot
-        self.fig, self.ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+        if not self.auto_mode:
+            # Setup plot
+            self.fig, self.ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
+            self.fig.canvas.mpl_connect('key_press_event', self.on_key)
 
-        print(f"✓ LIDAR Annotator loaded")
-        print(f"  Found {len(self.scan_files)} scans")
-        print(f"\nControls:")
-        print("  ←/→ : Navigate scans")
-        print("  1-9 : Toggle sector label")
-        print("  s   : Save labels")
-        print("  q   : Quit\n")
+            print(f"✓ LIDAR Annotator loaded")
+            print(f"  Found {len(self.scan_files)} scans")
+            print(f"\nControls:")
+            print("  ←/→ : Navigate scans")
+            print("  1-9 : Toggle sector label")
+            print("  s   : Save labels")
+            print("  q   : Quit\n")
+
+    def compute_sector_labels(self, ranges: np.ndarray) -> np.ndarray:
+        """Compute 9-sector occupancy labels from LIDAR ranges"""
+        num_points = len(ranges)
+        points_per_sector = num_points // self.SECTORS
+        labels = np.zeros(self.SECTORS, dtype=np.float32)
+
+        for sector_idx in range(self.SECTORS):
+            start_idx = sector_idx * points_per_sector
+            end_idx = start_idx + points_per_sector
+            sector_ranges = ranges[start_idx:end_idx]
+
+            # Sector is occupied if ANY point is below threshold
+            valid_ranges = sector_ranges[np.isfinite(sector_ranges)]
+            if len(valid_ranges) > 0:
+                min_distance = np.min(valid_ranges)
+                labels[sector_idx] = 1.0 if min_distance < self.OBSTACLE_THRESHOLD else 0.0
+
+        return labels
+
+    def auto_label_all(self):
+        """Automatically label all scans based on thresholds"""
+        print(f"Starting auto-labeling for {len(self.scan_files)} scans...")
+        count = 0
+        
+        for scan_file in self.scan_files:
+            data = np.load(scan_file, allow_pickle=True)
+            ranges = data['ranges']
+            metadata = data['metadata'].item() if 'metadata' in data else {}
+            
+            # Compute new labels
+            new_labels = self.compute_sector_labels(ranges)
+            
+            # Save
+            np.savez_compressed(
+                scan_file,
+                ranges=ranges,
+                labels=new_labels,
+                metadata=metadata
+            )
+            count += 1
+            
+            if count % 50 == 0:
+                print(f"  Processed {count}/{len(self.scan_files)} scans")
+                
+        print(f"✓ Auto-labeling complete! Updated {count} files.")
 
     def load_scan(self, idx: int):
         """Load scan data from file"""
@@ -197,18 +246,23 @@ class LIDARAnnotator:
 
     def run(self):
         """Start annotation interface"""
-        self.load_scan(0)
-        self.plot_scan()
-        plt.show()
+        if self.auto_mode:
+            self.auto_label_all()
+        else:
+            self.load_scan(0)
+            self.plot_scan()
+            plt.show()
 
 
 def main():
     parser = argparse.ArgumentParser(description="LIDAR Data Annotation Tool")
     parser.add_argument('--data-dir', type=str, default='data/lidar',
                        help='Path to LIDAR data directory')
+    parser.add_argument('--auto', action='store_true',
+                       help='Automatically label all scans based on thresholds')
     args = parser.parse_args()
 
-    annotator = LIDARAnnotator(data_dir=args.data_dir)
+    annotator = LIDARAnnotator(data_dir=args.data_dir, auto_mode=args.auto)
     annotator.run()
 
 

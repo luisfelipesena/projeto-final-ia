@@ -1,0 +1,44 @@
+{
+  "dataset_type": "camera",
+  "manifest_path": "data/camera_test/manifest.json",
+  "generated_at": "2025-11-23T16:20:48",
+  "ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "random_seed": 42,
+  "counts": {
+    "train": 14,
+    "val": 3,
+    "test": 3
+  },
+  "splits": {
+    "train": [
+      "img_00000",
+      "img_00001",
+      "img_00002",
+      "img_00003",
+      "img_00005",
+      "img_00008",
+      "img_00009",
+      "img_00011",
+      "img_00013",
+      "img_00015",
+      "img_00016",
+      "img_00017",
+      "img_00018",
+      "img_00019"
+    ],
+    "val": [
+      "img_00004",
+      "img_00007",
+      "img_00012"
+    ],
+    "test": [
+      "img_00006",
+      "img_00010",
+      "img_00014"
+    ]
+  }
+}

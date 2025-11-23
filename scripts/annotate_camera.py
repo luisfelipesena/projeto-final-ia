@@ -6,7 +6,7 @@ Interactive tool to review and correct color labels and bounding boxes for cube 
 Displays image with overlaid bboxes and allows manual correction.
 
 Usage:
-    python scripts/annotate_camera.py [--data-dir data/camera]
+    python scripts/annotate_camera.py [--data-dir data/camera] [--auto]
 
 Controls:
     - Left/Right arrow: Navigate images
@@ -26,6 +26,7 @@ import json
 from PIL import Image
 from matplotlib.patches import Rectangle
 from matplotlib.widgets import Button
+import cv2
 
 
 class CameraAnnotator:
@@ -37,11 +38,19 @@ class CameraAnnotator:
         'blue': (0, 0, 1),
         'red': (1, 0, 0)
     }
+    
+    # HSV ranges for cube colors (approximate, to be tuned)
+    HSV_RANGES = {
+        'green': ((40, 50, 50), (80, 255, 255)),
+        'blue': ((100, 50, 50), (140, 255, 255)),
+        'red': [((0, 50, 50), (10, 255, 255)), ((170, 50, 50), (180, 255, 255))]
+    }
 
-    def __init__(self, data_dir: str = "data/camera"):
+    def __init__(self, data_dir: str = "data/camera", auto_mode: bool = False):
         self.data_dir = Path(data_dir)
         self.images_dir = self.data_dir / "images"
         self.labels_dir = self.data_dir / "labels"
+        self.auto_mode = auto_mode
 
         # Load all image files
         self.image_files = sorted(list(self.images_dir.glob("*.png")))
@@ -55,22 +64,93 @@ class CameraAnnotator:
         self.drawing_bbox = False
         self.bbox_start = None
 
-        # Setup plot
-        self.fig, self.ax = plt.subplots(figsize=(14, 10))
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
-        self.fig.canvas.mpl_connect('button_press_event', self.on_click)
-        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+        if not self.auto_mode:
+            # Setup plot
+            self.fig, self.ax = plt.subplots(figsize=(14, 10))
+            self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+            self.fig.canvas.mpl_connect('button_press_event', self.on_click)
+            self.fig.canvas.mpl_connect('button_release_event', self.on_release)
 
-        print(f"✓ Camera Annotator loaded")
-        print(f"  Found {len(self.image_files)} images")
-        print(f"\nControls:")
-        print("  ←/→     : Navigate images")
-        print("  Click   : Select bbox")
-        print("  g/b/r   : Change color (green/blue/red)")
-        print("  Delete  : Remove selected bbox")
-        print("  n       : Add new bbox mode (click-drag)")
-        print("  s       : Save labels")
-        print("  q       : Quit\n")
+            print(f"✓ Camera Annotator loaded")
+            print(f"  Found {len(self.image_files)} images")
+            print(f"\nControls:")
+            print("  ←/→     : Navigate images")
+            print("  Click   : Select bbox")
+            print("  g/b/r   : Change color (green/blue/red)")
+            print("  Delete  : Remove selected bbox")
+            print("  n       : Add new bbox mode (click-drag)")
+            print("  s       : Save labels")
+            print("  q       : Quit\n")
+
+    def detect_cubes_hsv(self, image_rgb: np.ndarray) -> list:
+        """Detect cubes using HSV color segmentation"""
+        image_hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        cubes = []
+        
+        for color, ranges in self.HSV_RANGES.items():
+            mask = None
+            if color == 'red':
+                # Red wraps around 0/180
+                mask1 = cv2.inRange(image_hsv, np.array(ranges[0][0]), np.array(ranges[0][1]))
+                mask2 = cv2.inRange(image_hsv, np.array(ranges[1][0]), np.array(ranges[1][1]))
+                mask = cv2.bitwise_or(mask1, mask2)
+            else:
+                mask = cv2.inRange(image_hsv, np.array(ranges[0]), np.array(ranges[1]))
+                
+            # Clean up mask
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            
+            # Find contours
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if area > 100:  # Minimum area filter
+                    x, y, w, h = cv2.boundingRect(cnt)
+                    cubes.append({
+                        'color': color,
+                        'bbox': {
+                            'x': int(x),
+                            'y': int(y),
+                            'width': int(w),
+                            'height': int(h)
+                        },
+                        'position_3d': None
+                    })
+                    
+        return cubes
+
+    def auto_label_all(self):
+        """Automatically label all images using HSV pipeline"""
+        print(f"Starting auto-labeling for {len(self.image_files)} images...")
+        count = 0
+        
+        for img_file in self.image_files:
+            # Load image
+            image = np.array(Image.open(img_file))
+            
+            # Detect cubes
+            cubes = self.detect_cubes_hsv(image)
+            
+            # Prepare label data
+            label_data = {
+                'image_id': img_file.stem,
+                'cubes': cubes,
+                'metadata': {'auto_labeled': True, 'timestamp': str(np.datetime64('now'))}
+            }
+            
+            # Save label
+            label_file = self.labels_dir / f"{img_file.stem}.json"
+            with open(label_file, 'w') as f:
+                json.dump(label_data, f, indent=2)
+                
+            count += 1
+            if count % 20 == 0:
+                print(f"  Processed {count}/{len(self.image_files)} images")
+                
+        print(f"✓ Auto-labeling complete! Updated {count} files.")
 
     def load_image(self, idx: int):
         """Load image and corresponding labels"""
@@ -312,18 +392,23 @@ class CameraAnnotator:
 
     def run(self):
         """Start annotation interface"""
-        self.load_image(0)
-        self.plot_image()
-        plt.show()
+        if self.auto_mode:
+            self.auto_label_all()
+        else:
+            self.load_image(0)
+            self.plot_image()
+            plt.show()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Camera Data Annotation Tool")
     parser.add_argument('--data-dir', type=str, default='data/camera',
                        help='Path to camera data directory')
+    parser.add_argument('--auto', action='store_true',
+                       help='Automatically label all images using HSV pipeline')
     args = parser.parse_args()
 
-    annotator = CameraAnnotator(data_dir=args.data_dir)
+    annotator = CameraAnnotator(data_dir=args.data_dir, auto_mode=args.auto)
     annotator.run()
 
 

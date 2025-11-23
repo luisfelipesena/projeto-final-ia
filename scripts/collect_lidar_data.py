@@ -7,24 +7,29 @@ Saves scans as .npz files with 667 range values and 9-sector occupancy labels.
 
 Usage:
     From Webots: Run this as a controller
+    From Terminal (Mock): python scripts/collect_lidar_data.py --mock --pose-log poses.json
     Target: 1000+ scans with varied obstacle configurations
 
 Data format:
     - ranges: [667] float32 (LIDAR measurements in meters)
     - labels: [9] float32 (binary occupancy per sector: 0=free, 1=occupied)
-    - metadata: dict with timestamp, position, orientation
+    - metadata: dict with timestamp, position, orientation, scenario_tag
 """
 
 import sys
 import os
 import numpy as np
+import argparse
+import json
 from datetime import datetime
 from pathlib import Path
 
-# Add Webots controller path
-sys.path.append(os.path.join(os.environ.get('WEBOTS_HOME', ''), 'lib', 'controller', 'python'))
-
-from controller import Robot
+# Add Webots controller path only if not in mock mode
+if '--mock' not in sys.argv:
+    sys.path.append(os.path.join(os.environ.get('WEBOTS_HOME', ''), 'lib', 'controller', 'python'))
+    from controller import Robot
+else:
+    Robot = None
 
 
 class LIDARDataCollector:
@@ -33,23 +38,36 @@ class LIDARDataCollector:
     SECTORS = 9  # 9 sectors × 30° each = 270° FOV
     SECTOR_ANGLE = 30.0  # degrees
     OBSTACLE_THRESHOLD = 2.0  # meters - distance to consider obstacle
+    LIDAR_POINTS = 667
 
-    def __init__(self, output_dir: str = "data/lidar"):
-        self.robot = Robot()
-        self.timestep = int(self.robot.getBasicTimeStep())
+    def __init__(self, output_dir: str = "data/lidar", mock: bool = False, pose_log: str = None):
+        self.mock = mock
+        self.pose_log_path = pose_log
+        self.pose_data = []
+        self.current_pose_idx = 0
 
-        # Initialize LIDAR
-        self.lidar = self.robot.getDevice("lidar")
-        self.lidar.enable(self.timestep)
-        self.lidar.enablePointCloud()
+        if not self.mock:
+            self.robot = Robot()
+            self.timestep = int(self.robot.getBasicTimeStep())
 
-        # Initialize GPS for ground truth positioning
-        self.gps = self.robot.getDevice("gps")
-        self.gps.enable(self.timestep)
+            # Initialize LIDAR
+            self.lidar = self.robot.getDevice("lidar")
+            self.lidar.enable(self.timestep)
+            self.lidar.enablePointCloud()
 
-        # Initialize compass for orientation
-        self.compass = self.robot.getDevice("compass")
-        self.compass.enable(self.timestep)
+            # Initialize GPS for ground truth positioning
+            self.gps = self.robot.getDevice("gps")
+            self.gps.enable(self.timestep)
+
+            # Initialize compass for orientation
+            self.compass = self.robot.getDevice("compass")
+            self.compass.enable(self.timestep)
+        else:
+            print("⚠ Running in MOCK mode (no Webots connection)")
+            if self.pose_log_path:
+                with open(self.pose_log_path, 'r') as f:
+                    self.pose_data = json.load(f)
+                print(f"  Loaded {len(self.pose_data)} poses from {self.pose_log_path}")
 
         # Setup output directories
         self.output_dir = Path(output_dir)
@@ -68,8 +86,13 @@ class LIDARDataCollector:
 
     def get_lidar_ranges(self) -> np.ndarray:
         """Get LIDAR range measurements"""
-        ranges = self.lidar.getRangeImage()
-        return np.array(ranges, dtype=np.float32)
+        if self.mock:
+            # Generate synthetic LIDAR data
+            # Random ranges between 0 and 5 meters
+            return np.random.uniform(0, 5.0, self.LIDAR_POINTS).astype(np.float32)
+        else:
+            ranges = self.lidar.getRangeImage()
+            return np.array(ranges, dtype=np.float32)
 
     def compute_sector_labels(self, ranges: np.ndarray) -> np.ndarray:
         """
@@ -100,19 +123,38 @@ class LIDARDataCollector:
         return labels
 
     def get_metadata(self) -> dict:
-        """Get robot pose metadata from GPS and compass"""
-        position = self.gps.getValues()
-        compass_values = self.compass.getValues()
+        """Get robot pose metadata from GPS and compass or pose log"""
+        if self.mock:
+            if self.pose_data and self.current_pose_idx < len(self.pose_data):
+                pose = self.pose_data[self.current_pose_idx]
+                self.current_pose_idx = (self.current_pose_idx + 1) % len(self.pose_data)
+                return {
+                    'timestamp': datetime.now().isoformat(),
+                    'position': pose.get('position', [0, 0, 0]),
+                    'orientation': pose.get('orientation', 0.0),
+                    'scan_id': self.scan_count,
+                    'scenario_tag': pose.get('scenario_tag', 'mock_scenario')
+                }
+            else:
+                return {
+                    'timestamp': datetime.now().isoformat(),
+                    'position': [0.0, 0.0, 0.0],
+                    'orientation': 0.0,
+                    'scan_id': self.scan_count,
+                    'scenario_tag': 'mock_random'
+                }
+        else:
+            position = self.gps.getValues()
+            compass_values = self.compass.getValues()
+            orientation = np.arctan2(compass_values[0], compass_values[1])
 
-        # Compute orientation from compass
-        orientation = np.arctan2(compass_values[0], compass_values[1])
-
-        return {
-            'timestamp': datetime.now().isoformat(),
-            'position': list(position),
-            'orientation': float(orientation),
-            'scan_id': self.scan_count
-        }
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'position': list(position),
+                'orientation': float(orientation),
+                'scan_id': self.scan_count,
+                'scenario_tag': 'simulation'
+            }
 
     def save_scan(self, ranges: np.ndarray, labels: np.ndarray, metadata: dict):
         """Save LIDAR scan with labels and metadata"""
@@ -160,22 +202,32 @@ class LIDARDataCollector:
         """
         print(f"Starting collection: {num_scans} scans\n")
 
-        # Wait for sensors to initialize
-        for _ in range(10):
-            self.robot.step(self.timestep)
+        if not self.mock:
+            # Wait for sensors to initialize
+            for _ in range(10):
+                self.robot.step(self.timestep)
 
-        while self.robot.step(self.timestep) != -1 and self.scan_count < num_scans:
+        while self.scan_count < num_scans:
+            if not self.mock:
+                if self.robot.step(self.timestep) == -1:
+                    break
+            
             # Collect scan
             self.collect_static_scan()
 
-            # Optional: Add small delay between scans
-            for _ in range(5):
-                self.robot.step(self.timestep)
+            if not self.mock:
+                # Optional: Add small delay between scans
+                for _ in range(5):
+                    self.robot.step(self.timestep)
 
-            # Optional: Move robot for data diversity (implement if needed)
-            if move_robot:
-                # TODO: Implement random movement strategy
-                pass
+                # Optional: Move robot for data diversity (implement if needed)
+                if move_robot:
+                    # TODO: Implement random movement strategy
+                    pass
+            
+            # In mock mode, just loop fast
+            if self.mock and self.scan_count >= num_scans:
+                break
 
         # Final statistics
         elapsed = (datetime.now() - self.start_time).total_seconds()
@@ -187,9 +239,21 @@ class LIDARDataCollector:
 
 
 def main():
-    """Main entry point for Webots controller"""
-    collector = LIDARDataCollector()
-    collector.run_collection(num_scans=1000, move_robot=False)
+    """Main entry point"""
+    parser = argparse.ArgumentParser(description="LIDAR Data Collection")
+    parser.add_argument('--output-dir', type=str, default='data/lidar', help='Output directory')
+    parser.add_argument('--num-scans', type=int, default=1000, help='Number of scans to collect')
+    parser.add_argument('--mock', action='store_true', help='Run in mock mode (no Webots)')
+    parser.add_argument('--pose-log', type=str, help='Path to JSON file with robot poses (mock mode)')
+    
+    args = parser.parse_args()
+
+    collector = LIDARDataCollector(
+        output_dir=args.output_dir,
+        mock=args.mock,
+        pose_log=args.pose_log
+    )
+    collector.run_collection(num_scans=args.num_scans, move_robot=False)
 
 
 if __name__ == "__main__":
