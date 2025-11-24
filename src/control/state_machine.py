@@ -26,6 +26,7 @@ class RobotState(Enum):
     NAVIGATING_TO_BOX = 4  # Moving toward deposit box with cube
     DEPOSITING = 5         # Executing deposit sequence
     AVOIDING = 6           # Override state for collision risk
+    RECOVERY = 7           # NEW: Handle failures (failed grasp, lost cube)
 
 
 @dataclass
@@ -272,11 +273,3 @@ class StateMachine:
         self.tracked_cube_id = cube_id
         self.tracked_cube_color = cube_color
         self.logger.info(f"Tracking cube {cube_id} (color: {cube_color})")
-
-        # Call registered callbacks
-        for callback in self._callbacks.get(new_state, []):
-            try:
-                callback(old_state, new_state)
-            except Exception as e:
-                self.logger.error(f"Callback error for {new_state}: {e}")
-
