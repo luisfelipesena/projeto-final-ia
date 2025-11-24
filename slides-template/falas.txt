@@ -1,158 +1,287 @@
-ROTEIRO DE APRESENTAÇÃO - DESINFORMAÇÃO NO MEIO DE SEGURANÇA (30 minutos)
-ABORDAGEM TÉCNICA E CONCEITUAL
+================================================================================
+FALAS PARA APRESENTAÇÃO - YouBot Autônomo
+MATA64 - Inteligência Artificial | UFBA
+Tempo Total: ~15 minutos
+================================================================================
 
-========================================
-PARTE 1 - LUIS (Slides 1-4)
-========================================
+================================================================================
+SLIDE 1: TÍTULO (30 segundos)
+================================================================================
 
-[Slide 1 - Agenda] (1 min)
-- "Bom dia. Hoje apresentaremos uma análise técnica sobre desinformação sob a perspectiva da Ciência da Computação, focando em fundamentos técnicos aplicados e um estudo de caso baseado no paper de Benevenuto & Melo publicado na Communications of the ACM em 2024."
-- "Na primeira parte, abordaremos ecossistema de ameaças, arquitetura de disseminação, modelos de ameaça e tecnologias de detecção. Na segunda parte, analisaremos em detalhes a metodologia e resultados do estudo sobre campanhas de desinformação via WhatsApp e Telegram nas eleições brasileiras."
+"Boa tarde a todos. Meu nome é Luis Felipe e vou apresentar meu projeto final
+de Inteligência Artificial: um sistema autônomo para o robô YouBot realizar
+coleta e organização de cubos coloridos."
 
-[Slide 2 - Ecossistema & Vetores de Desinformação] (2 min)
-- "Iniciamos mapeando o ecossistema de desinformação como uma rede interconectada de atores, plataformas e tecnologias. Os vetores primários incluem redes sociais, aplicativos de mensagem e sites de notícias falsas."
-- "Vetores secundários abrangem influenciadores pagos, bots automatizados e redes de amplificação coordenada."
-- "A superfície de ataque é ampla devido às múltiplas plataformas com diferentes modelos de moderação, criando oportunidades de evasão."
-- "A cadeia de suprimentos segue o fluxo: Criação → Amplificação → Disseminação → Persistência."
+================================================================================
+SLIDE 2: AGENDA (30 segundos)
+================================================================================
 
-[Slide 3 - Impactos na Segurança Cibernética] (2.5 min)
-- "A desinformação impacta diretamente a segurança cibernética através de múltiplos vetores. Serve como base para ataques de engenharia social, facilitando phishing e distribuição de malware."
-- "Pode comprometer infraestrutura crítica através da manipulação da opinião pública sobre sistemas essenciais, criando instabilidade operacional."
-- "Operações de HUMINT e SIGINT são comprometidas quando narrativas falsas contaminam fontes de inteligência."
-- "Ataques à cadeia de suprimentos se manifestam através de desinformação sobre fornecedores e parceiros de confiança."
-- "O impacto mais crítico é a degradação da confiança em sistemas de segurança, afetando toda a postura defensiva."
+"Dividi a apresentação em cinco partes: primeiro vou explicar o objetivo e os
+desafios do projeto, depois a arquitetura geral do sistema, em seguida as
+redes neurais que desenvolvi, o controlador fuzzy, e por fim uma demonstração
+do robô funcionando na simulação."
 
-[Slide 4 - Arquitetura de Disseminação] (2.5 min)
-- "Identificamos cinco padrões arquiteturais principais para disseminação. O modelo Hub-and-Spoke utiliza contas centrais que distribuem conteúdo para múltiplas contas periféricas."
-- "Redes em Cascata propagam informação através de múltiplos níveis hierárquicos, ampliando o alcance exponencialmente."
-- "Cross-Platform Seeding sincroniza campanhas entre diferentes plataformas para maximizar penetração."
-- "Amplificação Artificial usa bots e sockpuppets para simular engajamento orgânico e influenciar algoritmos."
-- "O Timing Coordenado sincroniza publicações para maximizar impacto algorítmico durante períodos de alta atividade."
+================================================================================
+SLIDE 3: O PROBLEMA (1 minuto)
+================================================================================
 
-========================================
-PARTE 2 - JOÃO (Slides 5-9)
-========================================
+"O desafio é fazer o robô coletar 15 cubos coloridos - verdes, azuis e
+vermelhos - e depositar cada um na caixa da cor correspondente. O robô precisa
+navegar por uma arena com obstáculos fixos, que são caixotes de madeira.
 
-[Slide 5 - Modelo de Ameaça: MDM Kill Chain] (2.5 min)
-- "Aplicamos o conceito de Kill Chain ao domínio de desinformação. A fase de Reconnaissance identifica alvos, temas sensíveis e vulnerabilidades narrativas específicas."
-- "Weaponization envolve criação de conteúdo falso, deepfakes e narrativas cuidadosamente manipuladas para maximizar credibilidade."
-- "Delivery utiliza bots, influenciadores pagos e redes coordenadas para distribuição eficiente."
-- "Exploitation aproveita vieses cognitivos humanos e câmaras de eco para amplificar efeitos."
-- "Installation estabelece narrativas persistentes no discurso público, criando novas 'verdades'."
-- "Command & Control coordena campanhas via canais privados como Telegram e Discord."
-- "Actions on Objectives culmina em manipulação de comportamento, eleições ou políticas públicas."
+A principal restrição é que NÃO podemos usar GPS na demonstração final. Toda
+a navegação deve ser baseada apenas nos sensores: LIDAR para detectar obstáculos
+e câmera para identificar os cubos e suas cores.
 
-[Slide 6 - Tecnologias de Detecção & Mitigação] (3 min)
-- "As tecnologias de detecção abrangem múltiplas disciplinas. Natural Language Processing utiliza BERT, GPT e modelos transformer para classificação avançada de texto."
-- "Computer Vision detecta deepfakes e manipulação de imagens através de análise de artefatos e inconsistências."
-- "Network Analysis identifica comportamento coordenado inautêntico através de padrões topológicos anômalos."
-- "Temporal Analysis detecta burst patterns e sincronização anômala que indicam coordenação artificial."
-- "Graph Neural Networks analisam propagação e estruturas de rede para identificar campanhas."
-- "Ensemble Methods combinam múltiplas abordagens para robustez contra evasão adversarial."
+Os cubos aparecem em posições aleatórias a cada execução, então o sistema
+precisa ser robusto para encontrá-los em qualquer lugar da arena."
 
-[Slide 7 - Arquitetura de Inteligência de Ameaças] (2.5 min)
-- "A arquitetura de threat intelligence adapta frameworks estabelecidos. O MITRE ATT&CK Framework foi especializado para categorizar táticas de desinformação."
-- "O Diamond Model estrutura análise em Adversário (quem), Infraestrutura (onde), Capacidade (como) e Vítima (contra quem)."
-- "A Cyber Kill Chain mapeia fases sequenciais de ataques informativos."
-- "Threat Intelligence Feeds integram OSINT e IOCs específicos para desinformação."
-- "Attribution Analysis correlaciona TTPs e infraestrutura adversarial para identificação de campanhas."
+================================================================================
+SLIDE 4: SENSORES (1 minuto)
+================================================================================
 
-[Slide 8 - Taxonomia de Táticas e Técnicas Adversariais] (2.5 min)
-- "A taxonomia adversarial organiza técnicas por objetivos táticos. Weaponization inclui fabricação de deepfakes usando GANs, manipulação de contexto temporal e criação de narrativas híbridas."
-- "Delivery emprega spam coordenado, bot farms para amplificação artificial, sockpuppet accounts e astroturfing."
-- "Persistence utiliza cross-platform seeding, criação de echo chambers e filter bubbles para reinforcement."
-- "Command & Control coordena via canais privados, signal boosting e trending manipulation."
-- "Evasion emprega platform hopping, content mutation e semantic obfuscation."
+"O YouBot possui dois sensores principais que utilizei. O LIDAR Hokuyo faz
+uma varredura de 270 graus e retorna 667 pontos de distância, com alcance de
+até 5 metros. Usei ele para detectar obstáculos e criar um mapa local.
 
-[Slide 9 - Técnicas de Detecção Aplicadas] (2.5 min)
-- "As técnicas aplicadas cobrem múltiplas dimensões. Content-Based Detection usa análise semântica, estilometria e fact-checking automatizado."
-- "Network-Based Detection identifica clusters coordenados e padrões de propagação anômalos."
-- "Behavioral Analysis detecta bots através de padrões de atividade temporal não-humanos."
-- "Multimodal Fusion combina texto, imagem e metadados para detecção robusta."
-- "Temporal Correlation analisa sincronização e timing patterns suspeitos."
-- "Cross-Platform Tracking rastreia narrativas entre diferentes plataformas."
+A câmera RGB tem resolução 512 por 512 pixels e um campo de visão de
+aproximadamente 60 graus. Com ela faço a detecção dos cubos e a classificação
+de cores.
 
-========================================
-PARTE 3 - VICTORIA (Slides 10-13)
-========================================
+Essa combinação de sensores permite navegação segura e identificação precisa
+dos alvos sem depender de GPS."
 
-[Slide 10 - Padrões, Regulamentos & Ética] (2.5 min)
-- "O framework regulatório abrange múltiplas dimensões. GDPR e LGPD garantem compliance em coleta e processamento de dados pessoais."
-- "IEEE Standards estabelecem padrões para sistemas de IA éticos e transparentes."
-- "ISO 27001 fornece gestão de segurança da informação para sistemas de detecção."
-- "Princípios éticos fundamentais incluem fairness, accountability, transparency e explicabilidade."
-- "Content Policy das plataformas estabelece diretrizes de moderação."
-- "Academic Ethics exige IRB approval e consentimento informado para pesquisa responsável."
+================================================================================
+SLIDE 5: PIPELINE (1 minuto 30 segundos)
+================================================================================
 
-[Slide 11 - Casos de Uso Globais] (3 min)
-- "Analisamos casos emblemáticos. A Internet Research Agency russa demonstrou interferência sistemática nas eleições americanas 2016/2020, alcançando 126 milhões de usuários no Facebook."
-- "Coordenação multiplataforma envolveu Facebook, Twitter, Instagram e YouTube com investimento de $1.25 milhão mensais."
-- "O caso SolarWinds/Sunburst (APT29) combinou ataques à cadeia de suprimentos com desinformação sobre atribuição, afetando 18.000 organizações."
-- "Campanhas anti-vacina demonstram desinformação em saúde pública, com 12 indivíduos gerando 65% do conteúdo anti-vacina."
-- "A guerra na Ucrânia exemplifica operações de informação em tempo real, incluindo deepfakes de autoridades e narrativas coordenadas."
+"Este diagrama mostra o fluxo completo do sistema. Do lado esquerdo temos os
+sensores alimentando o sistema de percepção. O LIDAR passa por uma CNN de uma
+dimensão que gera um mapa de obstáculos em 9 setores ao redor do robô.
+A imagem da câmera vai para outra CNN que classifica as cores dos cubos detectados.
 
-[Slide 12 - Metodologia Científica do Estudo] (2 min)
-- "Agora analisamos o paper de Benevenuto & Melo na CACM 2024. O dataset compreende 1.2 milhão de mensagens WhatsApp e 3 milhões de tweets coletados entre 2018-2022."
-- "Rotulação foi realizada com fact-checkers certificados Lupa e Aos Fatos."
-- "Metodologia mixed-methods combina análise quantitativa e qualitativa."
-- "Fundamental: IRB approval e protocolos éticos rigorosos para dados sensíveis."
+No centro está o controlador fuzzy, que recebe as informações de percepção e
+gera os comandos de velocidade: linear e angular. Junto com ele temos a máquina
+de estados que coordena as ações do braço e garra.
 
-[Slide 13 - Arquitetura Técnica de Coleta] (2.5 min)
-- "A infraestrutura utilizou Selenium WebDriver com reverse engineering da WhatsApp Web API."
-- "Telegram empregou Official Bot API complementada por scraping de canais públicos."
-- "Twitter utilizou Academic Research API v2 com rate limiting adequado."
-- "Preprocessing incluiu normalização UTF-8, deduplicação via MinHash LSH."
-- "Storage híbrido: MongoDB para dados não-estruturados, PostgreSQL para metadados."
+Do lado direito estão os atuadores: a base móvel omnidirecional e o braço com
+garra para pegar os cubos. Todo esse ciclo executa a mais de 10 hertz, garantindo
+reatividade em tempo real."
 
-========================================
-PARTE 4 - VINICIUS (Slides 14-18)
-========================================
+================================================================================
+SLIDE 6: MÁQUINA DE ESTADOS (1 minuto)
+================================================================================
 
-[Slide 14 - Algoritmos de Detecção Implementados] (2.5 min)
-- "O paper implementou algoritmos estado-da-arte. Fine-tuning do BERTimbau para classificação de português brasileiro."
-- "Network analysis utilizou PageRank modificado para identificação de influenciadores."
-- "Temporal analysis empregou sliding windows com burst detection para campanhas coordenadas."
-- "Bot detection engineered features baseadas em comportamento temporal anômalo."
-- "Ensemble methods combinaram Random Forest e Gradient Boosting com vote weighting."
+"A máquina de estados tem 6 estados principais. O robô começa em BUSCAR,
+explorando a arena. Quando detecta um cubo, transita para APROXIMAR. Ao chegar
+perto o suficiente, vai para PEGAR e executa a sequência de grasp.
 
-[Slide 15 - Resultados Quantitativos] (2 min)
-- "Resultados demonstram performance state-of-the-art. BERTimbau alcançou F1-score 0.92 com desvio ±0.03."
-- "Bot detection atingiu accuracy 0.89 usando Botometer-PT."
-- "Precision@10 de 0.87 para ranking de conteúdo viral falso."
-- "Correlação temporal ρ=0.74 entre eventos políticos e picos de desinformação."
-- "Todos os resultados estatisticamente significantes com p<0.01."
+Com o cubo na garra, passa para NAVEGAR até a caixa da cor correspondente.
+Ao chegar, entra em DEPOSITAR para soltar o cubo. Depois volta para BUSCAR
+e repete até coletar todos os 15 cubos.
 
-[Slide 16 - Resposta Institucional] (2.5 min)
-- "O estudo documenta resposta institucional coordenada. TSE implementou Programa de Enfrentamento à Desinformação."
-- "Fact-checking organizations como Lupa, Aos Fatos e Comprova estabeleceram verificação colaborativa."
-- "Plataformas digitais implementaram políticas de moderação específicas."
-- "Academia desenvolveu pesquisa colaborativa entre universidades."
-- "Sociedade civil através de ONGs monitora mídia sistematicamente."
-- "Legislação através do Marco Civil da Internet regula plataformas."
+O estado DESVIAR é especial - ele tem prioridade máxima e é ativado sempre
+que um obstáculo fica muito próximo, menos de 30 centímetros. Isso garante
+que o robô nunca colida, mesmo durante outras operações."
 
-[Slide 17 - Mapeando Teoria-Prática] (2.5 min)
-- "Identificamos gap significativo entre teoria acadêmica e implementação real. Algoritmos acadêmicos enfrentam desafios de latência, throughput e custo em produção."
-- "Adaptação adversarial evolui continuamente, exigindo sistemas adaptativos."
-- "Validação em produção requer A/B testing e métricas de negócio."
-- "Human-in-the-loop integra moderadores humanos com sistemas automatizados."
-- "Feedback loops permitem melhoria contínua baseada em dados de produção."
+================================================================================
+SLIDE 7: RNA LIDAR (1 minuto 30 segundos)
+================================================================================
 
-[Slide 18 - Lições Aprendidas & Futuro] (2 min)
-- "Lições aprendidas incluem necessidade de abordagem multidisciplinar integrando CS, Sociologia e Psicologia."
-- "Importância crítica de datasets eticamente coletados e representativos."
-- "Trade-offs inevitáveis entre precisão, explicabilidade e fairness."
-- "Direções futuras incluem Federated Learning para preservação de privacidade."
-- "Multimodal deepfake detection usando GANs adversariais."
-- "Real-time detection com stream processing usando Kafka e Storm."
-- "Cross-lingual e cross-cultural analysis para aplicação global."
+"Para processar o LIDAR, desenvolvi uma arquitetura híbrida. Um branch de CNN
+unidimensional recebe os 667 pontos normalizados e extrai 64 features através
+de três camadas convolucionais.
 
-[Slide 19 - Perguntas] (0.5 min)
-- "Obrigado pela atenção. Estamos prontos para discussão técnica."
+Em paralelo, calculamos 6 features estatísticas: mínimo, máximo, média, desvio
+padrão, e gradientes. Essas features complementam o que a CNN aprende.
 
-DICAS TÉCNICAS AJUSTADAS:
-- Usar terminologia técnica de segurança cibernética
-- Focar em conceitos aplicados ao invés de fórmulas matemáticas
-- Referenciar o paper Benevenuto & Melo constantemente
-- Demonstrar conhecimento de threat intelligence e arquiteturas de segurança
-- Mostrar familiaridade com tecnologias de detecção práticas
-- Incorporar terminologia sugerida pela Victoria: ecossistema, vetores, arquitetura de disseminação, etc. 
+Na fusão, concatenamos as 70 features e passamos por um MLP classificador
+que gera probabilidades de ocupação para cada um dos 9 setores. Isso permite
+ao controlador saber exatamente de qual direção vem o perigo.
+
+Essa arquitetura foi inspirada no PointNet de Qi e colaboradores, adaptada
+para nosso caso específico com apenas cerca de 50 mil parâmetros."
+
+================================================================================
+SLIDE 8: RNA CÂMERA (1 minuto)
+================================================================================
+
+"Para classificação de cores, usei uma CNN leve com três blocos convolucionais.
+Cada bloco tem convolução, batch normalization, ReLU e max pooling. Depois um
+global average pooling reduz para um vetor de 128 dimensões, que passa por
+duas camadas fully connected até o softmax de 3 classes.
+
+Com cerca de 250 mil parâmetros, conseguimos rodar a mais de 10 FPS mesmo em
+CPU, sem precisar de GPU.
+
+Como fallback robusto, implementei também segmentação HSV tradicional. Isso
+garante funcionamento mesmo se o modelo neural falhar, usando ranges de cores
+calibrados para o ambiente de simulação."
+
+================================================================================
+SLIDE 9: SEGMENTAÇÃO HSV (45 segundos)
+================================================================================
+
+"A segmentação HSV usa faixas de valores calibradas para cada cor. Verde fica
+entre 35 e 85 no canal H, azul entre 100 e 130, e vermelho precisa de duas
+faixas porque ele 'dá a volta' no espectro: 0 a 10 e 160 a 180.
+
+O pipeline converte de RGB para HSV, aplica threshold por cor, faz operações
+morfológicas para limpar ruído, e encontra contornos para gerar bounding boxes.
+
+Essa abordagem é muito robusta às variações de iluminação do simulador."
+
+================================================================================
+SLIDE 10: CONTROLADOR FUZZY (1 minuto 30 segundos)
+================================================================================
+
+"O controlador fuzzy é baseado na teoria de conjuntos fuzzy de Zadeh de 1965
+e no modelo de Mamdani e Assilian de 1975.
+
+Temos 6 variáveis de entrada: distância e ângulo para o obstáculo mais próximo,
+distância e ângulo para o cubo detectado, e dois booleanos indicando se há
+cubo visível e se está segurando um cubo.
+
+As saídas são a velocidade linear, entre -0.3 e +0.3 metros por segundo, a
+velocidade angular, entre -0.5 e +0.5 radianos por segundo, e a ação atual
+do robô.
+
+No total são 25 regras organizadas em três grupos: 15 regras de segurança
+para evitar obstáculos, 5 regras de busca para explorar o ambiente, e 5 regras
+de aproximação para se alinhar com os cubos detectados."
+
+================================================================================
+SLIDE 11: FUNÇÕES DE PERTINÊNCIA (45 segundos)
+================================================================================
+
+"As funções de pertinência são todas triangulares para simplicidade e eficiência.
+Para distância ao obstáculo temos 5 termos: muito perto, perto, médio, longe e
+muito longe. Para ângulos temos 7 termos, de negativo grande até positivo grande.
+
+As saídas de velocidade também usam funções triangulares: parar, devagar, médio
+e rápido para velocidade linear, e girar esquerda, centro e girar direita para
+velocidade angular.
+
+A defuzzificação usa o método do centróide, que é o mais comum e produz saídas
+suaves."
+
+================================================================================
+SLIDE 12: EXEMPLOS DE REGRAS (1 minuto)
+================================================================================
+
+"Vou mostrar algumas regras exemplo. A R001 é a regra de parada de emergência:
+SE a distância ao obstáculo É muito perto E o ângulo É zero, ou seja, bem
+na frente, ENTÃO a velocidade linear É parar E a velocidade angular É girar
+para direita.
+
+A R002 trata de obstáculo perto mas num ângulo positivo, à direita: nesse caso
+desaceleramos e giramos para a esquerda para desviar.
+
+Já as regras de aproximação funcionam diferente. A R016 diz: SE tem cubo
+detectado E a distância É longe E o ângulo É zero, ENTÃO vai rápido em
+linha reta. A R017 ajusta se o cubo está um pouco para o lado."
+
+================================================================================
+SLIDE 13: INFERÊNCIA (45 segundos)
+================================================================================
+
+"O processo de inferência segue o fluxo padrão: as entradas crisp são
+fuzzificadas, passam pelas 25 regras do tipo Mamdani, e a saída fuzzy é
+defuzzificada pelo centróide para gerar os comandos crisp de velocidade.
+
+Usei a biblioteca scikit-fuzzy do Python, que é bem otimizada. Conseguimos
+performance de aproximadamente 30 milissegundos por inferência, o que permite
+rodar a mais de 30 hertz - bem acima da meta de 10 hertz."
+
+================================================================================
+SLIDE 14: MÉTRICAS (45 segundos)
+================================================================================
+
+"Esta tabela resume as métricas de performance do sistema. A meta era coletar
+todos os 15 cubos, com precisão de cor acima de 95%, zero colisões, tempo
+total menor que 5 minutos, e frequência de controle acima de 10 hertz.
+
+O sistema roda no Webots R2023b com Python 3.11, PyTorch e scikit-fuzzy.
+Testamos em CPU Intel i7 sem usar GPU."
+
+[Nota: preencher os valores obtidos na demonstração]
+
+================================================================================
+SLIDE 15: DEMONSTRAÇÃO (2-3 minutos)
+================================================================================
+
+"Agora vou mostrar o robô funcionando. Vocês podem observar como ele:
+- Explora a arena procurando cubos
+- Detecta um cubo e se aproxima
+- Identifica a cor corretamente
+- Pega com a garra
+- Navega até a caixa certa
+- Deposita e volta a buscar
+
+Prestem atenção também no desvio de obstáculos - o robô nunca colide mesmo
+passando perto dos caixotes."
+
+[Rodar demonstração ou vídeo]
+
+================================================================================
+SLIDE 16: LIÇÕES APRENDIDAS (45 segundos)
+================================================================================
+
+"Os principais desafios foram: primeiro, navegar sem GPS usando apenas odometria
+e mapa local, que acumula erro com o tempo. Segundo, integrar as redes neurais
+com o controlador fuzzy em tempo real, respeitando o limite de 100ms por ciclo.
+Terceiro, calibrar os parâmetros fuzzy para ter comportamento suave mas reativo.
+
+Para trabalhos futuros, podemos implementar SLAM para mapeamento global mais
+preciso, planejamento de trajetória com A* para otimizar rotas, e até
+treinamento end-to-end com aprendizado por reforço."
+
+================================================================================
+SLIDE 17: REFERÊNCIAS (30 segundos)
+================================================================================
+
+"As principais referências foram o livro Deep Learning de Goodfellow para as
+redes neurais, os papers originais de Zadeh e Mamdani para lógica fuzzy,
+PointNet de Qi para processamento de nuvens de pontos, e Probabilistic Robotics
+de Thrun para navegação robótica."
+
+================================================================================
+SLIDE 18: ENCERRAMENTO (30 segundos)
+================================================================================
+
+"Com isso concluo a apresentação. Agradeço a atenção e estou à disposição
+para perguntas. Obrigado!"
+
+================================================================================
+NOTAS IMPORTANTES
+================================================================================
+
+1. NÃO MOSTRAR CÓDIGO-FONTE (desconto de 3-10 pontos)
+2. Usar figuras, gráficos e vídeos - pouco texto
+3. Citar as referências verbalmente quando relevante
+4. Demonstração deve mostrar TODO o ciclo de coleta
+5. Confirmar que GPS está desabilitado antes de gravar
+6. Tempo máximo: 15 minutos
+
+================================================================================
+PERGUNTAS ESPERADAS E RESPOSTAS
+================================================================================
+
+P: Por que não usou SLAM?
+R: SLAM seria mais preciso mas mais complexo. Para esta arena limitada,
+   odometria com mapa local foi suficiente e mais simples de implementar.
+
+P: Como garantiu que não há colisões?
+R: O estado DESVIAR tem prioridade máxima e é ativado automaticamente quando
+   um obstáculo fica a menos de 30cm. As regras fuzzy também começam a
+   desacelerar e girar bem antes desse limite.
+
+P: Por que 25 regras fuzzy?
+R: Seguimos o requisito mínimo de 20 regras do projeto. As 5 extras
+   melhoraram o comportamento em situações de borda.
+
+P: O sistema funciona em hardware real?
+R: O código foi desenvolvido para simulação mas a arquitetura é portável.
+   Precisaria apenas ajustar calibração de sensores e velocidades.
+
+================================================================================

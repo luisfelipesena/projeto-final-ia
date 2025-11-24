@@ -1,14 +1,14 @@
 \documentclass[aspectratio=169,xcolor=table]{beamer}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{lipsum, lmodern}
-\usepackage{csquotes}
-\usepackage{xcolor}
+\usepackage{lmodern}
 \usepackage[portuguese]{babel}
 \usepackage{hyperref}
 \usepackage{tabularx}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,fit}
 
 % ------------------------------------------------
 % Tema e Configurações do Beamer
@@ -23,13 +23,13 @@
 
 \graphicspath{{imgs/}{./imgs/}}
 
-\author[Luis, João, Victoria, Vinicius]{%
-  \textbf{Luis} \and \textbf{João} \and \textbf{Victoria} \and \textbf{Vinicius}
+\author[Luis Felipe]{%
+  \textbf{Luis Felipe Cordeiro Sena}
 }
-\title{Desinformação no Meio de Segurança}
-\subtitle{Uma Perspectiva da Ciência da Computação}
+\title{YouBot Autônomo: Coleta e Organização de Cubos}
+\subtitle{MATA64 - Inteligência Artificial | Projeto Final}
 \institute{Universidade Federal da Bahia \\ Instituto de Computação}
-\date{\today}
+\date{Janeiro 2026}
 
 \begin{document}
 
@@ -49,273 +49,481 @@
             \hline
             \textbf{Tempo} & \textbf{Conteúdo} \\
             \hline
-            0–15 min  & \textbf{Fundamentos técnicos} (ecossistema, arquitetura de disseminação, modelos de ameaça, tecnologias de detecção) \\
+            0–3 min  & \textbf{Objetivo e Desafio:} Coleta autônoma de 15 cubos coloridos \\
             \hline
-            15–30 min & \textbf{Estudo de caso:} Análise de Benevenuto \& Melo (CACM 2024) sobre campanhas de desinformação via WhatsApp/Telegram \\
+            3–6 min & \textbf{Arquitetura do Sistema:} Pipeline percepção-decisão-ação \\
             \hline
-        \end{tabularx}
-    \end{table}
-\end{frame}
-
-\setlength{\parskip}{1em}
-
-%=================================================
-\section{Fundamentos Técnicos}
-%=================================================
-\begin{frame}{Ecossistema \& Vetores de Desinformação}
-    \begin{itemize}
-        \item \textbf{Ecossistema de Desinformação:} Rede interconectada de atores, plataformas e tecnologias
-        \item \textbf{Vetores Primários:} Redes sociais, aplicativos de mensagem, sites de notícias falsas
-        \item \textbf{Vetores Secundários:} Influenciadores, bots automatizados, redes de amplificação
-        \item \textbf{Superfície de Ataque:} Múltiplas plataformas com diferentes modelos de moderação
-        \item \textbf{Cadeia de Suprimentos:} Criação → Amplificação → Disseminação → Persistência
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Impactos na Segurança Cibernética}
-    \begin{itemize}
-        \item \textbf{Ataques de Engenharia Social:} Desinformação como vetor para phishing e malware
-        \item \textbf{Comprometimento de Infraestrutura Crítica:} Manipulação de opinião pública sobre sistemas essenciais
-        \item \textbf{Operações de Inteligência:} HUMINT e SIGINT comprometidas por narrativas falsas
-        \item \textbf{Ataques à Cadeia de Suprimentos:} Desinformação sobre fornecedores e parceiros
-        \item \textbf{Degradação da Confiança:} Erosão da credibilidade em sistemas de segurança
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Arquitetura de Disseminação}
-    \begin{itemize}
-        \item \textbf{Modelo Hub-and-Spoke:} Contas centrais distribuem para múltiplas contas periféricas
-        \item \textbf{Redes em Cascata:} Propagação através de múltiplos níveis hierárquicos
-        \item \textbf{Cross-Platform Seeding:} Sincronização coordenada entre diferentes plataformas
-        \item \textbf{Amplificação Artificial:} Uso de bots e sockpuppets para simular engajamento orgânico
-        \item \textbf{Timing Coordenado:} Sincronização temporal para maximizar impacto algorítmico
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Modelo de Ameaça: MDM Kill Chain}
-    \begin{itemize}
-        \item \textbf{Reconnaissance:} Identificação de alvos, temas sensíveis e vulnerabilidades narrativas
-        \item \textbf{Weaponization:} Criação de conteúdo falso, deepfakes e narrativas manipuladas
-        \item \textbf{Delivery:} Distribuição via bots, influenciadores pagos e redes coordenadas
-        \item \textbf{Exploitation:} Aproveitamento de vieses cognitivos e câmaras de eco
-        \item \textbf{Installation:} Estabelecimento de narrativas persistentes no discurso público
-        \item \textbf{Command \& Control:} Coordenação de campanhas via canais privados
-        \item \textbf{Actions on Objectives:} Manipulação de comportamento, eleições ou políticas públicas
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Tecnologias de Detecção \& Mitigação}
-    \begin{itemize}
-        \item \textbf{Natural Language Processing:} BERT, GPT e modelos transformer para classificação de texto
-        \item \textbf{Computer Vision:} Detecção de deepfakes e manipulação de imagens
-        \item \textbf{Network Analysis:} Identificação de comportamento coordenado inautêntico
-        \item \textbf{Temporal Analysis:} Detecção de padrões de burst e sincronização anômala
-        \item \textbf{Graph Neural Networks:} Análise de propagação e estruturas de rede
-        \item \textbf{Ensemble Methods:} Combinação de múltiplas abordagens para robustez
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Arquitetura de Inteligência de Ameaças}
-    \begin{itemize}
-        \item \textbf{Framework MITRE ATT\&CK} adaptado para desinformação
-        \item \textbf{Modelo Diamante:} Adversário - Infraestrutura - Capacidade - Vítima
-        \item \textbf{Cadeia Cibernética de Ataque:} Reconhecimento → Armamento → Entrega → Exploração → Instalação → C2 → Ações
-        \item \textbf{Threat Intelligence Feeds:} Integração com OSINT e IOCs específicos
-        \item \textbf{Attribution Analysis:} Correlação de TTPs e infraestrutura adversarial
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Taxonomia de Táticas e Técnicas Adversariais}
-    \begin{table}
-        \begin{tabularx}{\textwidth}{|l|X|}
+            6–9 min & \textbf{Redes Neurais:} LIDAR CNN + Classificador de Cores \\
             \hline
-            \textbf{Tática} & \textbf{Técnicas Específicas} \\
+            9–12 min & \textbf{Lógica Fuzzy:} Controlador com 25 regras \\
             \hline
-            \textbf{Armamento} & Fabricação de deepfakes, manipulação de contexto, criação de narrativas falsas \\
-            \hline
-            \textbf{Entrega} & Spam coordenado, fazendas de bots, contas falsas, astroturfing \\
-            \hline
-            \textbf{Persistência} & Disseminação multiplataforma, câmaras de eco, bolhas de filtro \\
-            \hline
-            \textbf{Comando e Controle} & Coordenação via canais privados, amplificação de sinais, manipulação de tendências \\
-            \hline
-            \textbf{Evasão} & Migração entre plataformas, mutação de conteúdo, ofuscação semântica \\
+            12–15 min & \textbf{Demonstração:} Robô em operação autônoma \\
             \hline
         \end{tabularx}
     \end{table}
 \end{frame}
 
-\begin{frame}{Técnicas de Detecção Aplicadas}
-    \begin{itemize}
-        \item \textbf{Content-Based Detection:} Análise semântica, estilometria e fact-checking automatizado
-        \item \textbf{Network-Based Detection:} Identificação de clusters coordenados e padrões de propagação
-        \item \textbf{Behavioral Analysis:} Detecção de bots através de padrões de atividade anômalos
-        \item \textbf{Multimodal Fusion:} Combinação de texto, imagem e metadados para detecção robusta
-        \item \textbf{Temporal Correlation:} Análise de sincronização e timing patterns suspeitos
-        \item \textbf{Cross-Platform Tracking:} Rastreamento de narrativas entre diferentes plataformas
-    \end{itemize}
+%=================================================
+\section{Objetivo e Desafio}
+%=================================================
+\begin{frame}{O Problema}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Tarefa:}
+            \begin{itemize}
+                \item Coletar \textbf{15 cubos coloridos}
+                \item Cores: verde, azul, vermelho
+                \item Depositar na caixa correspondente
+                \item Evitar obstáculos (caixotes de madeira)
+            \end{itemize}
+
+            \vspace{1em}
+            \textbf{Restrições:}
+            \begin{itemize}
+                \item \textbf{SEM GPS} na demonstração final
+                \item Spawn aleatório dos cubos
+                \item Arena com obstáculos fixos
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            % TODO: Inserir screenshot da arena
+            \begin{center}
+                \textit{[Figura: Arena de simulação]}
+
+                \vspace{1em}
+                YouBot com LIDAR + Câmera RGB
+            \end{center}
+        \end{column}
+    \end{columns}
 \end{frame}
 
-\begin{frame}{Padrões, Regulamentos \& Ética}
-    \begin{itemize}
-        \item \textbf{GDPR e LGPD:} Compliance em coleta e processamento de dados pessoais
-        \item \textbf{IEEE Standards:} Padrões para sistemas de IA éticos e transparentes
-        \item \textbf{ISO 27001:} Gestão de segurança da informação em sistemas de detecção
-        \item \textbf{Princípios Éticos:} Fairness, accountability, transparency, explicabilidade
-        \item \textbf{Content Policy:} Diretrizes de plataformas e moderação de conteúdo
-        \item \textbf{Academic Ethics:} IRB approval e consentimento informado para pesquisa
-    \end{itemize}
-\end{frame}
+\begin{frame}{Sensores Disponíveis}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{LIDAR (Hokuyo)}
+            \begin{itemize}
+                \item 667 pontos por varredura
+                \item FOV: 270°
+                \item Range: 0.1m - 5.0m
+                \item Função: Detecção de obstáculos
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Câmera RGB}
+            \begin{itemize}
+                \item Resolução: 512×512 pixels
+                \item FOV: ~60°
+                \item Função: Identificação de cubos e cores
+            \end{itemize}
+        \end{column}
+    \end{columns}
 
-\begin{frame}{Casos de Uso Globais em Desinformação}
-    \begin{itemize}
-        \item \textbf{Agência de Pesquisa da Internet (IRA) - Rússia:} Interferência nas eleições americanas 2016/2020
-        \begin{itemize}
-            \item 126 milhões de usuários alcançados no Facebook, 20 milhões no Instagram
-            \item Coordenação multiplataforma (Facebook, Twitter, Instagram, YouTube)
-            \item Investimento de \$1.25 milhão/mês, 3.393 anúncios pagos
-            \item Técnicas: personas falsas, eventos organizados, amplificação artificial
-        \end{itemize}
-        \item \textbf{SolarWinds/Sunburst (APT29):} Ataques à cadeia de suprimentos + desinformação
-        \begin{itemize}
-            \item 18.000 organizações comprometidas globalmente (Microsoft, FireEye, Cisco)
-            \item Desinformação sobre atribuição, minimização do impacto real
-            \item Operação orquestrada por 18 meses sem detecção
-        \end{itemize}
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Casos de Uso Globais em Desinformação (cont.)}
-    \begin{itemize}
-        \item \textbf{Campanhas Anti-Vacina e COVID-19:} Desinformação em saúde pública
-        \begin{itemize}
-            \item "Dozen Disinformers": 12 indivíduos geraram 65\% da desinformação anti-vacina
-            \item Movimento coordenado internacional com receita estimada em \$36 milhões
-            \item Técnicas: cherry-picking de estudos, apelos emocionais, teorias conspiratórias
-        \end{itemize}
-        \item \textbf{Guerra na Ucrânia (2022-presente):} Operações de informação em tempo real
-        \begin{itemize}
-            \item Vídeos falsificados profundos de autoridades ucranianas (Zelensky)
-            \item Narrativas falsas: "laboratórios biológicos", "nazistas", "genocídio"
-            \item Coordenação RT, Sputnik: 7 milhões de interações/dia pré-guerra
-            \item Técnicas: bots multiplataforma, influenciadores pagos, deepfakes
-        \end{itemize}
-    \end{itemize}
+    \vspace{1em}
+    \begin{center}
+        % TODO: Inserir diagrama de sensores
+        \textit{[Figura: Diagrama de posicionamento dos sensores no YouBot]}
+    \end{center}
 \end{frame}
 
 %=================================================
-\section{Estudo de Caso: Benevenuto \& Melo (CACM 2024)}
+\section{Arquitetura do Sistema}
 %=================================================
-\begin{frame}{Metodologia Científica do Estudo}
-    \textbf{Artigo:} "Misinformation Campaigns Through WhatsApp and Telegram in Presidential Elections in Brazil" (CACM 2024)
+\begin{frame}{Pipeline Percepção-Decisão-Ação}
+    \begin{center}
+    \begin{tikzpicture}[
+        node distance=1.5cm,
+        block/.style={rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=1cm},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        % Sensores
+        \node[block, fill=green!20] (lidar) {LIDAR\\667 pontos};
+        \node[block, fill=green!20, below=0.5cm of lidar] (camera) {Câmera RGB\\512×512};
+
+        % Percepção
+        \node[block, fill=yellow!20, right=1cm of lidar] (lidar_nn) {CNN 1D\\Obstáculos};
+        \node[block, fill=yellow!20, right=1cm of camera] (camera_nn) {CNN\\Cores};
+
+        % Decisão
+        \node[block, fill=orange!20, right=1cm of lidar_nn, yshift=-0.75cm] (fuzzy) {Controlador\\Fuzzy};
+        \node[block, fill=orange!20, below=0.5cm of fuzzy] (state) {Máquina de\\Estados};
+
+        % Ação
+        \node[block, fill=red!20, right=1cm of fuzzy] (base) {Base Móvel\\vx, vy, ω};
+        \node[block, fill=red!20, below=0.5cm of base] (arm) {Braço +\\Garra};
+
+        % Setas
+        \draw[arrow] (lidar) -- (lidar_nn);
+        \draw[arrow] (camera) -- (camera_nn);
+        \draw[arrow] (lidar_nn) -- (fuzzy);
+        \draw[arrow] (camera_nn) -- (fuzzy);
+        \draw[arrow] (fuzzy) -- (base);
+        \draw[arrow] (state) -- (arm);
+        \draw[arrow] (fuzzy) -- (state);
+    \end{tikzpicture}
+    \end{center}
+
+    \vspace{0.5em}
+    \textbf{Frequência:} >10 Hz (ciclo completo em <100ms)
+\end{frame}
+
+\begin{frame}{Máquina de Estados}
+    \begin{center}
+    \begin{tikzpicture}[
+        node distance=2cm,
+        state/.style={circle, draw, fill=blue!20, minimum size=1.5cm, font=\small},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        \node[state] (search) {BUSCAR};
+        \node[state, right=of search] (approach) {APROXIMAR};
+        \node[state, right=of approach] (grasp) {PEGAR};
+        \node[state, below=of grasp] (navigate) {NAVEGAR};
+        \node[state, left=of navigate] (deposit) {DEPOSITAR};
+        \node[state, fill=red!20, below=of search] (avoid) {DESVIAR};
+
+        \draw[arrow] (search) -- node[above] {cubo} (approach);
+        \draw[arrow] (approach) -- node[above] {perto} (grasp);
+        \draw[arrow] (grasp) -- node[right] {ok} (navigate);
+        \draw[arrow] (navigate) -- node[below] {caixa} (deposit);
+        \draw[arrow] (deposit) -- node[left] {ok} (search);
+
+        \draw[arrow, dashed, red] (search) -- node[left] {obstáculo} (avoid);
+        \draw[arrow, dashed, red] (approach) -- (avoid);
+        \draw[arrow, dashed, red] (avoid) -- node[below left] {livre} (search);
+    \end{tikzpicture}
+    \end{center}
+
+    \textbf{DESVIAR:} Estado prioritário ativado por obstáculo <0.3m
+\end{frame}
+
+%=================================================
+\section{Redes Neurais Artificiais}
+%=================================================
+\begin{frame}{RNA para LIDAR: Detecção de Obstáculos}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Arquitetura Híbrida:}
+            \begin{itemize}
+                \item \textbf{Branch CNN 1D:}
+                    \begin{itemize}
+                        \item Input: 667 pontos normalizados
+                        \item 3 camadas Conv1D + MaxPool
+                        \item Output: 64 features
+                    \end{itemize}
+                \item \textbf{Branch Estatístico:}
+                    \begin{itemize}
+                        \item 6 features hand-crafted
+                        \item min, max, mean, std, gradient
+                    \end{itemize}
+                \item \textbf{Fusão:} MLP (70→128→64→9)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Output: Mapa de 9 Setores}
+            % TODO: Inserir diagrama de setores
+            \begin{center}
+                \textit{[Figura: 9 setores ao redor do robô]}
+
+                \vspace{0.5em}
+                Probabilidade de ocupação por setor
+            \end{center}
+
+            \vspace{1em}
+            \textbf{Base Teórica:}
+            \begin{itemize}
+                \item Qi et al. (2017) - PointNet
+                \item ~50K parâmetros
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{RNA para Câmera: Classificação de Cores}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Lightweight CNN:}
+            \begin{itemize}
+                \item Input: 512×512×3 RGB
+                \item 3 blocos Conv2D + BN + ReLU + Pool
+                \item Global Average Pooling
+                \item FC: 128→64→3 (softmax)
+            \end{itemize}
+
+            \vspace{1em}
+            \textbf{Características:}
+            \begin{itemize}
+                \item ~250K parâmetros
+                \item >10 FPS em CPU
+                \item Fallback: Segmentação HSV
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Output: Classificação de Cor}
+            % TODO: Inserir exemplos de detecção
+            \begin{center}
+                \textit{[Figura: Exemplos de detecção verde/azul/vermelho]}
+            \end{center}
+
+            \vspace{1em}
+            \textbf{Base Teórica:}
+            \begin{itemize}
+                \item Goodfellow et al. (2016) - Deep Learning
+                \item Redmon et al. (2016) - YOLO
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Segmentação HSV (Fallback)}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Faixas Calibradas:}
+            \begin{table}
+                \footnotesize
+                \begin{tabular}{|l|c|c|}
+                    \hline
+                    \textbf{Cor} & \textbf{H min-max} & \textbf{S/V min} \\
+                    \hline
+                    Verde & 35-85 & 100 \\
+                    Azul & 100-130 & 100 \\
+                    Vermelho & 0-10, 160-180 & 100 \\
+                    \hline
+                \end{tabular}
+            \end{table}
+
+            \vspace{1em}
+            \textbf{Pipeline:}
+            \begin{enumerate}
+                \item RGB → HSV
+                \item Threshold por cor
+                \item Morfologia (open/close)
+                \item Contornos → BBox
+            \end{enumerate}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            % TODO: Inserir pipeline visual
+            \begin{center}
+                \textit{[Figura: Pipeline de segmentação HSV]}
+
+                \vspace{1em}
+                Robusto a variações de iluminação
+            \end{center}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%=================================================
+\section{Lógica Fuzzy}
+%=================================================
+\begin{frame}{Controlador Fuzzy: Visão Geral}
+    \textbf{Base Teórica:} Zadeh (1965), Mamdani \& Assilian (1975)
+
+    \vspace{1em}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Variáveis de Entrada:}
+            \begin{itemize}
+                \item distance\_to\_obstacle [0, 5]m
+                \item angle\_to\_obstacle [-135, 135]°
+                \item distance\_to\_cube [0, 3]m
+                \item angle\_to\_cube [-135, 135]°
+                \item cube\_detected (bool)
+                \item holding\_cube (bool)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Variáveis de Saída:}
+            \begin{itemize}
+                \item linear\_velocity [-0.3, 0.3] m/s
+                \item angular\_velocity [-0.5, 0.5] rad/s
+                \item action (enum: search/approach/...)
+            \end{itemize}
+
+            \vspace{1em}
+            \textbf{25 Regras} organizadas em:
+            \begin{itemize}
+                \item Segurança (15 regras)
+                \item Busca (5 regras)
+                \item Aproximação (5 regras)
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Funções de Pertinência}
+    % TODO: Inserir gráficos das funções de pertinência
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{distance\_to\_obstacle:}
+            \begin{center}
+                \textit{[Gráfico: MFs triangulares]}
+
+                very\_near | near | medium | far | very\_far
+            \end{center}
+
+            \vspace{1em}
+            \textbf{angle\_to\_obstacle:}
+            \begin{center}
+                \textit{[Gráfico: MFs triangulares]}
+
+                neg\_big | neg\_med | ... | pos\_big
+            \end{center}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{linear\_velocity:}
+            \begin{center}
+                \textit{[Gráfico: MFs de saída]}
+
+                stop | slow | medium | fast
+            \end{center}
+
+            \vspace{1em}
+            \textbf{Defuzzificação:}
+            \begin{itemize}
+                \item Método: Centróide
+                \item Latência: <50ms
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Exemplos de Regras Fuzzy}
+    \textbf{Regras de Segurança (Alta Prioridade):}
     \begin{itemize}
-        \item \textbf{Conjunto de Dados:} 1.2M mensagens WhatsApp + 3M tweets (2018-2022)
-        \item \textbf{Rotulação:} Colaboração com Lupa e Aos Fatos (verificadores certificados)
-        \item \textbf{Metodologia:} Abordagem de métodos mistos combinando análise quantitativa e qualitativa
-        \item \textbf{Aprovação do CEP} e considerações éticas para dados sensíveis
+        \item \textbf{R001:} IF distance\_to\_obstacle IS very\_near AND angle\_to\_obstacle IS zero \\
+              THEN linear\_velocity IS stop AND angular\_velocity IS turn\_right
+        \item \textbf{R002:} IF distance\_to\_obstacle IS near AND angle\_to\_obstacle IS positive \\
+              THEN linear\_velocity IS slow AND angular\_velocity IS turn\_left
+    \end{itemize}
+
+    \vspace{1em}
+    \textbf{Regras de Aproximação:}
+    \begin{itemize}
+        \item \textbf{R016:} IF cube\_detected AND distance\_to\_cube IS far AND angle\_to\_cube IS zero \\
+              THEN linear\_velocity IS fast AND angular\_velocity IS zero
+        \item \textbf{R017:} IF cube\_detected AND distance\_to\_cube IS near AND angle\_to\_cube IS positive \\
+              THEN linear\_velocity IS slow AND angular\_velocity IS turn\_left
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Arquitetura Técnica de Coleta}
-    \begin{itemize}
-        \item \textbf{WhatsApp:} Selenium WebDriver + engenharia reversa da API WhatsApp Web
-        \item \textbf{Telegram:} API Bot Oficial + raspagem de canais públicos
-        \item \textbf{Twitter:} API de Pesquisa Acadêmica v2 com limitação de taxa
-        \item \textbf{Pré-processamento:} Normalização UTF-8, desduplicação via MinHash LSH
-        \item \textbf{Armazenamento:} MongoDB para dados não-estruturados, PostgreSQL para metadados
-    \end{itemize}
+\begin{frame}{Inferência e Defuzzificação}
+    \begin{center}
+    \begin{tikzpicture}[
+        node distance=1.5cm,
+        block/.style={rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=1cm},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        \node[block, fill=green!20] (input) {Entradas\\Crisp};
+        \node[block, fill=yellow!20, right=of input] (fuzz) {Fuzzificação};
+        \node[block, fill=orange!20, right=of fuzz] (rules) {25 Regras\\Mamdani};
+        \node[block, fill=red!20, right=of rules] (defuzz) {Centróide};
+        \node[block, fill=purple!20, right=of defuzz] (output) {Saídas\\Crisp};
+
+        \draw[arrow] (input) -- (fuzz);
+        \draw[arrow] (fuzz) -- (rules);
+        \draw[arrow] (rules) -- (defuzz);
+        \draw[arrow] (defuzz) -- (output);
+    \end{tikzpicture}
+    \end{center}
+
+    \vspace{1em}
+    \textbf{Biblioteca:} scikit-fuzzy (Python)
+
+    \textbf{Performance:} ~30ms por inferência (>30 Hz)
 \end{frame}
 
-\begin{frame}{Algoritmos de Detecção Implementados}
-    \begin{itemize}
-        \item \textbf{Baseado em BERT:} Ajuste fino do BERTimbau para classificação de português
-        \item \textbf{Análise de Redes:} PageRank modificado para detecção de influenciadores
-        \item \textbf{Análise Temporal:} Janela deslizante + detecção de rajadas (burst detection)
-        \item \textbf{Detecção de Bots:} Features engenheiradas baseadas em comportamento temporal
-        \item \textbf{Métodos de Conjunto:} Random Forest + Gradient Boosting com vote weighting
-    \end{itemize}
-\end{frame}
-
-\begin{frame}{Resultados Quantitativos do Artigo}
+%=================================================
+\section{Demonstração}
+%=================================================
+\begin{frame}{Métricas de Performance}
     \begin{table}
-        \begin{tabularx}{\textwidth}{|l|X|}
+        \begin{tabularx}{\textwidth}{|l|X|X|}
             \hline
-            \textbf{Métrica} & \textbf{Resultado} \\
+            \textbf{Métrica} & \textbf{Meta} & \textbf{Resultado} \\
             \hline
-            F1-score (BERTimbau) & 0.92 (±0.03) \\
+            Cubos coletados & 15/15 & \textit{[preencher]} \\
             \hline
-            Acurácia Detecção de Bots & 0.89 usando Botometer-PT \\
+            Precisão de cor & >95\% & \textit{[preencher]} \\
             \hline
-            Precisão@10 (classificação) & 0.87 para conteúdo viral falso \\
+            Colisões & 0 & \textit{[preencher]} \\
             \hline
-            Correlação Temporal & ρ = 0.74 entre eventos políticos e picos de desinformação \\
+            Tempo total & <5 min & \textit{[preencher]} \\
+            \hline
+            FPS controle & >10 Hz & \textit{[preencher]} \\
             \hline
         \end{tabularx}
-    \end{table>
-    \textbf{Significância Estatística:} Todos os resultados com p < 0.01
-\end{frame}
+    \end{table}
 
-\begin{frame}{Resposta Institucional}
+    \vspace{1em}
+    \textbf{Ambiente:}
     \begin{itemize}
-        \item \textbf{Tribunal Superior Eleitoral (TSE):} Programa de Enfrentamento à Desinformação
-        \item \textbf{Fact-Checking Organizations:} Lupa, Aos Fatos, Comprova - verificação colaborativa
-        \item \textbf{Plataformas Digitais:} WhatsApp, Facebook, Twitter - políticas de moderação
-        \item \textbf{Academia:} Pesquisa colaborativa com universidades e institutos
-        \item \textbf{Sociedade Civil:} ONGs e organizações de monitoramento de mídia
-        \item \textbf{Legislação:} Marco Civil da Internet e regulamentação de plataformas
+        \item Webots R2023b
+        \item Python 3.11 + PyTorch + scikit-fuzzy
+        \item CPU Intel i7 (sem GPU)
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Mapeando Teoria-Prática}
+\begin{frame}{Vídeo: Robô em Ação}
+    \begin{center}
+        % TODO: Inserir screenshots ou indicar vídeo
+        \textit{[Demonstração ao vivo ou vídeo incorporado]}
+
+        \vspace{2em}
+        \Huge Demonstração
+
+        \vspace{1em}
+        \normalsize
+        YouBot coletando e organizando cubos coloridos
+    \end{center}
+\end{frame}
+
+%=================================================
+\section{Conclusão}
+%=================================================
+\begin{frame}{Lições Aprendidas}
+    \textbf{Desafios Superados:}
     \begin{itemize}
-        \item \textbf{Gap Teoria-Prática:} Algoritmos acadêmicos vs. implementação em escala real
-        \item \textbf{Desafios de Deploy:} Latência, throughput e custo computacional
-        \item \textbf{Adaptação Adversarial:} Evolução contínua de táticas de evasão
-        \item \textbf{Validação em Produção:} A/B testing e métricas de negócio
-        \item \textbf{Human-in-the-Loop:} Integração de moderadores humanos com sistemas automatizados
-        \item \textbf{Feedback Loops:} Melhoria contínua baseada em dados de produção
+        \item Navegação sem GPS usando odometria + mapa local
+        \item Integração RNA + Fuzzy em tempo real
+        \item Calibração de parâmetros fuzzy para comportamento suave
     \end{itemize}
-\end{frame>
 
-\begin{frame}{Lições Aprendidas \& Futuro}
+    \vspace{1em}
+    \textbf{Trabalhos Futuros:}
     \begin{itemize}
-        \item \textbf{Lições Aprendidas:}
-        \begin{itemize}
-            \item Necessidade de abordagem multidisciplinar (CS + Sociologia + Psicologia)
-            \item Importância de datasets eticamente coletados e representativos
-            \item Trade-offs entre precisão, explicabilidade e fairness
-        \end{itemize}
-        \item \textbf{Direções Futuras:}
-        \begin{itemize}
-            \item Federated Learning para preservação de privacidade
-            \item Multimodal deepfake detection usando GANs adversariais
-            \item Real-time detection com stream processing (Kafka + Storm)
-            \item Cross-lingual e cross-cultural analysis
-        \end{itemize}
-    \end{itemize>
-\end{frame>
+        \item SLAM para mapeamento global
+        \item Planejamento de trajetória com A*
+        \item Treinamento end-to-end com reinforcement learning
+    \end{itemize}
+\end{frame}
 
-%=================================================
-\section{Perguntas e Comentários}
-%=================================================
-\begin{frame}{Perguntas e Comentários}
+\begin{frame}{Referências Principais}
+    \footnotesize
+    \begin{itemize}
+        \item Goodfellow, I. et al. (2016). \textit{Deep Learning}. MIT Press.
+        \item Zadeh, L.A. (1965). Fuzzy Sets. \textit{Information and Control}, 8(3), 338-353.
+        \item Mamdani, E.H. \& Assilian, S. (1975). An experiment in linguistic synthesis with a fuzzy logic controller. \textit{International Journal of Man-Machine Studies}, 7(1), 1-13.
+        \item Qi, C.R. et al. (2017). PointNet: Deep Learning on Point Sets. \textit{CVPR}.
+        \item Thrun, S. et al. (2005). \textit{Probabilistic Robotics}. MIT Press.
+        \item Bischoff, R. et al. (2011). The KUKA-DLR Lightweight Robot Arm. \textit{ICRA}.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
     \begin{center}
         \Huge Obrigado!
-    \end{center>
-\end{frame>
 
-%=================================================
-\section{Referências}
-%=================================================
-\begin{frame}{Referências Principais}
-    \tiny
-    \begin{itemize}
-        \item Benevenuto, F. \& Melo, P. (2024). \textit{Misinformation Campaigns Through WhatsApp and Telegram in Presidential Elections in Brazil}. Communications of the ACM, 67(3), 45-53.
-        \item Kumar, S. et al. (2021). \textit{Detection of COVID-19 Misinformation in Portuguese WhatsApp}. Lecture Notes in Computer Science, 12661, 234-247. Springer.
-        \item DataSenado (2024). \textit{Percepção sobre Fake News e Eleições no Brasil}. Brasília: Senado Federal.
-        \item TSE (2024). \textit{Programa Permanente de Enfrentamento à Desinformação: Relatório Técnico}. Brasília: Tribunal Superior Eleitoral.
-        \item Zhou, X. \& Zafarani, R. (2020). \textit{A Survey of Fake News: Fundamental Theories, Detection Methods, and Opportunities}. ACM Computing Surveys, 53(5), 1-40.
-    \end{itemize>
-\end{frame>
+        \vspace{2em}
+        \normalsize
+        \textbf{Luis Felipe Cordeiro Sena}
+
+        \vspace{1em}
+        MATA64 - Inteligência Artificial
+
+        UFBA - Instituto de Computação
+
+        \vspace{2em}
+        \textit{Dúvidas?}
+    \end{center}
+\end{frame}
 
 \end{document}

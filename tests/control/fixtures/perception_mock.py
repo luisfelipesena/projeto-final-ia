@@ -60,6 +60,20 @@ class ObstacleMap:
     probabilities: np.ndarray  # shape (9,), dtype float32 - confidence [0, 1]
     min_distances: np.ndarray  # shape (9,), dtype float32 - meters [0.1, 5.0]
 
+    @property
+    def min_distance(self) -> float:
+        """Overall minimum distance across all sectors"""
+        return float(np.min(self.min_distances))
+
+    @property
+    def min_angle(self) -> float:
+        """Angle to closest obstacle (degrees)"""
+        min_idx = int(np.argmin(self.min_distances))
+        # Map sector index to angle: each sector is 30° (270° / 9)
+        # Sector 3 is forward (0°), sector 0 is -135°
+        sector_angles = [-135, -90, -45, 0, 45, 90, 135, 180, -180]
+        return float(sector_angles[min_idx]) if min_idx < len(sector_angles) else 0.0
+
 
 @dataclass
 class PerceptionData:
