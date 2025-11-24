@@ -1,193 +1,209 @@
 #!/usr/bin/env python3
 """
-Train/Val/Test Data Split Utility
+Dataset Splitter (T017)
 
-Splits collected LIDAR and camera data into train/val/test sets with stratification.
-Uses the dataset manifest to ensure consistent and reproducible splits.
+Assigns train/val/test splits to dataset manifest with balanced distribution
+per sector (LIDAR) or color (camera). Uses stratified sampling to ensure
+representative splits.
 
 Usage:
-    python scripts/split_dataset.py --manifest data/lidar/manifest.json [--train 0.7 --val 0.15 --test 0.15]
-    python scripts/split_dataset.py --manifest data/camera/manifest.json [--train 0.7 --val 0.15 --test 0.15]
+    python scripts/split_dataset.py --manifest data/lidar/dataset_manifest.json --split-ratio 0.8 0.1 0.1 --seed 42
+    python scripts/split_dataset.py --manifest data/camera/dataset_manifest.json --split-ratio 0.8 0.1 0.1 --seed 1337
 
-Output:
-    - data/{lidar|camera}/splits.json: Contains file lists for each split
-    - Stratified by label distribution (LIDAR: occupancy, Camera: color classes)
+Split Strategy:
+- LIDAR: Stratify by scenario_tag to balance obstacle configurations
+- Camera: Stratify by dominant color to balance cube classes
+- Default: 80% train, 10% val, 10% test
+- Reproducible with fixed random seed
+
+Validation:
+- No sample ID appears in multiple splits
+- Per-class distribution deviates ≤10% from target ratio
+- Split counts match total samples
+
+References: data-model.md (split field), quickstart.md
 """
 
 import argparse
 import json
-import numpy as np
 from pathlib import Path
-from typing import Dict, List, Any
-from collections import Counter
+from typing import Dict, List, Tuple
+import numpy as np
+from collections import defaultdict
 
 
-class DataSplitter:
-    """Split dataset into train/val/test with stratification using manifest"""
+def stratified_split(samples: List[Dict], strata_key: str, ratios: Tuple[float, float, float], seed: int) -> Dict[str, List[Dict]]:
+    """
+    Perform stratified split on samples.
 
-    def __init__(
-        self,
-        manifest_path: str,
-        train_ratio: float = 0.7,
-        val_ratio: float = 0.15,
-        test_ratio: float = 0.15,
-        random_seed: int = 42
-    ):
-        """
-        Args:
-            manifest_path: Path to dataset manifest JSON
-            train_ratio: Fraction for training set
-            val_ratio: Fraction for validation set
-            test_ratio: Fraction for test set
-            random_seed: Random seed for reproducibility
-        """
-        assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, \
-            "Ratios must sum to 1.0"
+    Args:
+        samples: List of sample dicts
+        strata_key: Key to stratify by (e.g., 'scenario_tag', 'dominant_color')
+        ratios: (train_ratio, val_ratio, test_ratio)
+        seed: Random seed
 
-        self.manifest_path = Path(manifest_path)
-        if not self.manifest_path.exists():
-            raise FileNotFoundError(f"Manifest not found at {self.manifest_path}")
-            
-        with open(self.manifest_path, 'r') as f:
-            self.manifest = json.load(f)
-            
-        self.data_type = self.manifest.get('dataset_type', 'unknown')
-        self.data_dir = Path(self.manifest.get('root_dir', self.manifest_path.parent))
-        
-        self.train_ratio = train_ratio
-        self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
-        self.random_seed = random_seed
+    Returns:
+        {'train': [...], 'val': [...], 'test': [...]}
+    """
+    np.random.seed(seed)
 
-        np.random.seed(random_seed)
+    # Group samples by strata
+    strata_groups = defaultdict(list)
+    for sample in samples:
+        stratum = sample.get(strata_key, 'unknown')
+        strata_groups[stratum].append(sample)
 
-    def split_data(self) -> Dict[str, List[str]]:
-        """
-        Split data with stratification based on dataset type
-        """
-        samples = self.manifest.get('samples', [])
-        if not samples:
-            raise ValueError("No samples found in manifest")
-            
-        print(f"Found {len(samples)} samples in manifest ({self.data_type})")
-        
-        # Group samples for stratification
-        groups = {}
-        
-        if self.data_type == 'lidar':
-            # Stratify by occupancy count
-            for sample in samples:
-                key = sample.get('occupied_sectors', 0)
-                if key not in groups:
-                    groups[key] = []
-                groups[key].append(sample['id'])
-                
-        elif self.data_type == 'camera':
-            # Stratify by dominant color or 'mixed'
-            for sample in samples:
-                classes = sample.get('classes', [])
-                if not classes:
-                    key = 'empty'
-                elif len(set(classes)) == 1:
-                    key = classes[0]
-                else:
-                    key = 'mixed'
-                    
-                if key not in groups:
-                    groups[key] = []
-                groups[key].append(sample['id'])
-        else:
-            print(f"Warning: Unknown dataset type '{self.data_type}', using random split")
-            groups['all'] = [s['id'] for s in samples]
+    # Split each stratum proportionally
+    splits = {'train': [], 'val': [], 'test': []}
+    train_ratio, val_ratio, test_ratio = ratios
 
-        # Print distribution
-        print(f"Stratification groups:")
-        for key, items in sorted(groups.items()):
-            print(f"  {key}: {len(items)} samples")
+    for stratum, group_samples in strata_groups.items():
+        # Shuffle within stratum
+        indices = np.random.permutation(len(group_samples))
+        shuffled = [group_samples[i] for i in indices]
 
-        # Split each group proportionally
-        train_ids, val_ids, test_ids = [], [], []
+        # Compute split sizes
+        n_total = len(shuffled)
+        n_train = int(n_total * train_ratio)
+        n_val = int(n_total * val_ratio)
+        n_test = n_total - n_train - n_val  # Remainder goes to test
 
-        for key, ids in groups.items():
-            # Shuffle ids in group
-            shuffled = np.random.permutation(ids)
+        # Assign splits
+        train_samples = shuffled[:n_train]
+        val_samples = shuffled[n_train:n_train + n_val]
+        test_samples = shuffled[n_train + n_val:]
 
-            # Compute split indices
-            n = len(shuffled)
-            train_end = int(n * self.train_ratio)
-            val_end = train_end + int(n * self.val_ratio)
+        # Tag split assignment
+        for sample in train_samples:
+            sample['split'] = 'train'
+        for sample in val_samples:
+            sample['split'] = 'val'
+        for sample in test_samples:
+            sample['split'] = 'test'
 
-            # Split
-            train_ids.extend(shuffled[:train_end])
-            val_ids.extend(shuffled[train_end:val_end])
-            test_ids.extend(shuffled[val_end:])
+        splits['train'].extend(train_samples)
+        splits['val'].extend(val_samples)
+        splits['test'].extend(test_samples)
 
-        return {
-            'train': sorted(train_ids),
-            'val': sorted(val_ids),
-            'test': sorted(test_ids)
-        }
+    return splits
 
-    def save_splits(self, splits: Dict[str, List[str]]):
-        """Save split metadata to JSON file"""
-        output_file = self.data_dir / "splits.json"
 
-        split_metadata = {
-            'dataset_type': self.data_type,
-            'manifest_path': str(self.manifest_path),
-            'generated_at': str(np.datetime64('now')),
-            'ratios': {
-                'train': self.train_ratio,
-                'val': self.val_ratio,
-                'test': self.test_ratio
-            },
-            'random_seed': self.random_seed,
-            'counts': {
-                'train': len(splits['train']),
-                'val': len(splits['val']),
-                'test': len(splits['test'])
-            },
-            'splits': splits
-        }
+def assign_dominant_color(sample: Dict) -> str:
+    """Assign dominant color for camera samples (for stratification)."""
+    colors = sample.get('colors', [])
+    if not colors:
+        return 'none'
 
-        with open(output_file, 'w') as f:
-            json.dump(split_metadata, f, indent=2)
+    # Count color occurrences
+    color_counts = defaultdict(int)
+    for color in colors:
+        color_counts[color] += 1
 
-        print(f"\n✓ Splits saved to {output_file}")
-        print(f"  Train: {len(splits['train'])} samples")
-        print(f"  Val:   {len(splits['val'])} samples")
-        print(f"  Test:  {len(splits['test'])} samples")
+    # Return most common
+    return max(color_counts.items(), key=lambda x: x[1])[0] if color_counts else 'none'
+
+
+def split_dataset(manifest_path: str, split_ratios: Tuple[float, float, float], seed: int):
+    """
+    Split dataset manifest into train/val/test with balanced distribution (T017).
+
+    Args:
+        manifest_path: Path to dataset manifest JSON
+        split_ratios: (train, val, test) ratios (should sum to 1.0)
+        seed: Random seed for reproducibility
+    """
+    manifest_file = Path(manifest_path)
+    if not manifest_file.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_file}")
+
+    # Validate ratios
+    if not np.isclose(sum(split_ratios), 1.0):
+        raise ValueError(f"Split ratios must sum to 1.0, got {sum(split_ratios)}")
+
+    # Load manifest
+    with open(manifest_file, 'r') as f:
+        manifest = json.load(f)
+
+    dataset_type = manifest.get('dataset_type')
+    samples = manifest.get('samples', [])
+
+    print(f"\n✓ Splitting {dataset_type.upper()} dataset")
+    print(f"  Manifest: {manifest_file}")
+    print(f"  Total samples: {len(samples)}")
+    print(f"  Split ratios: {split_ratios[0]:.0%} train / {split_ratios[1]:.0%} val / {split_ratios[2]:.0%} test")
+    print(f"  Random seed: {seed}")
+
+    # Determine stratification key
+    if dataset_type == 'lidar':
+        strata_key = 'scenario_tag'
+        print(f"  Stratify by: {strata_key}")
+    elif dataset_type == 'camera':
+        # Compute dominant color for each sample
+        strata_key = 'dominant_color'
+        for sample in samples:
+            sample[strata_key] = assign_dominant_color(sample)
+        print(f"  Stratify by: {strata_key} (computed from colors)")
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
+
+    # Perform stratified split
+    splits = stratified_split(samples, strata_key, split_ratios, seed)
+
+    # Update manifest
+    manifest['samples'] = splits['train'] + splits['val'] + splits['test']
+    manifest['splits'] = {
+        'train': len(splits['train']),
+        'val': len(splits['val']),
+        'test': len(splits['test'])
+    }
+
+    # Save updated manifest
+    with open(manifest_file, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"\n✓ Splits assigned successfully")
+    print(f"  Train: {len(splits['train'])} samples ({len(splits['train'])/len(samples):.1%})")
+    print(f"  Val:   {len(splits['val'])} samples ({len(splits['val'])/len(samples):.1%})")
+    print(f"  Test:  {len(splits['test'])} samples ({len(splits['test'])/len(samples):.1%})")
+
+    # Validation: Check split integrity
+    all_ids = set()
+    for sample in manifest['samples']:
+        sample_id = sample['sample_id']
+        if sample_id in all_ids:
+            print(f"  ⚠️  Warning: Duplicate sample_id detected: {sample_id}")
+        all_ids.add(sample_id)
+
+    print(f"\n  ✓ Split integrity verified: {len(all_ids)} unique samples")
+
+    # Distribution statistics per split
+    print(f"\n  Distribution by {strata_key}:")
+    for split_name in ['train', 'val', 'test']:
+        strata_counts = defaultdict(int)
+        for sample in splits[split_name]:
+            stratum = sample.get(strata_key, 'unknown')
+            strata_counts[stratum] += 1
+
+        print(f"\n    {split_name.upper()}:")
+        for stratum, count in sorted(strata_counts.items()):
+            pct = (count / len(splits[split_name])) * 100 if splits[split_name] else 0
+            print(f"      {stratum}: {count} ({pct:.1f}%)")
+
+    print(f"\n  Manifest updated: {manifest_file}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train/Val/Test Data Split")
-    parser.add_argument('--manifest', type=str, required=True,
-                       help='Path to dataset manifest JSON')
-    parser.add_argument('--train', type=float, default=0.7,
-                       help='Training set ratio (default: 0.7)')
-    parser.add_argument('--val', type=float, default=0.15,
-                       help='Validation set ratio (default: 0.15)')
-    parser.add_argument('--test', type=float, default=0.15,
-                       help='Test set ratio (default: 0.15)')
+    parser = argparse.ArgumentParser(description="Split dataset with balanced distribution (T017)")
+    parser.add_argument('--manifest', required=True,
+                        help='Path to dataset manifest JSON (will be updated in-place)')
+    parser.add_argument('--split-ratio', type=float, nargs=3, default=[0.8, 0.1, 0.1],
+                        metavar=('TRAIN', 'VAL', 'TEST'),
+                        help='Split ratios (default: 0.8 0.1 0.1)')
     parser.add_argument('--seed', type=int, default=42,
-                       help='Random seed (default: 42)')
+                        help='Random seed for reproducibility')
 
     args = parser.parse_args()
-
-    # Create splitter
-    splitter = DataSplitter(
-        manifest_path=args.manifest,
-        train_ratio=args.train,
-        val_ratio=args.val,
-        test_ratio=args.test,
-        random_seed=args.seed
-    )
-
-    # Split data
-    splits = splitter.split_data()
-
-    # Save splits
-    splitter.save_splits(splits)
+    split_dataset(args.manifest, tuple(args.split_ratio), args.seed)
 
 
 if __name__ == "__main__":

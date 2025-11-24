@@ -50,6 +50,10 @@ checkpoints/
 # Allow model metadata but ignore weights
 !models/*metadata.json
 
+# Environment variables
+.env*
+!.env.example
+
 # Logs
 logs/
 *.log

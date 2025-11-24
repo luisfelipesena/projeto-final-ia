@@ -1,172 +1,197 @@
 #!/usr/bin/env python3
 """
-Generate Dataset Manifest
+Dataset Manifest Generator (T016)
 
-Creates a JSON manifest for the dataset, including file hashes, metadata, and class distribution.
-This ensures dataset integrity and provides a single source of truth for training.
+Generates JSON manifest with sample IDs, splits, and metadata hashes for
+LIDAR and camera datasets. Manifests enable reproducibility and traceability.
 
 Usage:
-    python scripts/generate_dataset_manifest.py --data-dir data/lidar --type lidar --output data/lidar/manifest.json
-    python scripts/generate_dataset_manifest.py --data-dir data/camera --type camera --output data/camera/manifest.json
+    python scripts/generate_dataset_manifest.py --dataset lidar --input data/lidar/annotated --output data/lidar/dataset_manifest.json
+    python scripts/generate_dataset_manifest.py --dataset camera --input data/camera/annotated --output data/camera/dataset_manifest.json
+
+Output Format:
+{
+  "dataset_hash": "sha256_of_manifest",
+  "dataset_type": "lidar" | "camera",
+  "created_at": "ISO8601_timestamp",
+  "total_samples": 1200,
+  "splits": {"train": 960, "val": 120, "test": 120},
+  "samples": [
+    {
+      "sample_id": "uuid",
+      "file_path": "relative/path/to/file",
+      "split": "train",
+      "metadata_hash": "sha256_of_sample"
+    },
+    ...
+  ]
+}
+
+References: data-model.md (TrainingRun.dataset_hash), plan.md
 """
 
 import argparse
 import json
 import hashlib
-import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, List
+import numpy as np
 
 
-def calculate_file_hash(filepath: Path) -> str:
-    """Calculate SHA256 hash of a file"""
-    sha256_hash = hashlib.sha256()
-    with open(filepath, "rb") as f:
-        # Read and update hash string value in blocks of 4K
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
+def compute_file_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of file contents."""
+    sha256 = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()
 
 
-def process_lidar_dataset(data_dir: Path) -> Dict[str, Any]:
-    """Process LIDAR dataset and return manifest data"""
-    scans_dir = data_dir / "scans"
-    scan_files = sorted(list(scans_dir.glob("*.npz")))
-    
+def load_lidar_samples(input_dir: Path) -> List[Dict]:
+    """Load LIDAR samples from annotated directory."""
     samples = []
-    occupancy_counts = {}
-    
-    print(f"Processing {len(scan_files)} LIDAR scans...")
-    
+    scan_files = sorted(list(input_dir.rglob("*.npz")))
+
+    print(f"  Found {len(scan_files)} LIDAR scans")
+
     for scan_file in scan_files:
-        # Load data to get metadata and labels
-        try:
-            data = np.load(scan_file, allow_pickle=True)
-            labels = data['labels']
-            metadata = data['metadata'].item() if 'metadata' in data else {}
-            
-            # Calculate occupancy count
-            occupied_count = int(np.sum(labels))
-            occupancy_counts[occupied_count] = occupancy_counts.get(occupied_count, 0) + 1
-            
-            # Create sample entry
-            sample = {
-                'id': scan_file.stem,
-                'file_path': str(scan_file.relative_to(data_dir)),
-                'hash': calculate_file_hash(scan_file),
-                'labels': labels.tolist(),
-                'occupied_sectors': occupied_count,
-                'metadata': metadata
-            }
-            samples.append(sample)
-            
-        except Exception as e:
-            print(f"Error processing {scan_file}: {e}")
-            
-    return {
-        'type': 'lidar',
-        'count': len(samples),
-        'stats': {
-            'occupancy_distribution': occupancy_counts
-        },
-        'samples': samples
-    }
+        # Load metadata
+        data = np.load(scan_file, allow_pickle=True)
+        metadata = data['metadata'].item() if 'metadata' in data else {}
+
+        sample = {
+            'sample_id': metadata.get('sample_id', scan_file.stem),
+            'file_path': str(scan_file.relative_to(input_dir)),
+            'split': None,  # Assigned by split_dataset.py
+            'metadata_hash': compute_file_hash(scan_file),
+            'scenario_tag': metadata.get('scenario_tag', 'unknown'),
+            'session_id': metadata.get('session_id', 'unknown')
+        }
+        samples.append(sample)
+
+    return samples
 
 
-def process_camera_dataset(data_dir: Path) -> Dict[str, Any]:
-    """Process Camera dataset and return manifest data"""
-    images_dir = data_dir / "images"
-    labels_dir = data_dir / "labels"
-    image_files = sorted(list(images_dir.glob("*.png")))
-    
+def load_camera_samples(input_dir: Path) -> List[Dict]:
+    """Load camera samples from annotated directory."""
     samples = []
-    class_counts = {'green': 0, 'blue': 0, 'red': 0}
-    
-    print(f"Processing {len(image_files)} camera images...")
-    
-    for img_file in image_files:
-        label_file = labels_dir / f"{img_file.stem}.json"
-        
-        if not label_file.exists():
-            print(f"Warning: No label found for {img_file}")
-            continue
-            
-        try:
-            with open(label_file, 'r') as f:
-                label_data = json.load(f)
-            
-            cubes = label_data.get('cubes', [])
-            metadata = label_data.get('metadata', {})
-            
-            # Update stats
-            sample_classes = []
-            for cube in cubes:
-                color = cube['color']
-                class_counts[color] = class_counts.get(color, 0) + 1
-                sample_classes.append(color)
-            
-            # Create sample entry
-            sample = {
-                'id': img_file.stem,
-                'image_path': str(img_file.relative_to(data_dir)),
-                'label_path': str(label_file.relative_to(data_dir)),
-                'image_hash': calculate_file_hash(img_file),
-                'label_hash': calculate_file_hash(label_file),
-                'cubes': cubes,
-                'classes': sample_classes,
-                'metadata': metadata
-            }
-            samples.append(sample)
-            
-        except Exception as e:
-            print(f"Error processing {img_file}: {e}")
-            
-    return {
-        'type': 'camera',
-        'count': len(samples),
-        'stats': {
-            'class_counts': class_counts
+    label_files = sorted(list(input_dir.rglob("*.json")))
+
+    print(f"  Found {len(label_files)} camera frames")
+
+    for label_file in label_files:
+        # Load label data
+        with open(label_file, 'r') as f:
+            data = json.load(f)
+
+        sample = {
+            'sample_id': data.get('sample_id', label_file.stem),
+            'file_path': str(label_file.relative_to(input_dir)),
+            'split': None,  # Assigned by split_dataset.py
+            'metadata_hash': compute_file_hash(label_file),
+            'colors': data.get('colors', []),
+            'lighting_tag': data.get('lighting_tag', 'default'),
+            'session_id': data.get('session_id', 'unknown') if isinstance(data, dict) else 'unknown'
+        }
+        samples.append(sample)
+
+    return samples
+
+
+def generate_manifest(dataset_type: str, input_dir: str, output_path: str):
+    """
+    Generate dataset manifest with sample metadata and hashes (T016).
+
+    Args:
+        dataset_type: 'lidar' or 'camera'
+        input_dir: Directory containing annotated samples
+        output_path: Path to save manifest JSON
+    """
+    input_path = Path(input_dir)
+    output_file = Path(output_path)
+
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input directory not found: {input_path}")
+
+    print(f"\n✓ Generating {dataset_type.upper()} dataset manifest")
+    print(f"  Input: {input_path}")
+
+    # Load samples
+    if dataset_type == 'lidar':
+        samples = load_lidar_samples(input_path)
+    elif dataset_type == 'camera':
+        samples = load_camera_samples(input_path)
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
+
+    # Create manifest
+    manifest = {
+        'dataset_type': dataset_type,
+        'created_at': datetime.utcnow().isoformat() + 'Z',
+        'total_samples': len(samples),
+        'splits': {
+            'train': 0,  # Populated by split_dataset.py
+            'val': 0,
+            'test': 0
         },
         'samples': samples
     }
+
+    # Compute manifest hash (excluding the hash field itself)
+    manifest_str = json.dumps(manifest, sort_keys=True)
+    manifest_hash = hashlib.sha256(manifest_str.encode()).hexdigest()
+    manifest['dataset_hash'] = manifest_hash
+
+    # Save manifest
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"\n✓ Manifest generated successfully")
+    print(f"  Total samples: {len(samples)}")
+    print(f"  Dataset hash: {manifest_hash[:16]}...")
+    print(f"  Saved to: {output_file}")
+
+    # Distribution statistics
+    if dataset_type == 'lidar':
+        scenario_counts = {}
+        for sample in samples:
+            tag = sample.get('scenario_tag', 'unknown')
+            scenario_counts[tag] = scenario_counts.get(tag, 0) + 1
+        print(f"\n  Scenario distribution:")
+        for scenario, count in sorted(scenario_counts.items()):
+            print(f"    {scenario}: {count}")
+
+    elif dataset_type == 'camera':
+        color_counts = {'red': 0, 'green': 0, 'blue': 0}
+        lighting_counts = {}
+        for sample in samples:
+            for color in sample.get('colors', []):
+                if color in color_counts:
+                    color_counts[color] += 1
+            tag = sample.get('lighting_tag', 'default')
+            lighting_counts[tag] = lighting_counts.get(tag, 0) + 1
+
+        print(f"\n  Color distribution:")
+        for color, count in sorted(color_counts.items()):
+            print(f"    {color}: {count}")
+        print(f"\n  Lighting distribution:")
+        for lighting, count in sorted(lighting_counts.items()):
+            print(f"    {lighting}: {count}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate Dataset Manifest")
-    parser.add_argument('--data-dir', type=str, required=True, help='Data directory')
-    parser.add_argument('--type', type=str, required=True, choices=['lidar', 'camera'], help='Dataset type')
-    parser.add_argument('--output', type=str, required=True, help='Output manifest JSON file')
-    
+    parser = argparse.ArgumentParser(description="Generate dataset manifest (T016)")
+    parser.add_argument('--dataset', required=True, choices=['lidar', 'camera'],
+                        help='Dataset type')
+    parser.add_argument('--input', required=True,
+                        help='Input directory with annotated samples')
+    parser.add_argument('--output', required=True,
+                        help='Output manifest file path (JSON)')
+
     args = parser.parse_args()
-    
-    data_dir = Path(args.data_dir)
-    if not data_dir.exists():
-        print(f"Error: Directory {data_dir} not found")
-        return
-        
-    if args.type == 'lidar':
-        manifest_data = process_lidar_dataset(data_dir)
-    else:
-        manifest_data = process_camera_dataset(data_dir)
-        
-    # Add global metadata
-    manifest = {
-        'generated_at': datetime.now().isoformat(),
-        'dataset_type': args.type,
-        'root_dir': str(data_dir.resolve()),
-        **manifest_data
-    }
-    
-    # Save manifest
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_path, 'w') as f:
-        json.dump(manifest, f, indent=2)
-        
-    print(f"✓ Manifest generated at {output_path}")
-    print(f"  Total samples: {manifest['count']}")
+    generate_manifest(args.dataset, args.input, args.output)
 
 
 if __name__ == "__main__":

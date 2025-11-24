@@ -3,17 +3,19 @@
 Camera Data Annotation Tool
 
 Interactive tool to review and correct color labels and bounding boxes for cube images.
-Displays image with overlaid bboxes and allows manual correction.
+Auto-labeling mode (T015) uses HSV color segmentation + distance estimation.
 
 Usage:
-    python scripts/annotate_camera.py [--data-dir data/camera] [--auto]
+    Interactive: python scripts/annotate_camera.py --data-dir data/camera
+    Auto-label:  python scripts/annotate_camera.py --auto-label --input data/camera/raw --output data/camera/annotated
 
-Controls:
+Controls (interactive):
     - Left/Right arrow: Navigate images
     - Click bbox: Select for editing
     - g/b/r: Change selected bbox color to green/blue/red
     - Delete: Remove selected bbox
     - n: Add new bbox (click-drag to draw)
+    - a: Auto-label current image (T015)
     - s: Save current labels
     - q: Quit
 """
@@ -23,10 +25,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import json
+import cv2
 from PIL import Image
 from matplotlib.patches import Rectangle
 from matplotlib.widgets import Button
-import cv2
+from tqdm import tqdm
+from uuid import uuid4
+
+
+# HSV color ranges for cube detection (T015)
+HSV_COLOR_RANGES = {
+    'red': [(0, 100, 100), (10, 255, 255)],    # Lower red hue
+    'red2': [(170, 100, 100), (180, 255, 255)],  # Upper red hue (wrap-around)
+    'green': [(40, 50, 50), (80, 255, 255)],
+    'blue': [(90, 50, 50), (130, 255, 255)]
+}
+
+# Camera calibration (T015 - for distance estimation)
+FOCAL_LENGTH = 462.0  # pixels (estimated from Webots camera FOV)
+CUBE_SIZE = 0.05  # meters (5cm cubes)
 
 
 class CameraAnnotator:
@@ -38,19 +55,11 @@ class CameraAnnotator:
         'blue': (0, 0, 1),
         'red': (1, 0, 0)
     }
-    
-    # HSV ranges for cube colors (approximate, to be tuned)
-    HSV_RANGES = {
-        'green': ((40, 50, 50), (80, 255, 255)),
-        'blue': ((100, 50, 50), (140, 255, 255)),
-        'red': [((0, 50, 50), (10, 255, 255)), ((170, 50, 50), (180, 255, 255))]
-    }
 
-    def __init__(self, data_dir: str = "data/camera", auto_mode: bool = False):
+    def __init__(self, data_dir: str = "data/camera"):
         self.data_dir = Path(data_dir)
         self.images_dir = self.data_dir / "images"
         self.labels_dir = self.data_dir / "labels"
-        self.auto_mode = auto_mode
 
         # Load all image files
         self.image_files = sorted(list(self.images_dir.glob("*.png")))
@@ -64,93 +73,22 @@ class CameraAnnotator:
         self.drawing_bbox = False
         self.bbox_start = None
 
-        if not self.auto_mode:
-            # Setup plot
-            self.fig, self.ax = plt.subplots(figsize=(14, 10))
-            self.fig.canvas.mpl_connect('key_press_event', self.on_key)
-            self.fig.canvas.mpl_connect('button_press_event', self.on_click)
-            self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+        # Setup plot
+        self.fig, self.ax = plt.subplots(figsize=(14, 10))
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+        self.fig.canvas.mpl_connect('button_press_event', self.on_click)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
 
-            print(f"✓ Camera Annotator loaded")
-            print(f"  Found {len(self.image_files)} images")
-            print(f"\nControls:")
-            print("  ←/→     : Navigate images")
-            print("  Click   : Select bbox")
-            print("  g/b/r   : Change color (green/blue/red)")
-            print("  Delete  : Remove selected bbox")
-            print("  n       : Add new bbox mode (click-drag)")
-            print("  s       : Save labels")
-            print("  q       : Quit\n")
-
-    def detect_cubes_hsv(self, image_rgb: np.ndarray) -> list:
-        """Detect cubes using HSV color segmentation"""
-        image_hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-        cubes = []
-        
-        for color, ranges in self.HSV_RANGES.items():
-            mask = None
-            if color == 'red':
-                # Red wraps around 0/180
-                mask1 = cv2.inRange(image_hsv, np.array(ranges[0][0]), np.array(ranges[0][1]))
-                mask2 = cv2.inRange(image_hsv, np.array(ranges[1][0]), np.array(ranges[1][1]))
-                mask = cv2.bitwise_or(mask1, mask2)
-            else:
-                mask = cv2.inRange(image_hsv, np.array(ranges[0]), np.array(ranges[1]))
-                
-            # Clean up mask
-            kernel = np.ones((5, 5), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            
-            # Find contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area > 100:  # Minimum area filter
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    cubes.append({
-                        'color': color,
-                        'bbox': {
-                            'x': int(x),
-                            'y': int(y),
-                            'width': int(w),
-                            'height': int(h)
-                        },
-                        'position_3d': None
-                    })
-                    
-        return cubes
-
-    def auto_label_all(self):
-        """Automatically label all images using HSV pipeline"""
-        print(f"Starting auto-labeling for {len(self.image_files)} images...")
-        count = 0
-        
-        for img_file in self.image_files:
-            # Load image
-            image = np.array(Image.open(img_file))
-            
-            # Detect cubes
-            cubes = self.detect_cubes_hsv(image)
-            
-            # Prepare label data
-            label_data = {
-                'image_id': img_file.stem,
-                'cubes': cubes,
-                'metadata': {'auto_labeled': True, 'timestamp': str(np.datetime64('now'))}
-            }
-            
-            # Save label
-            label_file = self.labels_dir / f"{img_file.stem}.json"
-            with open(label_file, 'w') as f:
-                json.dump(label_data, f, indent=2)
-                
-            count += 1
-            if count % 20 == 0:
-                print(f"  Processed {count}/{len(self.image_files)} images")
-                
-        print(f"✓ Auto-labeling complete! Updated {count} files.")
+        print(f"✓ Camera Annotator loaded")
+        print(f"  Found {len(self.image_files)} images")
+        print(f"\nControls:")
+        print("  ←/→     : Navigate images")
+        print("  Click   : Select bbox")
+        print("  g/b/r   : Change color (green/blue/red)")
+        print("  Delete  : Remove selected bbox")
+        print("  n       : Add new bbox mode (click-drag)")
+        print("  s       : Save labels")
+        print("  q       : Quit\n")
 
     def load_image(self, idx: int):
         """Load image and corresponding labels"""
@@ -392,24 +330,136 @@ class CameraAnnotator:
 
     def run(self):
         """Start annotation interface"""
-        if self.auto_mode:
-            self.auto_label_all()
-        else:
-            self.load_image(0)
-            self.plot_image()
-            plt.show()
+        self.load_image(0)
+        self.plot_image()
+        plt.show()
+
+
+def detect_cubes_hsv(image: np.ndarray) -> list:
+    """
+    Auto-detect cubes using HSV color segmentation (T015).
+
+    Returns list of {color, bbox, distance_estimate}
+    """
+    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    detections = []
+
+    for color_name, (lower, upper) in HSV_COLOR_RANGES.items():
+        if color_name == 'red2':
+            continue  # Handled with main red range
+
+        # Create mask
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+
+        # Handle red wrap-around
+        if color_name == 'red':
+            lower2, upper2 = HSV_COLOR_RANGES['red2']
+            mask2 = cv2.inRange(hsv, np.array(lower2), np.array(upper2))
+            mask = cv2.bitwise_or(mask, mask2)
+
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 100:  # Minimum area threshold
+                continue
+
+            # Get bounding box
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # Estimate distance (T015)
+            # distance = (CUBE_SIZE * FOCAL_LENGTH) / bbox_height_pixels
+            distance = (CUBE_SIZE * FOCAL_LENGTH) / max(w, h) if max(w, h) > 0 else 0.0
+
+            detections.append({
+                'id': str(uuid4())[:8],
+                'color': color_name,
+                'bbox': {'x': int(x), 'y': int(y), 'w': int(w), 'h': int(h)},
+                'distance': float(distance)
+            })
+
+    return detections
+
+
+def auto_label_batch(input_dir: str, output_dir: str):
+    """
+    Batch auto-labeling of camera images using HSV (T015).
+    """
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Find all images
+    image_files = sorted(list(input_path.rglob("*.png")))
+    if len(image_files) == 0:
+        print(f"No images found in {input_path}")
+        return
+
+    print(f"✓ Auto-labeling {len(image_files)} images...")
+    print(f"  Input:  {input_path}")
+    print(f"  Output: {output_path}")
+    print(f"  Method: HSV color segmentation + distance estimation\n")
+
+    for img_file in tqdm(image_files, desc="Auto-labeling"):
+        # Load image
+        image = np.array(Image.open(img_file))
+
+        # Load metadata if exists
+        label_file = img_file.parent.parent / "labels" / f"{img_file.stem}.json"
+        metadata = {}
+        if label_file.exists():
+            with open(label_file, 'r') as f:
+                data = json.load(f)
+                metadata = data.get('metadata', {})
+
+        # Detect cubes (T015)
+        detections = detect_cubes_hsv(image)
+
+        # Prepare annotated data
+        annotated = {
+            'sample_id': metadata.get('sample_id', str(uuid4())),
+            'timestamp': metadata.get('timestamp', ''),
+            'image_path': str(img_file.relative_to(input_path)),
+            'bounding_boxes': [d['bbox'] for d in detections],
+            'colors': [d['color'] for d in detections],
+            'distance_estimates': [d['distance'] for d in detections],
+            'robot_pose': metadata.get('robot_pose', {}),
+            'lighting_tag': metadata.get('lighting_tag', 'default')
+        }
+
+        # Save
+        relative_path = img_file.relative_to(input_path)
+        output_file = output_path / relative_path.with_suffix('.json')
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_file, 'w') as f:
+            json.dump(annotated, f, indent=2)
+
+    print(f"\n✓ Auto-labeling complete: {len(image_files)} images processed")
+    print(f"  Saved to: {output_path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Camera Data Annotation Tool")
+    parser = argparse.ArgumentParser(description="Camera Data Annotation Tool (T015)")
     parser.add_argument('--data-dir', type=str, default='data/camera',
-                       help='Path to camera data directory')
-    parser.add_argument('--auto', action='store_true',
-                       help='Automatically label all images using HSV pipeline')
+                       help='Path to camera data directory (interactive mode)')
+    parser.add_argument('--auto-label', action='store_true',
+                       help='Batch auto-labeling mode (non-interactive)')
+    parser.add_argument('--input', type=str, default='data/camera/raw',
+                       help='Input directory for auto-labeling')
+    parser.add_argument('--output', type=str, default='data/camera/annotated',
+                       help='Output directory for annotated data')
+
     args = parser.parse_args()
 
-    annotator = CameraAnnotator(data_dir=args.data_dir, auto_mode=args.auto)
-    annotator.run()
+    if args.auto_label:
+        # Batch auto-labeling mode (T015)
+        auto_label_batch(args.input, args.output)
+    else:
+        # Interactive annotation mode
+        annotator = CameraAnnotator(data_dir=args.data_dir)
+        annotator.run()
 
 
 if __name__ == "__main__":
