@@ -39,10 +39,10 @@ def create_linguistic_variables() -> Dict[str, LinguisticVariable]:
         name='distance_to_obstacle',
         universe=(0.0, 5.0),
         membership_functions={
-            'very_near': MembershipFunctionParams('very_near', 'trimf', (0.0, 0.3, 0.6)),
-            'near': MembershipFunctionParams('near', 'trimf', (0.4, 0.8, 1.2)),
-            'medium': MembershipFunctionParams('medium', 'trimf', (1.0, 1.8, 2.6)),
-            'far': MembershipFunctionParams('far', 'trimf', (2.2, 3.5, 4.3)),
+            'very_near': MembershipFunctionParams('very_near', 'trimf', (0.0, 0.4, 0.8)),
+            'near': MembershipFunctionParams('near', 'trimf', (0.5, 1.0, 1.5)),
+            'medium': MembershipFunctionParams('medium', 'trimf', (1.2, 2.0, 2.8)),
+            'far': MembershipFunctionParams('far', 'trimf', (2.5, 3.5, 4.5)),
             'very_far': MembershipFunctionParams('very_far', 'trapmf', (4.0, 5.0, 5.0, 5.0)),
         },
         mf_type='triangular'
@@ -518,6 +518,21 @@ def create_rules() -> List[FuzzyRule]:
             FuzzyRuleAssignment('action', 'search')
         ],
         weight=3.0,
+        category='exploration'
+    ))
+
+    # R026: Far obstacle → Fast forward (coverage gap fix)
+    rules.append(FuzzyRule(
+        rule_id='R026_far_obstacle',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_obstacle', 'far')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'fast'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=2.0,
         category='exploration'
     ))
 

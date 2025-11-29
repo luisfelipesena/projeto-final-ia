@@ -128,11 +128,17 @@ class MainController:
         # Logging
         self.log_enabled = log_enabled
         if log_enabled:
+            # Use absolute path relative to project root
+            project_root = Path(__file__).resolve().parent.parent
+            log_dir = project_root / 'logs'
+            log_dir.mkdir(exist_ok=True)
+            log_file = log_dir / 'main_controller.log'
+
             logging.basicConfig(
                 level=logging.INFO,
                 format='[%(asctime)s] %(levelname)s: %(message)s',
                 handlers=[
-                    logging.FileHandler('logs/main_controller.log'),
+                    logging.FileHandler(str(log_file)),
                     logging.StreamHandler()
                 ]
             )
@@ -143,6 +149,19 @@ class MainController:
         # Performance metrics
         self.loop_count = 0
         self.start_time = 0.0
+
+        # Camera warmup (skip first N frames to stabilize)
+        self.warmup_frames = 10
+        self.frame_count = 0
+
+        # GPS for training mode (disable before final demo)
+        # NOTE: GPS device doesn't exist on default YouBot - skip if not found
+        self.gps = robot.getDevice("gps")
+        if self.gps:
+            self.gps.enable(self.time_step)
+            print("[MainController] GPS enabled for training mode")
+        else:
+            print("[MainController] GPS not found - using odometry only")
 
     def initialize(self) -> None:
         """
@@ -323,6 +342,23 @@ class MainController:
             self.base.reset()
             return
 
+        # Handle AVOIDING state with emergency behavior
+        if current_state == RobotState.AVOIDING:
+            # Emergency: stop forward motion, turn away from obstacle
+            obstacle_info = self.perception.get_obstacle_info()
+            angle = obstacle_info.get('angle_to_obstacle', 0.0)
+
+            # Turn away from obstacle direction
+            if angle >= 0:
+                omega = -0.4  # Turn left if obstacle on right
+            else:
+                omega = 0.4   # Turn right if obstacle on left
+
+            self.base.move(vx=0.0, vy=0.0, omega=omega)
+            dt = self.time_step / 1000.0
+            self.odometry.update_from_command(vx=0.0, vy=0.0, omega=omega, dt=dt)
+            return
+
         # Normal movement states
         vx = fuzzy_outputs.linear_velocity
         omega = fuzzy_outputs.angular_velocity
@@ -346,6 +382,8 @@ class MainController:
             cube_info = self.perception.get_cube_info()
             color = cube_info.get('cube_color', 'unknown')
             self.current_cube_color = color
+            # Also set in state machine for navigation tracking
+            self.state_machine.set_cube_tracking(f"cube_{self.cubes_collected}", color)
             self.grasp_controller.start(color)
             self._log(f"Starting grasp for {color} cube")
 
@@ -382,11 +420,23 @@ class MainController:
         Returns:
             True if should continue, False if task complete or error
         """
+        # Camera warmup - skip first N frames to stabilize
+        self.frame_count += 1
+        if self.frame_count <= self.warmup_frames:
+            if self.frame_count == self.warmup_frames:
+                self._log(f"Camera warmup complete ({self.warmup_frames} frames)")
+            return True  # Skip processing during warmup
+
         # Check task completion
         total_deposited = sum(self.cubes_deposited.values())
         if total_deposited >= self.total_cubes:
             self._log(f"TASK COMPLETE! All {self.total_cubes} cubes deposited!")
             return False
+
+        # GPS logging for training mode
+        if self.gps and self.loop_count % 30 == 0:  # Log every 30 iterations (~1s)
+            pos = self.gps.getValues()
+            self._log(f"GPS: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
 
         # Read sensors
         lidar_ranges, camera_image = self.get_sensor_data()

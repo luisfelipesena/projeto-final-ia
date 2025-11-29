@@ -10,6 +10,7 @@ Contract: specs/004-fuzzy-control/contracts/state_machine.py
 from typing import Optional, Dict, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 import time
 import logging
 
@@ -119,6 +120,23 @@ class StateMachine:
         self.grasp_attempts = 0
         self.tracked_cube_id: Optional[str] = None
         self.tracked_cube_color: Optional[str] = None  # 'green' | 'blue' | 'red'
+
+        # Hysteresis for cube detection (avoid flip-flop)
+        self.cube_lost_frames = 0
+        self.CUBE_LOST_THRESHOLD = 5  # Wait 5 frames before declaring cube lost
+
+        # Stability counters for state transitions
+        self.cube_detected_frames = 0
+        self.CUBE_DETECTED_THRESHOLD = 3  # Need 3 consecutive detections
+
+        # Approaching timing
+        self.approaching_start_time = 0.0
+        self.MIN_APPROACHING_TIME = 2.0  # Must spend at least 2s approaching
+
+        # Log spam reduction - only log every N frames
+        self._approach_log_counter = 0
+        self._APPROACH_LOG_INTERVAL = 30  # Log every 30 frames (~1 second)
+
         self.metrics = StateMetrics(
             state=initial_state,
             entry_time=time.time(),
@@ -127,9 +145,12 @@ class StateMachine:
             timeout_triggered=False
         )
 
-        # Setup logging
+        # Setup logging with absolute path
         self.logger = logging.getLogger('state_machine')
-        handler = logging.FileHandler('logs/state_transitions.log')
+        project_root = Path(__file__).resolve().parent.parent.parent
+        log_dir = project_root / 'logs'
+        log_dir.mkdir(exist_ok=True)
+        handler = logging.FileHandler(str(log_dir / 'state_transitions.log'))
         formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
@@ -143,7 +164,10 @@ class StateMachine:
             new_state: Target state
             context: Optional context dict with transition data
         """
-        if new_state == self.current_state:
+        # Always reset timer on timeout transitions (even if same state)
+        is_timeout = context and context.get('reason') == 'timeout'
+
+        if new_state == self.current_state and not is_timeout:
             return  # No transition needed
 
         self.previous_state = self.current_state
@@ -198,18 +222,22 @@ class StateMachine:
         # Update metrics duration
         self.metrics.duration = elapsed
 
-        # Priority 1: AVOIDING override (FR-011)
-        if conditions.obstacle_distance < 0.3:
-            if self.current_state != RobotState.AVOIDING:
-                self.transition_to(RobotState.AVOIDING, {
-                    'obstacle_distance': conditions.obstacle_distance,
-                    'previous_state': self.previous_state
-                })
-            return  # Stay in AVOIDING until obstacle clears
+        # Priority 1: AVOIDING override (FR-011) - BUT NOT during manipulation!
+        # During GRASPING/DEPOSITING, objects ARE expected to be close (the cube/box)
+        # Triggering AVOIDING during these states would interrupt the grasp/deposit sequence
+        manipulation_states = (RobotState.GRASPING, RobotState.DEPOSITING)
+        if self.current_state not in manipulation_states:
+            if conditions.obstacle_distance < 0.4:  # Reduced from 0.6 to avoid over-triggering
+                if self.current_state != RobotState.AVOIDING:
+                    self.transition_to(RobotState.AVOIDING, {
+                        'obstacle_distance': conditions.obstacle_distance,
+                        'previous_state': self.previous_state
+                    })
+                return  # Stay in AVOIDING until obstacle clears
 
         # Priority 2: Exit AVOIDING when safe
         if self.current_state == RobotState.AVOIDING:
-            if conditions.obstacle_distance > 0.5:
+            if conditions.obstacle_distance > 0.6:  # Reduced from 0.8 for faster exit
                 # Return to previous state or SEARCHING
                 target_state = self.previous_state if self.previous_state else RobotState.SEARCHING
                 self.transition_to(target_state, {'reason': 'obstacle_cleared'})
@@ -218,21 +246,46 @@ class StateMachine:
         # Priority 3: State-specific transitions
         if self.current_state == RobotState.SEARCHING:
             if conditions.cube_detected:
-                self.transition_to(RobotState.APPROACHING, {
-                    'cube_distance': conditions.cube_distance,
-                    'cube_angle': conditions.cube_angle
-                })
+                # Require stable detection before transitioning
+                self.cube_detected_frames += 1
+                if self.cube_detected_frames >= self.CUBE_DETECTED_THRESHOLD:
+                    self.transition_to(RobotState.APPROACHING, {
+                        'cube_distance': conditions.cube_distance,
+                        'cube_angle': conditions.cube_angle
+                    })
+                    self.approaching_start_time = time.time()  # Start timer
+                    self.cube_detected_frames = 0
+            else:
+                self.cube_detected_frames = 0  # Reset on lost detection
 
         elif self.current_state == RobotState.APPROACHING:
             if not conditions.cube_detected:
-                # Lost cube detection
-                self.transition_to(RobotState.SEARCHING, {'reason': 'cube_lost'})
-            elif conditions.cube_distance < 0.15 and abs(conditions.cube_angle) < 5.0:
-                # Within grasping range
-                self.transition_to(RobotState.GRASPING, {
-                    'cube_distance': conditions.cube_distance,
-                    'cube_angle': conditions.cube_angle
-                })
+                # Hysteresis: wait N frames before declaring cube lost
+                self.cube_lost_frames += 1
+                if self.cube_lost_frames > self.CUBE_LOST_THRESHOLD:
+                    self.transition_to(RobotState.SEARCHING, {'reason': 'cube_lost'})
+                    self.cube_lost_frames = 0
+            else:
+                self.cube_lost_frames = 0  # Reset counter when cube detected
+                # Check approaching time requirement
+                approaching_duration = time.time() - self.approaching_start_time
+                if conditions.cube_distance < 0.25 and abs(conditions.cube_angle) < 15.0:
+                    # Must spend minimum time approaching to avoid instant transitions
+                    if approaching_duration >= self.MIN_APPROACHING_TIME:
+                        self.transition_to(RobotState.GRASPING, {
+                            'cube_distance': conditions.cube_distance,
+                            'cube_angle': conditions.cube_angle,
+                            'approaching_time': approaching_duration
+                        })
+                        self._approach_log_counter = 0  # Reset counter on transition
+                    else:
+                        # Only log every N frames to reduce spam
+                        self._approach_log_counter += 1
+                        if self._approach_log_counter >= self._APPROACH_LOG_INTERVAL:
+                            self.logger.info(
+                                f"Waiting for min approach time: {approaching_duration:.1f}s < {self.MIN_APPROACHING_TIME}s"
+                            )
+                            self._approach_log_counter = 0
 
         elif self.current_state == RobotState.GRASPING:
             if conditions.grasp_success:

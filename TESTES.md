@@ -1,307 +1,245 @@
-# Guia de Testes no Webots
+# Guia de Testes - YouBot Autônomo
 
-## Pré-requisitos
+## Status Atual
 
-Antes de começar, verifique:
+**GPS:** ⚠️ Dispositivo não existe no YouBot padrão - usando apenas odometria
 
-```bash
-# 1. Dependências Python instaladas
-pip install numpy scipy scikit-fuzzy torch opencv-python
-
-# 2. Testes unitários passando
-python -m pytest tests/ -v
-# Esperado: 16 passed, 31 skipped
-```
+**Fixes aplicados (DECISÃO 022):**
+- Camera warmup (10 frames)
+- Stable detection (3 frames consecutivos)
+- Min approaching time (2s)
+- AVOIDING thresholds ajustados (0.4m/0.6m)
+- Output smoothing (EMA 0.3)
+- Distance estimation calibrada
+- **MAX_CONTOUR_AREA = 15000** - Filtra deposit boxes (objetos grandes)
+- **Grasp timing** - 8.5s total (aumentado para dar tempo ao braço)
+- **Print spam fix** - Logs de grasp só aparecem 1x por estado
+- **AVOIDING excluído durante GRASPING/DEPOSITING** - Cubo próximo não triggera AVOIDING
+- **Log spam reduzido** - "Waiting for min approach time" aparece apenas 1x/segundo
 
 ---
 
-## TESTE 1: Inicialização Básica
+## FASE 1: Teste com GPS (Treinamento)
 
-### Objetivo
-Verificar se o sistema inicializa corretamente no Webots.
+### 1.1 Executar no Webots
 
-### Passos
+```bash
+# Abrir Webots
+open -a Webots
 
-1. **Abrir Webots**
-   ```bash
-   open -a Webots  # macOS
-   ```
+# Ou via linha de comando
+/Applications/Webots.app/Contents/MacOS/webots
+```
 
-2. **Carregar World**
-   - Menu: `File → Open World...`
-   - Navegar: `IA_20252/worlds/IA_20252.wbt`
+**Carregar World:**
+- `File → Open World...`
+- Selecionar: `IA_20252/worlds/IA_20252.wbt`
+- Clicar Play (▶)
 
-3. **Executar**
-   - Clicar Play (▶)
+### 1.2 O que observar no Console
 
-### O que observar no Console
-
-**SUCESSO:**
+**Inicialização esperada (SUCESSO):**
 ```
 [youbot] Starting Autonomous YouBot Controller
 [youbot] MATA64 Final Project - Cube Collection Task
 [youbot] GPS Disabled - Odometry Navigation Only
 
 [youbot] Initializing MainController...
+Device "gps" was not found on robot "youBot"
+[MainController] GPS not found - using odometry only
 Initializing Main Controller...
   Perception system initialized
-  Fuzzy controller initialized (25 rules)
+  Fuzzy controller initialized (26 rules)
   State machine initialized
   Navigation initialized
   Manipulation initialized
 Main Controller ready!
 [youbot] MainController ready - starting autonomous operation
+Spawn complete. The supervisor has spawned 15/15 objects
+[INFO] Camera warmup complete (10 frames)          ← warmup OK
 ```
 
-**FALHA - Erro de Import:**
-```
-[youbot] ERROR: Failed to import MainController: ...
-[youbot] Falling back to basic sensor test mode...
-```
-→ Copiar mensagem de erro completa
+### 1.3 Comportamento esperado APÓS fixes
 
-**FALHA - Outro erro:**
-→ Copiar todo o traceback
+| Antes | Depois |
+|-------|--------|
+| SEARCHING → GRASPING em <1s | Espera 3 detecções + 2s approaching |
+| cube_distance: 0.1 sempre | Distâncias realistas (0.15-3.0m) |
+| Oscilação +15°/-15° | Movimento suave (smoothing) |
+| AVOIDING lock 2min | Exit rápido (0.6m threshold) |
+| Detecta deposit box | Filtra objetos >15000px |
+| Print spam GRASP | 1 print por estado |
+| GRASPING → AVOIDING (cubo = obstáculo) | AVOIDING desativado durante GRASPING/DEPOSITING |
+| Log spam "Waiting..." ~50x/s | 1 log por segundo |
 
-### O que me enviar
-- [ ] Screenshot do console com mensagens de inicialização
-- [ ] Se erro: copiar texto completo do erro
+### 1.4 Observações sobre GPS
+
+**NOTA:** GPS não existe no YouBot padrão do world file.
+O sistema usa apenas **odometria + LIDAR + câmera** (como requerido na demo final).
 
 ---
 
-## TESTE 2: Verificar 15 Cubos
+## FASE 2: Checklist de Validação
 
-### Objetivo
-Confirmar que o Supervisor spawna os 15 cubos corretamente.
+### Teste A: Inicialização (30s)
 
-### Passos
+- [ ] Console mostra "GPS not found - using odometry only"?
+- [ ] "Camera warmup complete (10 frames)"?
+- [ ] 15 cubos visíveis na arena?
+- [ ] Robô começa em SEARCHING (não GRASPING imediato)?
 
-1. Após inicialização, olhar a arena
-2. Contar cubos visíveis (verde + azul + vermelho)
+**Me envie:** Screenshot do console nos primeiros 30s
 
-### O que observar
+### Teste B: Detecção Estável (2min)
 
-**SUCESSO:**
-- 15 cubos espalhados pela arena
-- Cores variadas (não todos da mesma cor)
-- Cubos em posições aleatórias
+Observe transições de estado:
 
-**FALHA:**
-- Menos de 15 cubos
-- Nenhum cubo visível
-- Cubos empilhados/sobrepostos
+- [ ] SEARCHING por alguns segundos antes de APPROACHING?
+- [ ] "Waiting for min approach time" aparece?
+- [ ] Distâncias reportadas são realistas (não 0.1m constante)?
 
-### O que me enviar
-- [ ] Screenshot da arena mostrando cubos
-- [ ] Contagem aproximada por cor: Verde___ Azul___ Vermelho___
+**Me envie:** Console log mostrando transições
+
+### Teste C: Movimento Suave (2min)
+
+- [ ] Robô move sem oscilar +15°/-15°?
+- [ ] Velocidades parecem suaves?
+- [ ] AVOIDING não trava por 2min?
+
+**Me envie:** Descrição do comportamento ou vídeo curto
+
+### Teste D: Ciclo Completo (5min)
+
+Fluxo esperado:
+```
+SEARCHING (alguns segundos)
+    ↓ cube_detected (3 frames estáveis)
+APPROACHING (mín 2s)
+    ↓ distance < 0.25m + 2s elapsed
+GRASPING (sequência de 5s)
+    ↓ grasp_success
+NAVIGATING_TO_BOX
+    ↓ at_target_box
+DEPOSITING
+    ↓ deposit_complete
+SEARCHING (reinicia)
+```
+
+- [ ] Completou ao menos 1 ciclo?
+- [ ] Se parou, em qual estado?
+
+**Me envie:** Logs do ciclo ou estado onde travou
 
 ---
 
-## TESTE 3: Movimento do Robô
+## FASE 3: Desabilitar GPS para Demo Final
 
-### Objetivo
-Verificar se o robô está se movendo na arena.
+### 3.1 Como desabilitar
 
-### Passos
+Editar `src/main_controller.py`:
 
-1. Observar robô por 30 segundos
-2. Verificar se há movimento
+```python
+# Linha ~157-161: COMENTAR estas linhas
+# self.gps = robot.getDevice("gps")
+# if self.gps:
+#     self.gps.enable(self.time_step)
+#     print("[MainController] GPS enabled for training mode")
 
-### O que observar
+# Ou simplesmente:
+self.gps = None  # Desabilita GPS
+```
 
-**SUCESSO:**
-- Robô girando/movendo
-- Console mostra: `State: SEARCHING`
-- Rodas girando
+E comentar o log de GPS no step():
+```python
+# Linha ~432-434: COMENTAR
+# if self.gps and self.loop_count % 30 == 0:
+#     pos = self.gps.getValues()
+#     self._log(f"GPS: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
+```
 
-**FALHA:**
-- Robô parado
-- Nenhuma mensagem de estado
-- Erro no console
+### 3.2 Validação End-to-End sem GPS
 
-### O que me enviar
-- [ ] Robô se move? SIM / NÃO
-- [ ] Console mostra estados? SIM / NÃO
-- [ ] Se parado: copiar últimas mensagens do console
+**Objetivo:** Confirmar que sistema funciona APENAS com odometria + LIDAR + câmera
+
+**Teste crítico:**
+1. Desabilitar GPS (passo 3.1)
+2. Recarregar world no Webots
+3. Observar que NÃO aparece "GPS enabled"
+4. Robô deve completar ciclo usando apenas odometria
+
+**Checklist final:**
+- [ ] Sem "GPS enabled" no console
+- [ ] Robô navega para caixa correta
+- [ ] Deposita cubo na cor certa
+- [ ] Sistema completa ≥1 ciclo
 
 ---
 
-## TESTE 4: Detecção de Cubo
+## O que me enviar após testes
 
-### Objetivo
-Verificar se o sistema detecta cubos via câmera/LIDAR.
+### Obrigatório (Fase 2)
 
-### Passos
-
-1. Esperar robô se aproximar de um cubo
-2. Observar console para mensagens de detecção
-
-### O que observar no Console
-
-**SUCESSO:**
-```
-[INFO] Cube detected: GREEN at 1.5m, 30°
-[INFO] State transition: SEARCHING → APPROACHING
-```
-
-**FALHA:**
-- Robô passa perto de cubo sem detectar
-- Nenhuma mensagem de detecção
-- Cor identificada errada
-
-### O que me enviar
-- [ ] Screenshot do console mostrando detecção
-- [ ] Cores detectadas corretamente? SIM / NÃO / PARCIAL
-- [ ] Se não detecta: distância aproximada do cubo quando passou
-
----
-
-## TESTE 5: Ciclo Completo (Grasping)
-
-### Objetivo
-Verificar ciclo completo: detectar → aproximar → pegar → depositar.
-
-### Passos
-
-1. Esperar robô completar um ciclo
-2. Pode demorar 1-3 minutos
-
-### O que observar
-
-**SUCESSO:**
-```
-[INFO] State: APPROACHING
-[INFO] State: GRASPING
-[INFO] Cube grasped successfully
-[INFO] State: NAVIGATING_TO_BOX
-[INFO] State: DEPOSITING
-[INFO] Cube deposited in GREEN box
-[INFO] State: SEARCHING
-[INFO] Cubes collected: 1/15
-```
-
-**FALHA PARCIAL:**
-- Pega cubo mas não deposita
-- Deposita na caixa errada
-- Fica preso em algum estado
-
-**FALHA TOTAL:**
-- Não consegue pegar cubo
-- Colide com obstáculo
-- Sistema trava
-
-### O que me enviar
-- [ ] Ciclo completo? SIM / PARCIAL / NÃO
-- [ ] Se parcial: em qual estado parou?
-- [ ] Screenshots do console mostrando transições
-- [ ] Cubo depositado na caixa correta? SIM / NÃO
-
----
-
-## TESTE 6: Desvio de Obstáculos
-
-### Objetivo
-Verificar se robô desvia de caixotes de madeira.
-
-### Passos
-
-1. Observar quando robô se aproxima de obstáculo
-2. Verificar se entra em estado AVOIDING
-
-### O que observar
-
-**SUCESSO:**
-```
-[WARNING] Obstacle detected at 0.25m
-[INFO] State: AVOIDING
-[INFO] Turning away from obstacle
-[INFO] State: SEARCHING (clear)
-```
-
-**FALHA:**
-- Robô colide com obstáculo
-- Não entra em AVOIDING
-- Fica preso em loop
-
-### O que me enviar
-- [ ] Desvia de obstáculos? SIM / NÃO
-- [ ] Houve colisão? SIM / NÃO
-- [ ] Screenshot se houver problema
-
----
-
-## TESTE 7: Performance (Tempo)
-
-### Objetivo
-Medir métricas de performance.
-
-### Passos
-
-1. Deixar rodar por 5 minutos
-2. Anotar métricas
-
-### Métricas para coletar
-
-| Métrica | Valor |
-|---------|-------|
-| Tempo decorrido | ___ min |
-| Cubos coletados | ___/15 |
-| Colisões observadas | ___ |
-| Estados travados | SIM/NÃO |
-
-### O que me enviar
-- [ ] Tabela preenchida acima
-- [ ] Screenshot final do console
-- [ ] Se travou: em qual estado e após quanto tempo
-
----
-
-## Resumo do que me enviar
-
-Após os testes, me envie:
-
-### Obrigatório
-1. **Screenshot console inicialização** (Teste 1)
-2. **Screenshot arena com cubos** (Teste 2)
-3. **Robô se move?** SIM/NÃO (Teste 3)
-4. **Detecta cubos?** SIM/NÃO (Teste 4)
-5. **Ciclo completo?** SIM/PARCIAL/NÃO (Teste 5)
+1. **Screenshot console inicialização** - mostrando warmup + GPS
+2. **Logs de transição de estados** - SEARCHING→APPROACHING→etc
+3. **Comportamento:** suave ou ainda oscila?
+4. **Ciclo completo?** SIM/PARCIAL/NÃO + estado onde parou
 
 ### Se houver problemas
-6. **Texto completo de erros/tracebacks**
-7. **Estado onde travou**
-8. **Comportamento inesperado descrito**
 
-### Opcional (para métricas)
-9. **Tabela de performance** (Teste 7)
-10. **Screenshots de detecção/grasping**
+5. **Texto completo de erros/tracebacks**
+6. **Distâncias reportadas** (ainda 0.1m?)
+7. **Tempo em cada estado** antes de transição
+
+### Validação Final (Fase 3)
+
+8. **Confirmação:** sistema funciona SEM GPS?
+9. **Screenshot:** console sem "GPS enabled"
+10. **Ciclo completo sem GPS?** SIM/NÃO
 
 ---
 
-## Troubleshooting Rápido
+## Troubleshooting
 
-### Erro: "No module named 'controller'"
-→ Está rodando fora do Webots. Execute DENTRO do Webots.
+### "GPS: x=nan, y=nan"
+GPS não está habilitado no world file. Verificar se sensor GPS existe no YouBot.
 
-### Erro: "No module named 'skfuzzy'"
-```bash
-pip install scikit-fuzzy
-```
+### Ainda detecta cube_distance: 0.1
+Verificar se `cube_detector.py` foi atualizado (MIN_CONTOUR_AREA = 1500).
 
-### Erro: "No module named 'torch'"
-```bash
-pip install torch
-```
+### Detecta deposit box como cubo
+Verificar se `cube_detector.py` tem MAX_CONTOUR_AREA = 15000 para filtrar objetos grandes.
 
-### Robô não se move
-1. Verificar se simulação está rodando (não pausada)
-2. Verificar se há erros no console
+### Ainda transita SEARCHING→GRASPING instantâneo
+Verificar se `state_machine.py` foi atualizado (CUBE_DETECTED_THRESHOLD = 3).
+
+### Robot não se move
+1. Simulação pausada?
+2. Erros no console?
 3. Recarregar world: `Ctrl+Shift+L`
 
-### Cubos não aparecem
-1. Verificar se Supervisor está habilitado
-2. Recarregar world
+### AVOIDING ainda trava
+Verificar thresholds em `state_machine.py`: entry=0.4m, exit=0.6m
 
-### Performance muito lenta
-1. `View → Rendering` → desativar efeitos
-2. Reduzir qualidade de textura
+### GRASPING → AVOIDING interrompe grasp (CORRIGIDO)
+**Problema anterior:** Durante GRASPING, o cubo (a ~0.13m) era detectado como obstáculo, causando transição para AVOIDING e rotação infinita.
+**Solução:** `state_machine.py` agora exclui GRASPING e DEPOSITING do trigger de AVOIDING.
+
+---
+
+## Métricas de Sucesso
+
+| Métrica | Meta | Status |
+|---------|------|--------|
+| Camera warmup | 10 frames | Implementado |
+| Stable detection | 3 frames | Implementado |
+| Min approach time | 2s | Implementado |
+| AVOIDING exit | <30s | Threshold 0.6m |
+| Output smoothing | EMA 0.3 | Implementado |
+| GPS training mode | Ativo | N/A (GPS não existe) |
+| Deposit box filter | MAX_CONTOUR_AREA | Implementado (15000px) |
+| Grasp timing | 8.5s | Implementado |
+| Print spam fix | 1x/estado | Implementado |
+| AVOIDING excluído manipulação | GRASPING/DEPOSITING | Implementado |
+| Log spam approach | 1x/segundo | Implementado |
+| Ciclo completo | ≥1 | A validar |
+| GPS desabilitado | Demo final | N/A (sempre odometria) |

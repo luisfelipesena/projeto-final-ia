@@ -10,6 +10,7 @@ Contract: specs/004-fuzzy-control/contracts/fuzzy_controller.py
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 import time
 import logging
 import numpy as np
@@ -143,10 +144,18 @@ class FuzzyController:
         self.control_sim: Optional[ctrl.ControlSystemSimulation] = None
         self._initialized = False
 
-        # Setup logging if enabled
+        # Output smoothing (exponential moving average) to reduce oscillation
+        self.prev_linear = 0.0
+        self.prev_angular = 0.0
+        self.smoothing_factor = 0.3  # 0=no smooth, 1=infinite smooth
+
+        # Setup logging if enabled with absolute path
         if self.logging_enabled:
             self.logger = logging.getLogger('fuzzy_controller')
-            handler = logging.FileHandler('logs/fuzzy_decisions.log')
+            project_root = Path(__file__).resolve().parent.parent.parent
+            log_dir = project_root / 'logs'
+            log_dir.mkdir(exist_ok=True)
+            handler = logging.FileHandler(str(log_dir / 'fuzzy_decisions.log'))
             formatter = logging.Formatter('[%(asctime)s] %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
@@ -232,17 +241,36 @@ class FuzzyController:
             if self.logger:
                 self.logger.error(f"Inference failed: {e}")
             return FuzzyOutputs(
-                linear_velocity=0.0,
+                linear_velocity=0.1,
                 angular_velocity=0.0,
                 action='search',
                 confidence=0.0,
                 active_rules=[]
             )
 
-        # Extract outputs
-        linear_vel = float(self.control_sim.output['linear_velocity'])
-        angular_vel = float(self.control_sim.output['angular_velocity'])
-        action_val = float(self.control_sim.output['action'])
+        # Extract outputs with fallback for missing keys
+        try:
+            linear_vel = float(self.control_sim.output['linear_velocity'])
+        except (KeyError, ValueError):
+            linear_vel = 0.1  # Default: slow forward
+
+        try:
+            angular_vel = float(self.control_sim.output['angular_velocity'])
+        except (KeyError, ValueError):
+            angular_vel = 0.0  # Default: straight
+
+        try:
+            action_val = float(self.control_sim.output['action'])
+        except (KeyError, ValueError):
+            action_val = 0.0  # Default: search
+
+        # Apply output smoothing (exponential moving average)
+        linear_vel = (self.smoothing_factor * self.prev_linear +
+                      (1 - self.smoothing_factor) * linear_vel)
+        angular_vel = (self.smoothing_factor * self.prev_angular +
+                       (1 - self.smoothing_factor) * angular_vel)
+        self.prev_linear = linear_vel
+        self.prev_angular = angular_vel
 
         # Map action value to string
         if action_val < 1.0:

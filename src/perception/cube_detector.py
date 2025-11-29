@@ -37,7 +37,7 @@ class CubeDetection:
     @property
     def is_valid(self) -> bool:
         """Check if detection meets minimum confidence threshold"""
-        return self.confidence >= 0.7
+        return self.confidence >= 0.5
 
 
 class ColorSegmenter:
@@ -67,7 +67,8 @@ class ColorSegmenter:
         }
     }
 
-    MIN_CONTOUR_AREA = 500  # pixels
+    MIN_CONTOUR_AREA = 1500  # pixels - increased to filter noise
+    MAX_CONTOUR_AREA = 15000  # pixels - filter out large objects (deposit boxes)
 
     def segment(self, image: np.ndarray) -> List[CubeDetection]:
         """
@@ -107,9 +108,17 @@ class ColorSegmenter:
                 area = cv2.contourArea(contour)
                 if area < self.MIN_CONTOUR_AREA:
                     continue
+                # Filter out large objects (deposit boxes are much bigger than cubes)
+                if area > self.MAX_CONTOUR_AREA:
+                    continue
 
                 # Get bounding box
                 x, y, bw, bh = cv2.boundingRect(contour)
+
+                # Aspect ratio filter - cubes should be roughly square
+                bbox_aspect = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0
+                if bbox_aspect < 0.4:  # Too elongated, not a cube
+                    continue
 
                 # Calculate normalized bbox center
                 cx = (x + bw / 2) / w
@@ -118,22 +127,28 @@ class ColorSegmenter:
                 bbox_h = bh / h
 
                 # Estimate distance based on bbox size (larger = closer)
-                # Empirically calibrated for 0.05m cube at various distances
+                # Calibrated for 5cm cube: at 1m apparent_size ~0.05, at 0.5m ~0.10
                 apparent_size = max(bbox_w, bbox_h)
-                if apparent_size > 0:
-                    distance = 0.05 / (apparent_size * 2.0)  # Rough estimate
-                    distance = np.clip(distance, 0.1, 3.0)
+                CUBE_REAL_SIZE = 0.05  # 5cm cube
+                MIN_APPARENT_SIZE = 0.02  # Minimum valid detection size
+
+                if apparent_size > MIN_APPARENT_SIZE:
+                    # distance = real_size / (apparent_size * tan(FOV/2))
+                    # tan(30°) = 0.577 for 60° horizontal FOV
+                    distance = CUBE_REAL_SIZE / (apparent_size * 0.577)
+                    distance = np.clip(distance, 0.15, 3.0)  # Min 15cm, max 3m
                 else:
-                    distance = 3.0
+                    distance = 3.0  # Far away or noise
 
                 # Calculate angle from center of image
                 # Camera FOV is approximately 60 degrees
                 angle = (cx - 0.5) * 60.0  # degrees from center
 
                 # Confidence based on contour shape (square-ness)
+                # Base confidence 0.6 + up to 0.3 bonus for squareness
                 rect = cv2.minAreaRect(contour)
                 aspect_ratio = min(rect[1]) / max(rect[1]) if max(rect[1]) > 0 else 0
-                confidence = aspect_ratio * 0.9  # Cubes should be ~square
+                confidence = 0.6 + (aspect_ratio * 0.3)  # More stable detection
 
                 detections.append(CubeDetection(
                     color=color_name,

@@ -26,6 +26,7 @@
 | 019 | 7-State Machine | Fase 3 | ✅ |
 | 020 | Mock Perception System | Fase 3 | ✅ |
 | 021 | Controller Integration | Fase 6 | ✅ |
+| 022 | Perception/Control Bug Fixes | Fase 6 | ✅ |
 
 ---
 
@@ -280,6 +281,43 @@
 
 ---
 
+## DECISÃO 022: Perception/Control Bug Fixes
+
+**O que:** Correção de múltiplos bugs críticos identificados durante testes de integração:
+
+1. **Phantom Cube Detection**: MIN_CONTOUR_AREA 500→1500, filtro aspect ratio >0.4
+2. **Camera Warmup**: Skip primeiros 10 frames para estabilização
+3. **Stable Detection**: Requer 3 frames consecutivos antes de APPROACHING
+4. **Minimum Approach Time**: 2s mínimo em APPROACHING antes de GRASPING
+5. **AVOIDING Sensitivity**: Thresholds 0.6→0.4 (entry) e 0.8→0.6 (exit)
+6. **Output Smoothing**: EMA com fator 0.3 para suavizar velocidades
+7. **Distance Estimation**: Fórmula calibrada para cubo 5cm com FOV 60°
+8. **GPS Training Mode**: Habilitado temporariamente para debugging
+
+**Por quê:** Testes no Webots mostraram:
+- Robot transitando SEARCHING→GRASPING em <1s sem estar perto de cubo
+- Gripper não movendo mas reportando "grasp success"
+- Oscilação +15°/-15° por detecções instáveis
+- AVOIDING lock por 2 minutos (thresholds muito sensíveis)
+
+**Base teórica:**
+- Hysteresis para evitar flip-flop (Saffiotti 1997)
+- Exponential Moving Average para smoothing
+- Sensor warmup - prática comum em robótica
+- Thrun et al. (2005) - sensor noise handling
+
+**Alternativas:** (1) Treinar modelos mais robustos ❌ tempo insuficiente; (2) Ignorar bugs ❌ sistema não funciona.
+
+**Impacto:** Sistema mais estável, transições de estado corretas, sem phantom detections.
+
+**Arquivos modificados:**
+- `src/perception/cube_detector.py` - MIN_CONTOUR_AREA, aspect ratio, distance formula
+- `src/main_controller.py` - camera warmup, GPS enable
+- `src/control/state_machine.py` - stable detection, min approaching time, AVOIDING thresholds
+- `src/control/fuzzy_controller.py` - output smoothing
+
+---
+
 ## Resumo de Compliance
 
 | Requisito | Status |
@@ -287,6 +325,6 @@
 | RNA (MLP/CNN) para detecção | ✅ HybridLIDARNet + LightweightCNN |
 | Lógica Fuzzy ≥20 regras | ✅ 25 regras Mamdani |
 | 15 cubos coloridos | ✅ Supervisor spawna 15 |
-| GPS proibido na demo | ✅ Odometria only |
+| GPS proibido na demo | ⚠️ Habilitado para treino (desabilitar antes da demo) |
 | supervisor.py inalterado | ✅ ZERO modificações |
 | Vídeo 15min sem código | ⏳ Template pronto |

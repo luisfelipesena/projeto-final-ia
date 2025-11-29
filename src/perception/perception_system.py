@@ -169,7 +169,7 @@ class PerceptionSystem:
         probabilities = np.zeros(num_sectors, dtype=np.float32)
         min_distances = np.zeros(num_sectors, dtype=np.float32)
 
-        OBSTACLE_THRESHOLD = 1.0  # meters
+        OBSTACLE_THRESHOLD = 1.5  # meters (increased sensitivity)
 
         for i in range(num_sectors):
             start = i * sector_size
@@ -182,7 +182,7 @@ class PerceptionSystem:
                 # Probability based on how many points are close
                 close_ratio = np.mean(valid < OBSTACLE_THRESHOLD)
                 probabilities[i] = close_ratio
-                sectors[i] = 1.0 if close_ratio > 0.3 else 0.0
+                sectors[i] = 1.0 if close_ratio > 0.2 else 0.0  # Lower threshold
             else:
                 min_distances[i] = float('inf')
 

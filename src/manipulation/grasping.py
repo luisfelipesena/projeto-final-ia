@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Callable
 import time
+import logging
 
 
 class GraspState(Enum):
@@ -63,13 +64,13 @@ class GraspController:
             print(f"Grasped {result.cube_color} cube!")
     """
 
-    # State timing (seconds)
+    # State timing (seconds) - increased for arm motor speed
     STATE_DURATIONS = {
-        GraspState.PREPARE_ARM: 1.5,
-        GraspState.LOWER_ARM: 1.0,
-        GraspState.CLOSE_GRIPPER: 0.8,
-        GraspState.VERIFY_GRASP: 0.3,
-        GraspState.LIFT_CUBE: 1.0,
+        GraspState.PREPARE_ARM: 2.5,   # Was 1.5 - arm needs time to reach position
+        GraspState.LOWER_ARM: 2.0,      # Was 1.0 - lower slowly
+        GraspState.CLOSE_GRIPPER: 1.5,  # Was 0.8 - ensure grip
+        GraspState.VERIFY_GRASP: 0.5,   # Was 0.3
+        GraspState.LIFT_CUBE: 2.0,      # Was 1.0 - lift slowly
     }
 
     MAX_ATTEMPTS = 3
@@ -93,6 +94,12 @@ class GraspController:
 
         # Result
         self._result: Optional[GraspResult] = None
+
+        # Logging
+        self.logger = logging.getLogger('grasp_controller')
+
+        # Track if action was executed for current state (avoid spam)
+        self._action_executed = False
 
     def start(self, cube_color: str) -> None:
         """
@@ -161,11 +168,18 @@ class GraspController:
 
     def _transition_to(self, new_state: GraspState) -> None:
         """Transition to new state"""
+        old_state = self.state
         self.state = new_state
         self.state_start_time = time.time()
+        self._action_executed = False  # Reset for new state
+        self.logger.info(f"Grasp: {old_state.name} → {new_state.name}")
 
     def _execute_prepare_arm(self) -> None:
         """Move arm to pre-grasp position"""
+        if not self._action_executed:
+            print("[Grasp] PREPARE: Moving arm to front position, opening gripper")
+            self._action_executed = True
+
         if self.arm is not None:
             # Set arm to front position, raised
             self.arm.set_orientation(self.arm.FRONT)
@@ -177,11 +191,19 @@ class GraspController:
 
     def _execute_lower_arm(self) -> None:
         """Lower arm to grasp height"""
+        if not self._action_executed:
+            print("[Grasp] LOWER: Lowering arm to floor level")
+            self._action_executed = True
+
         if self.arm is not None:
             self.arm.set_height(self.arm.FRONT_FLOOR)
 
     def _execute_close_gripper(self) -> None:
         """Close gripper to grasp cube"""
+        if not self._action_executed:
+            print("[Grasp] CLOSE: Closing gripper")
+            self._action_executed = True
+
         if self.gripper is not None:
             self.gripper.grip()
 
@@ -203,6 +225,10 @@ class GraspController:
 
     def _execute_lift_cube(self) -> None:
         """Lift cube after grasping"""
+        if not self._action_executed:
+            print("[Grasp] LIFT: Raising arm with cube")
+            self._action_executed = True
+
         if self.arm is not None:
             self.arm.set_height(self.arm.FRONT_PLATE)
 
@@ -210,13 +236,17 @@ class GraspController:
         """Complete grasp sequence"""
         self.state = GraspState.COMPLETE if success else GraspState.FAILED
 
+        duration = time.time() - self.sequence_start_time
         self._result = GraspResult(
             success=success,
             cube_color=self.cube_color,
-            duration=time.time() - self.sequence_start_time,
+            duration=duration,
             attempts=self.attempt_count,
             error_message=error
         )
+
+        status = "SUCCESS" if success else f"FAILED ({error})"
+        print(f"[Grasp] COMPLETE: {status} - {self.cube_color} cube, {duration:.1f}s")
 
     def is_done(self) -> bool:
         """Check if sequence is complete (success or failure)"""

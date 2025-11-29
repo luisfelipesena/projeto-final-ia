@@ -144,3 +144,4 @@ def verify_artifact_integrity(model_file: Path, metadata_path: Path) -> bool:
     return actual_checksum == expected_checksum
 
 
+
