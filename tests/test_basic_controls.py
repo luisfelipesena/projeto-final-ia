@@ -11,7 +11,7 @@ import os
 import json
 
 # Import test helpers
-from test_helpers import (
+from .test_helpers import (
     calculate_distance,
     normalize_angle,
     get_robot_position,

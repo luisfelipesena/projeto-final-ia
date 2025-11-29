@@ -218,16 +218,11 @@
             \end{itemize}
         \end{column}
         \begin{column}{0.5\textwidth}
-            \textbf{Output: Mapa de 9 Setores}
-            % TODO: Inserir diagrama de setores
+            \textbf{Output: Mapa de 8 Setores}
             \begin{center}
-                \textit{[Figura: 9 setores ao redor do robô]}
-
-                \vspace{0.5em}
-                Probabilidade de ocupação por setor
+                \includegraphics[width=0.85\textwidth]{lidar_sectors_light.png}
             \end{center}
 
-            \vspace{1em}
             \textbf{Base Teórica:}
             \begin{itemize}
                 \item Qi et al. (2017) - PointNet
@@ -349,41 +344,28 @@
     \end{columns}
 \end{frame}
 
-\begin{frame}{Funções de Pertinência}
-    % TODO: Inserir gráficos das funções de pertinência
-    \begin{columns}
-        \begin{column}{0.5\textwidth}
-            \textbf{distance\_to\_obstacle:}
-            \begin{center}
-                \textit{[Gráfico: MFs triangulares]}
+\begin{frame}{Funções de Pertinência - Entradas}
+    \begin{center}
+        \includegraphics[width=0.95\textwidth]{mf_inputs_combined.png}
+    \end{center}
 
-                very\_near | near | medium | far | very\_far
-            \end{center}
+    \vspace{0.5em}
+    \textbf{5 MFs por distância:} Muito Perto | Perto | Médio | Longe | Muito Longe
 
-            \vspace{1em}
-            \textbf{angle\_to\_obstacle:}
-            \begin{center}
-                \textit{[Gráfico: MFs triangulares]}
+    \textbf{7 MFs por ângulo:} Neg. Grande | Neg. Médio | Neg. Pequeno | Zero | Pos. Pequeno | Pos. Médio | Pos. Grande
+\end{frame}
 
-                neg\_big | neg\_med | ... | pos\_big
-            \end{center}
-        \end{column}
-        \begin{column}{0.5\textwidth}
-            \textbf{linear\_velocity:}
-            \begin{center}
-                \textit{[Gráfico: MFs de saída]}
+\begin{frame}{Funções de Pertinência - Saídas}
+    \begin{center}
+        \includegraphics[width=0.95\textwidth]{mf_outputs_combined.png}
+    \end{center}
 
-                stop | slow | medium | fast
-            \end{center}
+    \vspace{0.5em}
+    \textbf{Velocidade Linear:} Parar | Devagar | Médio | Rápido
 
-            \vspace{1em}
-            \textbf{Defuzzificação:}
-            \begin{itemize}
-                \item Método: Centróide
-                \item Latência: <50ms
-            \end{itemize}
-        \end{column}
-    \end{columns}
+    \textbf{Velocidade Angular:} Esq. Forte | Esquerda | Reto | Direita | Dir. Forte
+
+    \textbf{Defuzzificação:} Método do Centróide | Latência <50ms
 \end{frame}
 
 \begin{frame}{Exemplos de Regras Fuzzy}

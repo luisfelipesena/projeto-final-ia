@@ -1,265 +1,362 @@
 ================================================================================
-FALAS PARA APRESENTAÇÃO - YouBot Autônomo
+SCRIPT DE APRESENTAÇÃO - YouBot Autônomo
 MATA64 - Inteligência Artificial | UFBA
-Tempo Total: ~15 minutos
+Tempo Total: 15 minutos
 ================================================================================
 
 ================================================================================
 SLIDE 1: TÍTULO (30 segundos)
 ================================================================================
 
-"Boa tarde a todos. Meu nome é Luis Felipe e vou apresentar meu projeto final
-de Inteligência Artificial: um sistema autônomo para o robô YouBot realizar
-coleta e organização de cubos coloridos."
+"Boa tarde. Sou Luis Felipe Cordeiro Sena e apresento meu projeto final de
+Inteligência Artificial: um sistema autônomo para o robô YouBot realizar
+coleta e organização de cubos coloridos usando redes neurais e lógica fuzzy."
 
 ================================================================================
 SLIDE 2: AGENDA (30 segundos)
 ================================================================================
 
-"Dividi a apresentação em cinco partes: primeiro vou explicar o objetivo e os
-desafios do projeto, depois a arquitetura geral do sistema, em seguida as
-redes neurais que desenvolvi, o controlador fuzzy, e por fim uma demonstração
-do robô funcionando na simulação."
+"A apresentação está dividida em cinco partes: primeiro o objetivo e os
+desafios do projeto, depois a arquitetura do sistema com o pipeline completo,
+em seguida as redes neurais para percepção, o controlador fuzzy com 25 regras,
+e por fim uma demonstração do robô funcionando."
 
 ================================================================================
 SLIDE 3: O PROBLEMA (1 minuto)
 ================================================================================
 
-"O desafio é fazer o robô coletar 15 cubos coloridos - verdes, azuis e
-vermelhos - e depositar cada um na caixa da cor correspondente. O robô precisa
-navegar por uma arena com obstáculos fixos, que são caixotes de madeira.
+"O desafio é fazer o robô YouBot coletar 15 cubos coloridos - verdes, azuis e
+vermelhos - e depositar cada um na caixa da cor correspondente.
 
-A principal restrição é que NÃO podemos usar GPS na demonstração final. Toda
-a navegação deve ser baseada apenas nos sensores: LIDAR para detectar obstáculos
-e câmera para identificar os cubos e suas cores.
+A arena tem obstáculos fixos que são caixotes de madeira, e os cubos aparecem
+em posições aleatórias a cada execução.
 
-Os cubos aparecem em posições aleatórias a cada execução, então o sistema
-precisa ser robusto para encontrá-los em qualquer lugar da arena."
+A principal restrição é que NÃO podemos usar GPS na demonstração final.
+Toda a navegação deve ser baseada apenas nos sensores locais: LIDAR para
+detectar obstáculos e câmera para identificar os cubos e suas cores.
+
+Isso torna o problema mais desafiador porque o robô precisa estimar sua
+posição usando apenas odometria, que acumula erro ao longo do tempo."
 
 ================================================================================
 SLIDE 4: SENSORES (1 minuto)
 ================================================================================
 
-"O YouBot possui dois sensores principais que utilizei. O LIDAR Hokuyo faz
-uma varredura de 270 graus e retorna 667 pontos de distância, com alcance de
-até 5 metros. Usei ele para detectar obstáculos e criar um mapa local.
+"O YouBot possui dois sensores principais que utilizei.
+
+O LIDAR Hokuyo faz uma varredura de 270 graus e retorna 667 pontos de
+distância por ciclo, com alcance de até 5 metros. Usei ele para detectar
+obstáculos e criar um mapa local ao redor do robô.
 
 A câmera RGB tem resolução 512 por 512 pixels e um campo de visão de
-aproximadamente 60 graus. Com ela faço a detecção dos cubos e a classificação
-de cores.
+aproximadamente 60 graus. Com ela faço a detecção dos cubos através de
+segmentação de cores no espaço HSV e classificação por rede neural.
 
-Essa combinação de sensores permite navegação segura e identificação precisa
-dos alvos sem depender de GPS."
+A combinação desses dois sensores permite navegação segura e identificação
+precisa dos alvos sem depender de GPS ou localização global."
 
 ================================================================================
 SLIDE 5: PIPELINE (1 minuto 30 segundos)
 ================================================================================
 
-"Este diagrama mostra o fluxo completo do sistema. Do lado esquerdo temos os
-sensores alimentando o sistema de percepção. O LIDAR passa por uma CNN de uma
-dimensão que gera um mapa de obstáculos em 9 setores ao redor do robô.
-A imagem da câmera vai para outra CNN que classifica as cores dos cubos detectados.
+"Este diagrama mostra o fluxo completo do sistema, seguindo a arquitetura
+sense-plan-act de Thrun.
 
-No centro está o controlador fuzzy, que recebe as informações de percepção e
-gera os comandos de velocidade: linear e angular. Junto com ele temos a máquina
-de estados que coordena as ações do braço e garra.
+Do lado esquerdo temos os sensores alimentando o sistema de percepção.
+O LIDAR passa por uma CNN de uma dimensão - baseada em PointNet de Qi e
+colaboradores - que divide o espaço em 8 setores e gera probabilidades
+de ocupação para cada um.
 
-Do lado direito estão os atuadores: a base móvel omnidirecional e o braço com
-garra para pegar os cubos. Todo esse ciclo executa a mais de 10 hertz, garantindo
-reatividade em tempo real."
+A imagem da câmera vai para outra CNN que classifica as cores dos cubos
+detectados, com fallback para segmentação HSV tradicional.
+
+No centro está o controlador fuzzy baseado em Mamdani e Assilian, que
+recebe as informações de percepção e gera os comandos de velocidade
+linear e angular. Junto com ele temos a máquina de estados que coordena
+as ações do braço e garra.
+
+Do lado direito estão os atuadores: a base móvel omnidirecional e o
+braço robótico com garra. Todo esse ciclo executa a mais de 10 hertz."
 
 ================================================================================
 SLIDE 6: MÁQUINA DE ESTADOS (1 minuto)
 ================================================================================
 
-"A máquina de estados tem 6 estados principais. O robô começa em BUSCAR,
-explorando a arena. Quando detecta um cubo, transita para APROXIMAR. Ao chegar
-perto o suficiente, vai para PEGAR e executa a sequência de grasp.
+"A máquina de estados tem 7 estados principais, baseada na arquitetura de
+subsunção de Brooks.
 
-Com o cubo na garra, passa para NAVEGAR até a caixa da cor correspondente.
-Ao chegar, entra em DEPOSITAR para soltar o cubo. Depois volta para BUSCAR
-e repete até coletar todos os 15 cubos.
+O robô começa em SEARCHING, explorando a arena em padrão de busca.
+Quando detecta um cubo, transita para APPROACHING e se alinha.
+Ao chegar perto o suficiente, entra em GRASPING e executa a sequência
+de pegada com o braço.
 
-O estado DESVIAR é especial - ele tem prioridade máxima e é ativado sempre
-que um obstáculo fica muito próximo, menos de 30 centímetros. Isso garante
-que o robô nunca colida, mesmo durante outras operações."
+Com o cubo na garra, passa para NAVIGATING_TO_BOX até a caixa da cor
+correspondente. Ao chegar, entra em DEPOSITING para soltar o cubo.
+Depois volta para SEARCHING e repete até coletar todos os 15 cubos.
+
+O estado AVOIDING é especial - ele tem prioridade máxima e é ativado
+automaticamente sempre que um obstáculo fica a menos de 30 centímetros.
+Isso garante que o robô nunca colida, mesmo durante outras operações."
 
 ================================================================================
 SLIDE 7: RNA LIDAR (1 minuto 30 segundos)
 ================================================================================
 
-"Para processar o LIDAR, desenvolvi uma arquitetura híbrida. Um branch de CNN
-unidimensional recebe os 667 pontos normalizados e extrai 64 features através
-de três camadas convolucionais.
+"Para processar os dados do LIDAR, desenvolvi uma arquitetura híbrida
+inspirada no PointNet.
 
-Em paralelo, calculamos 6 features estatísticas: mínimo, máximo, média, desvio
-padrão, e gradientes. Essas features complementam o que a CNN aprende.
+Um branch de CNN unidimensional recebe os 667 pontos normalizados entre
+0 e 1 e extrai 64 features através de três camadas convolucionais com
+kernels de tamanho 5, 3 e 3. Usamos batch normalization e ReLU entre
+cada camada.
 
-Na fusão, concatenamos as 70 features e passamos por um MLP classificador
-que gera probabilidades de ocupação para cada um dos 9 setores. Isso permite
-ao controlador saber exatamente de qual direção vem o perigo.
+Em paralelo, calculamos 6 features estatísticas: mínimo, máximo, média,
+desvio padrão, e gradientes do sinal. Essas features manuais complementam
+o que a CNN aprende automaticamente.
 
-Essa arquitetura foi inspirada no PointNet de Qi e colaboradores, adaptada
-para nosso caso específico com apenas cerca de 50 mil parâmetros."
+Na fusão, concatenamos as 70 features totais e passamos por um MLP
+classificador com camadas de 128 e 64 neurônios, que gera probabilidades
+de ocupação para cada um dos 8 setores ao redor do robô.
+
+A arquitetura tem cerca de 50 mil parâmetros e executa em menos de
+100 milissegundos, permitindo controle em tempo real."
 
 ================================================================================
 SLIDE 8: RNA CÂMERA (1 minuto)
 ================================================================================
 
-"Para classificação de cores, usei uma CNN leve com três blocos convolucionais.
-Cada bloco tem convolução, batch normalization, ReLU e max pooling. Depois um
-global average pooling reduz para um vetor de 128 dimensões, que passa por
-duas camadas fully connected até o softmax de 3 classes.
+"Para classificação de cores dos cubos, usei uma CNN leve projetada para
+executar em CPU sem GPU.
 
-Com cerca de 250 mil parâmetros, conseguimos rodar a mais de 10 FPS mesmo em
-CPU, sem precisar de GPU.
+A arquitetura tem três blocos convolucionais. Cada bloco contém uma
+convolução 2D, batch normalization, ativação ReLU e max pooling.
+O primeiro bloco usa kernel 7x7 para capturar features de baixo nível,
+os seguintes usam kernels menores.
 
-Como fallback robusto, implementei também segmentação HSV tradicional. Isso
-garante funcionamento mesmo se o modelo neural falhar, usando ranges de cores
-calibrados para o ambiente de simulação."
+Depois um global average pooling reduz o mapa de features para um vetor
+de 128 dimensões, que passa por duas camadas fully connected até o
+softmax de 3 classes: verde, azul e vermelho.
+
+Com aproximadamente 250 mil parâmetros, conseguimos rodar a mais de
+10 FPS mesmo em CPU, cumprindo o requisito de tempo real.
+
+Como fallback robusto, implementei também segmentação HSV tradicional,
+que funciona mesmo se o modelo neural não estiver disponível."
 
 ================================================================================
 SLIDE 9: SEGMENTAÇÃO HSV (45 segundos)
 ================================================================================
 
-"A segmentação HSV usa faixas de valores calibradas para cada cor. Verde fica
-entre 35 e 85 no canal H, azul entre 100 e 130, e vermelho precisa de duas
-faixas porque ele 'dá a volta' no espectro: 0 a 10 e 160 a 180.
+"A segmentação HSV usa faixas de valores calibradas para o ambiente
+de simulação do Webots.
 
-O pipeline converte de RGB para HSV, aplica threshold por cor, faz operações
-morfológicas para limpar ruído, e encontra contornos para gerar bounding boxes.
+Verde fica entre 35 e 85 no canal H de matiz. Azul entre 100 e 130.
+Vermelho precisa de duas faixas porque ele 'dá a volta' no espectro
+circular: de 0 a 10 e de 160 a 180.
 
-Essa abordagem é muito robusta às variações de iluminação do simulador."
+Para todos, exigimos saturação e valor acima de 100 para filtrar
+pixels brancos ou pretos.
+
+O pipeline converte de RGB para HSV, aplica threshold por cor, faz
+operações morfológicas de abertura e fechamento para limpar ruído,
+e encontra contornos para gerar bounding boxes dos cubos detectados."
 
 ================================================================================
 SLIDE 10: CONTROLADOR FUZZY (1 minuto 30 segundos)
 ================================================================================
 
-"O controlador fuzzy é baseado na teoria de conjuntos fuzzy de Zadeh de 1965
-e no modelo de Mamdani e Assilian de 1975.
+"O controlador fuzzy é baseado na teoria de conjuntos fuzzy de Zadeh
+de 1965 e no modelo de inferência de Mamdani e Assilian de 1975.
 
-Temos 6 variáveis de entrada: distância e ângulo para o obstáculo mais próximo,
-distância e ângulo para o cubo detectado, e dois booleanos indicando se há
-cubo visível e se está segurando um cubo.
+Temos 6 variáveis de entrada: distância e ângulo para o obstáculo mais
+próximo, distância e ângulo para o cubo detectado, e dois booleanos
+indicando se há cubo visível e se está segurando um cubo.
 
-As saídas são a velocidade linear, entre -0.3 e +0.3 metros por segundo, a
-velocidade angular, entre -0.5 e +0.5 radianos por segundo, e a ação atual
-do robô.
+As saídas são a velocidade linear, variando entre menos 0.3 e mais 0.3
+metros por segundo, a velocidade angular entre menos 0.5 e mais 0.5
+radianos por segundo, e a ação atual do robô.
 
 No total são 25 regras organizadas em três grupos: 15 regras de segurança
-para evitar obstáculos, 5 regras de busca para explorar o ambiente, e 5 regras
-de aproximação para se alinhar com os cubos detectados."
+com peso máximo para evitar obstáculos, 5 regras de tarefa para aproximar
+dos cubos, e 5 regras de exploração para buscar na arena.
+
+Isso excede o requisito mínimo de 20 regras do projeto."
 
 ================================================================================
-SLIDE 11: FUNÇÕES DE PERTINÊNCIA (45 segundos)
+SLIDE 11: FUNÇÕES DE PERTINÊNCIA - ENTRADAS (45 segundos)
 ================================================================================
 
-"As funções de pertinência são todas triangulares para simplicidade e eficiência.
-Para distância ao obstáculo temos 5 termos: muito perto, perto, médio, longe e
-muito longe. Para ângulos temos 7 termos, de negativo grande até positivo grande.
+"As funções de pertinência das entradas são mostradas nestes gráficos.
 
-As saídas de velocidade também usam funções triangulares: parar, devagar, médio
-e rápido para velocidade linear, e girar esquerda, centro e girar direita para
-velocidade angular.
+Para distância ao obstáculo temos 5 termos linguísticos: muito perto,
+perto, médio, longe e muito longe, cobrindo de 0 a 5 metros.
 
-A defuzzificação usa o método do centróide, que é o mais comum e produz saídas
-suaves."
+Para ângulos temos 7 termos, de negativo grande até positivo grande,
+cobrindo os 270 graus do LIDAR.
 
-================================================================================
-SLIDE 12: EXEMPLOS DE REGRAS (1 minuto)
-================================================================================
-
-"Vou mostrar algumas regras exemplo. A R001 é a regra de parada de emergência:
-SE a distância ao obstáculo É muito perto E o ângulo É zero, ou seja, bem
-na frente, ENTÃO a velocidade linear É parar E a velocidade angular É girar
-para direita.
-
-A R002 trata de obstáculo perto mas num ângulo positivo, à direita: nesse caso
-desaceleramos e giramos para a esquerda para desviar.
-
-Já as regras de aproximação funcionam diferente. A R016 diz: SE tem cubo
-detectado E a distância É longe E o ângulo É zero, ENTÃO vai rápido em
-linha reta. A R017 ajusta se o cubo está um pouco para o lado."
+Todas as funções são triangulares para simplicidade computacional,
+com sobreposição de aproximadamente 50% entre termos adjacentes para
+garantir transições suaves."
 
 ================================================================================
-SLIDE 13: INFERÊNCIA (45 segundos)
+SLIDE 12: FUNÇÕES DE PERTINÊNCIA - SAÍDAS (45 segundos)
 ================================================================================
 
-"O processo de inferência segue o fluxo padrão: as entradas crisp são
-fuzzificadas, passam pelas 25 regras do tipo Mamdani, e a saída fuzzy é
-defuzzificada pelo centróide para gerar os comandos crisp de velocidade.
+"As variáveis de saída também usam funções triangulares.
 
-Usei a biblioteca scikit-fuzzy do Python, que é bem otimizada. Conseguimos
-performance de aproximadamente 30 milissegundos por inferência, o que permite
-rodar a mais de 30 hertz - bem acima da meta de 10 hertz."
+Para velocidade linear temos parar, devagar, médio e rápido.
+Para velocidade angular temos girar forte para esquerda, girar esquerda,
+reto, girar direita e girar forte para direita.
 
-================================================================================
-SLIDE 14: MÉTRICAS (45 segundos)
-================================================================================
+A defuzzificação usa o método do centróide, que calcula o centro de
+massa da área resultante da agregação das regras ativas. Isso produz
+saídas suaves e contínuas.
 
-"Esta tabela resume as métricas de performance do sistema. A meta era coletar
-todos os 15 cubos, com precisão de cor acima de 95%, zero colisões, tempo
-total menor que 5 minutos, e frequência de controle acima de 10 hertz.
-
-O sistema roda no Webots R2023b com Python 3.11, PyTorch e scikit-fuzzy.
-Testamos em CPU Intel i7 sem usar GPU."
-
-[Nota: preencher os valores obtidos na demonstração]
+A latência total da inferência é menor que 50 milissegundos."
 
 ================================================================================
-SLIDE 15: DEMONSTRAÇÃO (2-3 minutos)
+SLIDE 13: EXEMPLOS DE REGRAS (1 minuto)
 ================================================================================
 
-"Agora vou mostrar o robô funcionando. Vocês podem observar como ele:
-- Explora a arena procurando cubos
-- Detecta um cubo e se aproxima
-- Identifica a cor corretamente
-- Pega com a garra
-- Navega até a caixa certa
-- Deposita e volta a buscar
+"Vou mostrar algumas regras exemplo para ilustrar o funcionamento.
 
-Prestem atenção também no desvio de obstáculos - o robô nunca colide mesmo
-passando perto dos caixotes."
+A regra R001 é a regra de parada de emergência: SE a distância ao
+obstáculo É muito perto E o ângulo É zero, ou seja, bem na frente,
+ENTÃO a velocidade linear É parar E a velocidade angular É girar
+forte para direita. Essa regra tem peso 10, o máximo.
 
-[Rodar demonstração ou vídeo]
+A regra R002 trata de obstáculo perto mas num ângulo positivo, ou seja,
+à direita: nesse caso desaceleramos para devagar e giramos para a
+esquerda para desviar.
 
-================================================================================
-SLIDE 16: LIÇÕES APRENDIDAS (45 segundos)
-================================================================================
-
-"Os principais desafios foram: primeiro, navegar sem GPS usando apenas odometria
-e mapa local, que acumula erro com o tempo. Segundo, integrar as redes neurais
-com o controlador fuzzy em tempo real, respeitando o limite de 100ms por ciclo.
-Terceiro, calibrar os parâmetros fuzzy para ter comportamento suave mas reativo.
-
-Para trabalhos futuros, podemos implementar SLAM para mapeamento global mais
-preciso, planejamento de trajetória com A* para otimizar rotas, e até
-treinamento end-to-end com aprendizado por reforço."
+Já as regras de aproximação funcionam diferente. A R016 diz: SE tem
+cubo detectado E a distância É longe E o ângulo É zero, ENTÃO vai
+rápido em linha reta. A R017 ajusta se o cubo está um pouco para o
+lado, reduzindo velocidade e corrigindo direção."
 
 ================================================================================
-SLIDE 17: REFERÊNCIAS (30 segundos)
+SLIDE 14: INFERÊNCIA (45 segundos)
 ================================================================================
 
-"As principais referências foram o livro Deep Learning de Goodfellow para as
-redes neurais, os papers originais de Zadeh e Mamdani para lógica fuzzy,
-PointNet de Qi para processamento de nuvens de pontos, e Probabilistic Robotics
-de Thrun para navegação robótica."
+"O processo de inferência segue o fluxo padrão do modelo Mamdani.
+
+As entradas crisp dos sensores são fuzzificadas usando as funções de
+pertinência. Cada uma das 25 regras é avaliada, calculando o grau de
+ativação como o mínimo dos antecedentes. Os consequentes são agregados
+usando máximo, e a saída fuzzy resultante é defuzzificada pelo centróide.
+
+Usei a biblioteca scikit-fuzzy do Python, que é bem otimizada.
+Conseguimos performance de aproximadamente 30 milissegundos por
+inferência, permitindo rodar a mais de 30 hertz."
 
 ================================================================================
-SLIDE 18: ENCERRAMENTO (30 segundos)
+SLIDE 15: MÉTRICAS (45 segundos)
 ================================================================================
 
-"Com isso concluo a apresentação. Agradeço a atenção e estou à disposição
-para perguntas. Obrigado!"
+"Esta tabela resume as métricas de performance do sistema.
+
+A meta era coletar todos os 15 cubos, com precisão de identificação
+de cor acima de 95%, zero colisões com obstáculos, tempo total menor
+que 5 minutos, e frequência de controle acima de 10 hertz.
+
+[Mostrar resultados obtidos na demonstração]
+
+O sistema roda no Webots R2023b com Python 3.11, usando PyTorch para
+as redes neurais e scikit-fuzzy para o controlador. Testamos em CPU
+Intel sem usar GPU."
 
 ================================================================================
-NOTAS IMPORTANTES
+SLIDE 16: DEMONSTRAÇÃO (3-5 minutos)
 ================================================================================
 
-1. NÃO MOSTRAR CÓDIGO-FONTE (desconto de 3-10 pontos)
-2. Usar figuras, gráficos e vídeos - pouco texto
-3. Citar as referências verbalmente quando relevante
-4. Demonstração deve mostrar TODO o ciclo de coleta
+"Agora vou mostrar o robô funcionando na simulação.
+
+[Iniciar demo]
+
+Observem como o robô explora a arena procurando cubos, usando o padrão
+de busca definido pelas regras de exploração.
+
+[Quando detectar cubo]
+
+Aqui ele detectou um cubo verde. Vejam no console a transição de estado
+de SEARCHING para APPROACHING. O fuzzy controller está ajustando as
+velocidades para alinhar com o cubo.
+
+[Durante aproximação]
+
+Agora ele se aproxima, reduzindo velocidade conforme fica mais perto.
+
+[Durante grasping]
+
+Entrou em GRASPING. O braço desce, a garra abre, posiciona, e fecha
+para pegar o cubo.
+
+[Durante navegação]
+
+Com o cubo na garra, transita para NAVIGATING_TO_BOX. Ele está indo
+para a caixa verde, navegando apenas por odometria.
+
+[Durante depósito]
+
+Chegou na caixa. Agora deposita o cubo e volta para SEARCHING.
+
+[Mostrar desvio de obstáculo se ocorrer]
+
+Prestem atenção também no desvio de obstáculos - quando passa perto
+de um caixote, o estado AVOIDING assume controle automaticamente."
+
+================================================================================
+SLIDE 17: LIÇÕES APRENDIDAS (45 segundos)
+================================================================================
+
+"Os principais desafios foram:
+
+Primeiro, navegar sem GPS usando apenas odometria e mapa local. A
+odometria acumula erro com o tempo, então implementamos correções
+baseadas em landmarks detectados pelo LIDAR.
+
+Segundo, integrar as redes neurais com o controlador fuzzy em tempo
+real, respeitando o limite de 100ms por ciclo de controle.
+
+Terceiro, calibrar os parâmetros fuzzy para ter comportamento suave
+mas ainda assim reativo a obstáculos próximos.
+
+Para trabalhos futuros, podemos implementar SLAM para mapeamento global,
+planejamento de trajetória com A-estrela, e treinamento end-to-end
+usando aprendizado por reforço."
+
+================================================================================
+SLIDE 18: REFERÊNCIAS (30 segundos)
+================================================================================
+
+"As principais referências foram:
+
+O livro Deep Learning de Goodfellow, Bengio e Courville para as redes
+neurais. Os papers originais de Zadeh de 1965 e Mamdani de 1975 para
+lógica fuzzy. PointNet de Qi e colaboradores para processamento de
+nuvens de pontos. E Probabilistic Robotics de Thrun, Burgard e Fox
+para navegação robótica."
+
+================================================================================
+SLIDE 19: ENCERRAMENTO (30 segundos)
+================================================================================
+
+"Com isso concluo a apresentação do sistema autônomo YouBot para coleta
+de cubos coloridos, que utiliza redes neurais para percepção e lógica
+fuzzy para controle, navegando sem GPS.
+
+Agradeço a atenção e estou à disposição para perguntas.
+
+Obrigado!"
+
+================================================================================
+NOTAS IMPORTANTES PARA APRESENTAÇÃO
+================================================================================
+
+1. NÃO MOSTRAR CÓDIGO-FONTE em nenhum momento (desconto de 3-10 pontos)
+2. Usar figuras, gráficos e vídeos - pouco texto nos slides
+3. Citar as referências verbalmente quando mencionar conceitos
+4. Demonstração deve mostrar pelo menos um ciclo completo de coleta
 5. Confirmar que GPS está desabilitado antes de gravar
 6. Tempo máximo: 15 minutos
 
@@ -268,20 +365,28 @@ PERGUNTAS ESPERADAS E RESPOSTAS
 ================================================================================
 
 P: Por que não usou SLAM?
-R: SLAM seria mais preciso mas mais complexo. Para esta arena limitada,
-   odometria com mapa local foi suficiente e mais simples de implementar.
+R: SLAM seria mais preciso mas mais complexo. Para esta arena limitada
+   com obstáculos fixos, odometria com mapa local foi suficiente e mais
+   simples de implementar dentro do prazo.
 
 P: Como garantiu que não há colisões?
-R: O estado DESVIAR tem prioridade máxima e é ativado automaticamente quando
-   um obstáculo fica a menos de 30cm. As regras fuzzy também começam a
-   desacelerar e girar bem antes desse limite.
+R: O estado AVOIDING tem prioridade máxima e é ativado automaticamente
+   quando um obstáculo fica a menos de 30cm. As regras fuzzy de segurança
+   também começam a desacelerar e girar bem antes desse limite.
 
-P: Por que 25 regras fuzzy?
+P: Por que 25 regras fuzzy e não mais?
 R: Seguimos o requisito mínimo de 20 regras do projeto. As 5 extras
-   melhoraram o comportamento em situações de borda.
+   melhoraram o comportamento em situações de borda. Mais regras
+   aumentariam complexidade sem ganho significativo.
 
 P: O sistema funciona em hardware real?
 R: O código foi desenvolvido para simulação mas a arquitetura é portável.
-   Precisaria apenas ajustar calibração de sensores e velocidades.
+   Precisaria ajustar calibração de sensores e velocidades para um
+   robô real, além de considerar latências de comunicação.
+
+P: Como o fallback HSV funciona?
+R: Se a rede neural não estiver disponível ou falhar, o sistema usa
+   segmentação por faixas de cor no espaço HSV, que é mais simples
+   mas ainda funcional para as três cores do projeto.
 
 ================================================================================

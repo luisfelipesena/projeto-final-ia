@@ -16,12 +16,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from collections import Counter
 import numpy as np
 
 
-def validate_lidar_balance(samples: List[Dict[str, Any]]) -> tuple[bool, List[str]]:
+def validate_lidar_balance(samples: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     """Validate LIDAR dataset balance (sector distribution)"""
     errors = []
     
@@ -64,7 +64,7 @@ def validate_lidar_balance(samples: List[Dict[str, Any]]) -> tuple[bool, List[st
     return len(errors) == 0, errors
 
 
-def validate_camera_balance(samples: List[Dict[str, Any]]) -> tuple[bool, List[str]]:
+def validate_camera_balance(samples: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     """Validate camera dataset balance (color distribution)"""
     errors = []
     
@@ -104,7 +104,7 @@ def validate_camera_balance(samples: List[Dict[str, Any]]) -> tuple[bool, List[s
     return len(errors) == 0, errors
 
 
-def validate_split_integrity(samples: List[Dict[str, Any]]) -> tuple[bool, List[str]]:
+def validate_split_integrity(samples: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     """Validate that no sample ID appears in more than one split"""
     errors = []
     
@@ -217,4 +217,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
