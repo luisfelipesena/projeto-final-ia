@@ -46,12 +46,18 @@ class Gripper:
         else:
             print("Warning: Could not find gripper motor 'finger::left'")
 
-        # Get position sensor for physical grasp verification
-        self.finger_sensor = robot.getDevice("finger::left sensor")
-        if self.finger_sensor:
-            self.finger_sensor.enable(self.time_step)
-        else:
-            print("Warning: Could not find gripper sensor 'finger::left sensor'")
+        # Get position sensor from motor (not by device name)
+        self.finger_sensor = None
+        if self.finger:
+            try:
+                self.finger_sensor = self.finger.getPositionSensor()
+                if self.finger_sensor:
+                    self.finger_sensor.enable(self.time_step)
+            except Exception:
+                pass  # Motor may not have position sensor
+
+        if not self.finger_sensor:
+            print("Info: Gripper position sensor not available - using state-based verification")
 
         # Current state
         self.is_gripping = False

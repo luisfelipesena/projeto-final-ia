@@ -28,6 +28,7 @@
 | 021 | Controller Integration | Fase 6 | ✅ |
 | 022 | Perception/Control Bug Fixes | Fase 6 | ✅ |
 | 023 | Navigation & Grasp Critical Fixes | Fase 6 | ✅ |
+| 024 | Search Pattern & Post-Deposit Fixes | Fase 6 | ✅ |
 
 ---
 
@@ -352,6 +353,70 @@
 - `src/perception/cube_detector.py` - HSV ranges tightened, debug logging
 - `src/main_controller.py` - box positions, _compute_navigation_to_box()
 - `src/navigation/odometry.py` - DEPOSIT_BOXES coordinates
+
+---
+
+## DECISÃO 024: Search Pattern & Post-Deposit Fixes
+
+**O que:** Corrigir 3 bugs críticos identificados após primeiro ciclo completo:
+
+1. **Search pattern cego:** Robot ia reto em SEARCHING em vez de rotacionar para escanear ambiente
+2. **Post-deposit virado para parede:** Após depositar, robot ficava virado para parede, câmera não via cubos
+3. **Gripper sensor errado:** `finger::left sensor` não existe - usar `motor.getPositionSensor()`
+
+**Por quê:** Teste mostrou:
+- Robot completou 1º ciclo (red cube ✅) mas depois ficou girando perto da parede
+- `cube_detected=False` por 2+ minutos apesar de 14 cubos na arena
+- Mensagem "Device 'finger::left sensor' was not found"
+
+**Análise do comportamento observado:**
+```
+Ciclo 1: SEARCHING → APPROACHING → GRASPING → NAVIGATING_TO_BOX → DEPOSITING ✅
+Pós-ciclo 1: Robot em pose (2.60, 0.12, θ=-169°) virado para OESTE
+             Câmera aponta para parede, não vê cubos restantes
+             obstacle_dist: 0.57m → 0.68m (se aproximando da parede)
+             cube_detected=False continuamente
+```
+
+**Correções implementadas:**
+
+1. **Search pattern com rotação:**
+```python
+# Em execute_control(), estado SEARCHING
+if cube_info.get('cube_detected'):
+    vx = fuzzy_outputs.linear_velocity
+    omega = fuzzy_outputs.angular_velocity
+else:
+    vx = 0.0  # PARAR
+    omega = 0.4  # ROTACIONAR para escanear
+```
+
+2. **Post-deposit reorientation:**
+```python
+# Em handle_state_entry(SEARCHING), após deposit_success
+self._log("Post-deposit reorientation: turning 180°")
+self._rotate_degrees(180.0)  # Novo método helper
+```
+
+3. **Gripper sensor correto:**
+```python
+# Em gripper.py __init__
+self.finger_sensor = self.finger.getPositionSensor()  # Via motor, não por nome
+```
+
+**Base teórica:**
+- Brooks (1986) - subsumption architecture: scan behavior base layer
+- Arkin (1998) - behavior-based robotics: recovery behaviors
+- Webots documentation - PositionSensor API via Motor.getPositionSensor()
+
+**Impacto:**
+- Robot escaneia 360° até encontrar próximo cubo
+- Após depositar, robot vira 180° para olhar arena
+- Gripper sensor funciona (ou fallback gracioso)
+
+**Arquivos modificados:**
+- `src/main_controller.py` - execute_control() SEARCHING handler, _rotate_degrees(), handle_state_entry()
+- `IA_20252/controllers/youbot/gripper.py` - getPositionSensor() via motor
 
 ---
 

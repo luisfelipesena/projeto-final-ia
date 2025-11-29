@@ -318,6 +318,32 @@ class MainController:
         distance = np.sqrt((pose.x - target[0])**2 + (pose.y - target[1])**2)
         return distance < 0.3
 
+    def _rotate_degrees(self, degrees: float, omega: float = 0.4) -> None:
+        """
+        Rotate robot in place by specified degrees
+
+        Args:
+            degrees: Rotation amount (positive = counter-clockwise)
+            omega: Angular velocity (rad/s)
+        """
+        import math
+        radians = math.radians(abs(degrees))
+        rotation_time = radians / omega  # time = angle / velocity
+
+        # Direction based on sign
+        actual_omega = omega if degrees > 0 else -omega
+
+        start_time = self.robot.getTime()
+        while self.robot.step(self.time_step) != -1:
+            elapsed = self.robot.getTime() - start_time
+            if elapsed >= rotation_time:
+                break
+            self.base.move(vx=0.0, vy=0.0, omega=actual_omega)
+            dt = self.time_step / 1000.0
+            self.odometry.update_from_command(vx=0.0, vy=0.0, omega=actual_omega, dt=dt)
+
+        self.base.reset()
+
     def _compute_navigation_to_box(self) -> Tuple[float, float]:
         """
         Compute velocities to navigate to target deposit box
@@ -379,6 +405,30 @@ class MainController:
             fuzzy_outputs: Outputs from fuzzy controller
         """
         current_state = self.state_machine.current_state
+
+        # Handle SEARCHING state - force rotation to scan environment
+        if current_state == RobotState.SEARCHING:
+            cube_info = self.perception.get_cube_info()
+            obstacle_info = self.perception.get_obstacle_info()
+            obstacle_dist = obstacle_info.get('distance_to_obstacle', 5.0)
+
+            if cube_info.get('cube_detected'):
+                # Cube detected - use fuzzy output to approach
+                vx = fuzzy_outputs.linear_velocity
+                omega = fuzzy_outputs.angular_velocity
+            else:
+                # No cube detected - ROTATE to scan environment
+                vx = 0.0  # Stop forward motion
+                omega = 0.4  # Rotate counter-clockwise (rad/s)
+
+                # Slow down rotation near obstacles
+                if obstacle_dist < 0.5:
+                    omega = 0.3
+
+            self.base.move(vx=vx, vy=0.0, omega=omega)
+            dt = self.time_step / 1000.0
+            self.odometry.update_from_command(vx=vx, vy=0.0, omega=omega, dt=dt)
+            return
 
         # Handle manipulation states
         if current_state == RobotState.GRASPING:
@@ -468,6 +518,10 @@ class MainController:
                 if result and result.cube_color:
                     self.cubes_deposited[result.cube_color] += 1
                     self._log(f"Deposited {result.cube_color}! Stats: {self.cubes_deposited}")
+
+                # Post-deposit reorientation: turn 180° to face arena center
+                self._log("Post-deposit reorientation: turning 180° to face arena")
+                self._rotate_degrees(180.0)
 
             # Reset manipulation controllers
             self.grasp_controller.reset()
