@@ -513,6 +513,17 @@ class MainController:
         # Build conditions and update state machine
         previous_state = self.state_machine.current_state
         conditions = self.build_state_conditions(perception_state)
+
+        # Debug logging every ~1s during SEARCHING to understand why not finding cubes
+        if previous_state == RobotState.SEARCHING and self.loop_count % 30 == 0:
+            cube_info = self.perception.get_cube_info()
+            obstacle_info = self.perception.get_obstacle_info()
+            self._log(
+                f"[SEARCH] cube_detected={cube_info.get('cube_detected')}, "
+                f"cube_dist={cube_info.get('distance_to_cube', 'N/A'):.2f}m, "
+                f"obstacle_dist={obstacle_info.get('distance_to_obstacle', 'N/A'):.2f}m"
+            )
+
         self.state_machine.update(conditions)
 
         # Handle state transitions

@@ -225,9 +225,10 @@ class StateMachine:
         # Priority 1: AVOIDING override (FR-011) - BUT NOT during manipulation!
         # During GRASPING/DEPOSITING, objects ARE expected to be close (the cube/box)
         # Triggering AVOIDING during these states would interrupt the grasp/deposit sequence
-        manipulation_states = (RobotState.GRASPING, RobotState.DEPOSITING)
+        # ALSO skip during APPROACHING - we WANT to get close to cubes
+        manipulation_states = (RobotState.GRASPING, RobotState.DEPOSITING, RobotState.APPROACHING)
         if self.current_state not in manipulation_states:
-            if conditions.obstacle_distance < 0.4:  # Reduced from 0.6 to avoid over-triggering
+            if conditions.obstacle_distance < 0.3:  # Reduced from 0.4 - only trigger for REAL collision risk
                 if self.current_state != RobotState.AVOIDING:
                     self.transition_to(RobotState.AVOIDING, {
                         'obstacle_distance': conditions.obstacle_distance,
