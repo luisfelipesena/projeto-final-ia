@@ -234,9 +234,11 @@ class MainController:
 
             if image_data:
                 # Convert to numpy RGB
+                # Webots returns BGRA format (Blue, Green, Red, Alpha)
                 image = np.frombuffer(image_data, dtype=np.uint8)
                 image = image.reshape((height, width, 4))  # BGRA
-                camera_image = image[:, :, :3][:, :, ::-1]  # Convert to RGB
+                # Extract BGR and convert to RGB using explicit channel selection
+                camera_image = image[:, :, 2::-1].copy()  # Channels 2,1,0 = R,G,B
 
         return lidar_ranges, camera_image
 
@@ -406,7 +408,7 @@ class MainController:
         """
         current_state = self.state_machine.current_state
 
-        # Handle SEARCHING state - force rotation to scan environment
+        # Handle SEARCHING state - explore arena to find cubes
         if current_state == RobotState.SEARCHING:
             cube_info = self.perception.get_cube_info()
             obstacle_info = self.perception.get_obstacle_info()
@@ -417,13 +419,20 @@ class MainController:
                 vx = fuzzy_outputs.linear_velocity
                 omega = fuzzy_outputs.angular_velocity
             else:
-                # No cube detected - ROTATE to scan environment
-                vx = 0.0  # Stop forward motion
-                omega = 0.4  # Rotate counter-clockwise (rad/s)
-
-                # Slow down rotation near obstacles
-                if obstacle_dist < 0.5:
-                    omega = 0.3
+                # No cube detected - EXPLORE: move forward + gentle rotation
+                # This prevents spinning in place which triggers AVOIDING loops
+                if obstacle_dist > 1.0:
+                    # Path clear - move forward with slight rotation to sweep
+                    vx = 0.15  # Slow forward
+                    omega = 0.2  # Gentle rotation to sweep area
+                elif obstacle_dist > 0.5:
+                    # Obstacle ahead but not critical - slow down and turn more
+                    vx = 0.08
+                    omega = 0.35
+                else:
+                    # Close to obstacle - stop and turn away
+                    vx = 0.0
+                    omega = 0.4
 
             self.base.move(vx=vx, vy=0.0, omega=omega)
             dt = self.time_step / 1000.0

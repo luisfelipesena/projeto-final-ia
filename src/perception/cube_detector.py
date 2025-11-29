@@ -49,28 +49,33 @@ class ColorSegmenter:
     """
 
     # HSV ranges calibrated for Webots simulation lighting
-    # TIGHTENED: Avoid overlap between green (H:40-70) and blue (H:100-130)
-    # Previous ranges had green H:35-85 which overlapped with cyan spectrum
+    # Saturation lowered to 80 (was 150) - Webots cubes have moderate saturation
+    # Value lowered to 50 (was 100) - handle shadows better
     COLOR_RANGES = {
         'green': {
-            'lower': np.array([40, 150, 100]),   # H:40-70, stricter S threshold
-            'upper': np.array([70, 255, 255])
+            'lower': np.array([35, 80, 50]),    # H:35-85, relaxed S/V for Webots
+            'upper': np.array([85, 255, 255])
         },
         'blue': {
-            'lower': np.array([100, 150, 100]),  # H:100-130, stricter S threshold
+            'lower': np.array([100, 80, 50]),   # H:100-130, relaxed S/V
             'upper': np.array([130, 255, 255])
         },
         'red': {
             # Red wraps around in HSV, need two ranges
-            'lower1': np.array([0, 150, 100]),
+            'lower1': np.array([0, 80, 50]),
             'upper1': np.array([10, 255, 255]),
-            'lower2': np.array([160, 150, 100]),
+            'lower2': np.array([160, 80, 50]),
             'upper2': np.array([180, 255, 255])
         }
     }
 
-    MIN_CONTOUR_AREA = 1500  # pixels - increased to filter noise
-    MAX_CONTOUR_AREA = 15000  # pixels - filter out large objects (deposit boxes)
+    # CRITICAL: 1500 was WAY too high - a 5cm cube at 1m is only ~300-600 pixels area
+    MIN_CONTOUR_AREA = 200   # pixels - lowered to detect cubes at distance
+    MAX_CONTOUR_AREA = 20000  # pixels - filter out large objects (deposit boxes)
+
+    # Debug: save images to diagnose detection issues
+    DEBUG_SAVE_IMAGES = False  # Set True to save debug images
+    _debug_frame_count = 0
 
     def segment(self, image: np.ndarray) -> List[CubeDetection]:
         """
@@ -86,6 +91,12 @@ class ColorSegmenter:
 
         # Convert to HSV
         hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+
+        # Debug: log HSV statistics every 100 frames
+        ColorSegmenter._debug_frame_count += 1
+        if ColorSegmenter._debug_frame_count % 100 == 0:
+            h_mean, s_mean, v_mean = hsv[:,:,0].mean(), hsv[:,:,1].mean(), hsv[:,:,2].mean()
+            print(f"[HSV Debug] H_mean={h_mean:.1f} S_mean={s_mean:.1f} V_mean={v_mean:.1f}")
 
         h, w = image.shape[:2]
 
@@ -106,6 +117,11 @@ class ColorSegmenter:
             # Find contours
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+            # Debug: log contour stats every 100 frames
+            if ColorSegmenter._debug_frame_count % 100 == 0 and len(contours) > 0:
+                areas = [cv2.contourArea(c) for c in contours]
+                print(f"[Contour Debug] {color_name}: {len(contours)} contours, areas: {sorted(areas, reverse=True)[:5]}")
+
             for contour in contours:
                 area = cv2.contourArea(contour)
                 if area < self.MIN_CONTOUR_AREA:
@@ -118,8 +134,9 @@ class ColorSegmenter:
                 x, y, bw, bh = cv2.boundingRect(contour)
 
                 # Aspect ratio filter - cubes should be roughly square
+                # Relaxed from 0.4 to 0.3 to handle perspective distortion
                 bbox_aspect = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0
-                if bbox_aspect < 0.4:  # Too elongated, not a cube
+                if bbox_aspect < 0.3:  # Too elongated, not a cube
                     continue
 
                 # Calculate normalized bbox center
@@ -159,6 +176,11 @@ class ColorSegmenter:
                     distance=distance,
                     angle=angle
                 ))
+
+        # Debug: log when cubes are found
+        if detections and ColorSegmenter._debug_frame_count % 30 == 0:
+            for d in detections:
+                print(f"[Detection] {d.color} cube: dist={d.distance:.2f}m angle={d.angle:.1f}° conf={d.confidence:.2f}")
 
         return detections
 

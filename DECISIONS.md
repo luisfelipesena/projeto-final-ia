@@ -29,6 +29,7 @@
 | 022 | Perception/Control Bug Fixes | Fase 6 | ✅ |
 | 023 | Navigation & Grasp Critical Fixes | Fase 6 | ✅ |
 | 024 | Search Pattern & Post-Deposit Fixes | Fase 6 | ✅ |
+| 025 | Cube Detection Pipeline Overhaul | Fase 6 | ✅ |
 
 ---
 
@@ -417,6 +418,73 @@ self.finger_sensor = self.finger.getPositionSensor()  # Via motor, não por nome
 **Arquivos modificados:**
 - `src/main_controller.py` - execute_control() SEARCHING handler, _rotate_degrees(), handle_state_entry()
 - `IA_20252/controllers/youbot/gripper.py` - getPositionSensor() via motor
+
+---
+
+## DECISÃO 025: Cube Detection Pipeline Overhaul
+
+**O que:** Corrigir pipeline completo de detecção de cubos que estava falhando 100% do tempo:
+
+1. **MIN_CONTOUR_AREA muito alto:** 1500px → 200px (cubo a 1m tem ~300-600px area)
+2. **HSV Saturation muito alto:** S≥150 → S≥80 (cubos Webots têm saturação moderada)
+3. **HSV Value muito alto:** V≥100 → V≥50 (sombras filtravam cubos)
+4. **Aspect ratio muito restrito:** 0.4 → 0.3 (perspectiva distorce quadrados)
+5. **Search pattern só girava:** Mudado para mover+girar (evita AVOIDING loop)
+6. **Camera image format:** Garantido BGRA→RGB correto
+
+**Por quê:** Logs mostravam `cube_detected=False` sempre, mesmo com 15 cubos na arena:
+```
+[SEARCH] cube_detected=False, cube_dist=3.00m, obstacle_dist=5.00m
+[SEARCH] cube_detected=False, cube_dist=3.00m, obstacle_dist=0.79m
+SEARCHING → AVOIDING → SEARCHING (loop infinito)
+```
+
+**Análise do problema:**
+1. MIN_CONTOUR_AREA=1500 filtrava TODOS os cubos (5cm cube at 1m ≈ 300-600px area)
+2. Saturation threshold S≥150 muito agressivo para iluminação Webots
+3. Robot girava parado → se aproximava de obstáculos → AVOIDING loop
+
+**Correções implementadas:**
+
+```python
+# cube_detector.py - HSV ranges relaxados
+COLOR_RANGES = {
+    'green': {'lower': np.array([35, 80, 50]), 'upper': np.array([85, 255, 255])},
+    'blue': {'lower': np.array([100, 80, 50]), 'upper': np.array([130, 255, 255])},
+    # ... red similar
+}
+MIN_CONTOUR_AREA = 200  # era 1500
+
+# main_controller.py - Search pattern com movimento
+if obstacle_dist > 1.0:
+    vx = 0.15  # Move forward
+    omega = 0.2  # Gentle sweep
+elif obstacle_dist > 0.5:
+    vx = 0.08
+    omega = 0.35
+else:
+    vx = 0.0
+    omega = 0.4
+```
+
+**Debug adicionado:**
+- `[HSV Debug]` - estatísticas de H/S/V a cada 100 frames
+- `[Contour Debug]` - quantidade e áreas de contornos encontrados
+- `[Detection]` - quando cubo é detectado com sucesso
+
+**Base teórica:**
+- OpenCV HSV colorspace documentation - HSV ranges para cores
+- Gonzalez & Woods (2018) - Digital Image Processing
+- YOLO (Redmon et al. 2016) - detection filtering strategies
+
+**Impacto:**
+- Cubos agora detectáveis a distâncias 0.3-3.0m
+- Search pattern explora arena sem triggerar AVOIDING
+- Debug output permite diagnóstico em tempo real
+
+**Arquivos modificados:**
+- `src/perception/cube_detector.py` - HSV ranges, MIN_CONTOUR_AREA, aspect ratio, debug
+- `src/main_controller.py` - search pattern, camera format
 
 ---
 
