@@ -39,13 +39,20 @@ class Gripper:
         
         # Get gripper finger motor (single motor controls both fingers)
         self.finger = robot.getDevice("finger::left")
-        
+
         # Set velocity for position control
         if self.finger:
             self.finger.setVelocity(0.03)
         else:
             print("Warning: Could not find gripper motor 'finger::left'")
-        
+
+        # Get position sensor for physical grasp verification
+        self.finger_sensor = robot.getDevice("finger::left sensor")
+        if self.finger_sensor:
+            self.finger_sensor.enable(self.time_step)
+        else:
+            print("Warning: Could not find gripper sensor 'finger::left sensor'")
+
         # Current state
         self.is_gripping = False
     
@@ -77,8 +84,32 @@ class Gripper:
     
     def is_closed(self):
         """Check if gripper is in closed/gripping state
-        
+
         Returns:
             bool: True if gripper is gripping
         """
         return self.is_gripping
+
+    def has_object(self):
+        """Check if gripper physically holds an object via position sensor
+
+        When gripper closes on object, fingers stop before reaching MIN_POS.
+        When gripper closes on air, fingers reach MIN_POS (0.0).
+
+        Returns:
+            bool: True if object appears to be held
+        """
+        if not self.is_gripping:
+            return False
+
+        if not self.finger_sensor:
+            # No sensor available, fall back to flag
+            return self.is_gripping
+
+        # Read actual finger position
+        pos = self.finger_sensor.getValue()
+        # If position > 0.003, fingers were blocked by object before fully closing
+        # MIN_POS is 0.0 (fully closed), so any pos > 0.003 indicates obstruction
+        has_obj = pos > 0.003
+        print(f"[Gripper] Position sensor: {pos:.4f} → has_object={has_obj}")
+        return has_obj

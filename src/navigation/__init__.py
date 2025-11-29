@@ -9,11 +9,13 @@ Components:
 """
 
 from .local_map import LocalMap, OccupancyCell
-from .odometry import Odometry, Pose2D
+from .odometry import Odometry, Pose2D, get_deposit_box_pose, DEPOSIT_BOXES
 
 __all__ = [
     'LocalMap',
     'OccupancyCell',
     'Odometry',
     'Pose2D',
+    'get_deposit_box_pose',
+    'DEPOSIT_BOXES',
 ]

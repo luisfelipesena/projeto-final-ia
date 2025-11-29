@@ -355,11 +355,14 @@ class Odometry:
         return [w1, w2, w3, w4]
 
 
-# Deposit box locations (approximate, from arena layout)
+# Deposit box locations (from IA_20252.wbt world file)
+# GREEN: translation 0.48 1.58 0
+# BLUE: translation 0.48 -1.62 0
+# RED: translation 2.31 0.00999969 0
 DEPOSIT_BOXES = {
-    'green': Pose2D(x=-2.0, y=1.5, theta=0.0),
-    'blue': Pose2D(x=-2.0, y=0.0, theta=0.0),
-    'red': Pose2D(x=-2.0, y=-1.5, theta=0.0),
+    'green': Pose2D(x=0.48, y=1.58, theta=0.0),
+    'blue': Pose2D(x=0.48, y=-1.62, theta=0.0),
+    'red': Pose2D(x=2.31, y=0.01, theta=0.0),
 }
 
 

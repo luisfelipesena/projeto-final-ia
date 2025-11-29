@@ -17,6 +17,13 @@
 - **AVOIDING excluído durante GRASPING/DEPOSITING** - Cubo próximo não triggera AVOIDING
 - **Log spam reduzido** - "Waiting for min approach time" aparece apenas 1x/segundo
 
+**Fixes aplicados (DECISÃO 023 - CRÍTICO):**
+- **DEPOSIT_BOXES corrigidos** - Coordenadas do world file: GREEN(0.48, 1.58), BLUE(0.48, -1.62), RED(2.31, 0.01)
+- **Navigation controller** - P-controller para navegar até caixas (vx, omega)
+- **Grasp verification física** - Usa `finger::left sensor` para verificar se gripper pegou algo
+- **HSV ranges tightened** - GREEN H:40-70, BLUE H:100-130 (evita overlap cyan)
+- **Debug logging** - Logs de navegação e cor a cada segundo
+
 ---
 
 ## FASE 1: Teste com GPS (Treinamento)
@@ -59,7 +66,7 @@ Spawn complete. The supervisor has spawned 15/15 objects
 [INFO] Camera warmup complete (10 frames)          ← warmup OK
 ```
 
-### 1.3 Comportamento esperado APÓS fixes
+### 1.3 Comportamento esperado APÓS fixes (DECISÃO 022 + 023)
 
 | Antes | Depois |
 |-------|--------|
@@ -71,6 +78,10 @@ Spawn complete. The supervisor has spawned 15/15 objects
 | Print spam GRASP | 1 print por estado |
 | GRASPING → AVOIDING (cubo = obstáculo) | AVOIDING desativado durante GRASPING/DEPOSITING |
 | Log spam "Waiting..." ~50x/s | 1 log por segundo |
+| **GREEN → BLUE misclassification** | **HSV ranges separados (40-70 vs 100-130)** |
+| **Grasp SUCCESS sem cubo** | **Position sensor verifica se pegou** |
+| **Robot para em NAVIGATING_TO_BOX** | **P-controller navega até caixa** |
+| **Box positions errados (x=-2)** | **Coordenadas corretas do world file** |
 
 ### 1.4 Observações sobre GPS
 
@@ -230,16 +241,20 @@ Verificar thresholds em `state_machine.py`: entry=0.4m, exit=0.6m
 
 | Métrica | Meta | Status |
 |---------|------|--------|
-| Camera warmup | 10 frames | Implementado |
-| Stable detection | 3 frames | Implementado |
-| Min approach time | 2s | Implementado |
-| AVOIDING exit | <30s | Threshold 0.6m |
-| Output smoothing | EMA 0.3 | Implementado |
+| Camera warmup | 10 frames | ✅ Implementado |
+| Stable detection | 3 frames | ✅ Implementado |
+| Min approach time | 2s | ✅ Implementado |
+| AVOIDING exit | <30s | ✅ Threshold 0.6m |
+| Output smoothing | EMA 0.3 | ✅ Implementado |
 | GPS training mode | Ativo | N/A (GPS não existe) |
-| Deposit box filter | MAX_CONTOUR_AREA | Implementado (15000px) |
-| Grasp timing | 8.5s | Implementado |
-| Print spam fix | 1x/estado | Implementado |
-| AVOIDING excluído manipulação | GRASPING/DEPOSITING | Implementado |
-| Log spam approach | 1x/segundo | Implementado |
-| Ciclo completo | ≥1 | A validar |
-| GPS desabilitado | Demo final | N/A (sempre odometria) |
+| Deposit box filter | MAX_CONTOUR_AREA | ✅ Implementado (15000px) |
+| Grasp timing | 8.5s | ✅ Implementado |
+| Print spam fix | 1x/estado | ✅ Implementado |
+| AVOIDING excluído manipulação | GRASPING/DEPOSITING | ✅ Implementado |
+| Log spam approach | 1x/segundo | ✅ Implementado |
+| **HSV color ranges** | GREEN≠BLUE | ✅ H:40-70 vs H:100-130 |
+| **Grasp verification** | Physical sensor | ✅ finger::left sensor |
+| **Box coordinates** | World file | ✅ GREEN(0.48,1.58) BLUE(0.48,-1.62) RED(2.31,0.01) |
+| **Navigation controller** | P-control | ✅ _compute_navigation_to_box() |
+| Ciclo completo | ≥1 | ⏳ A validar |
+| GPS desabilitado | Demo final | ✅ (sempre odometria) |

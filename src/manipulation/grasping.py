@@ -209,18 +209,23 @@ class GraspController:
 
     def _verify_grasp(self) -> bool:
         """
-        Verify cube is successfully grasped
+        Verify cube is successfully grasped using physical sensor
+
+        Uses gripper position sensor to check if fingers closed on object
+        (fingers blocked before reaching MIN_POS) vs closing on air
+        (fingers reach MIN_POS = 0.0).
 
         Returns:
-            True if cube appears to be grasped
+            True if cube appears to be physically grasped
         """
         if self.gripper is None:
             return True  # Assume success in test mode
 
-        # In real implementation, could check:
-        # - Gripper force feedback
-        # - Camera verification
-        # - Motor current
+        # Use physical sensor verification if available
+        if hasattr(self.gripper, 'has_object'):
+            return self.gripper.has_object()
+
+        # Fallback to flag-based check (less reliable)
         return self.gripper.is_closed()
 
     def _execute_lift_cube(self) -> None:

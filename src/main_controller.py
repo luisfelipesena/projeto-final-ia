@@ -14,7 +14,7 @@ NO GPS ALLOWED in final demonstration.
 import sys
 import numpy as np
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 import time
 import logging
 
@@ -27,7 +27,7 @@ if str(src_path) not in sys.path:
 from perception import PerceptionSystem, PerceptionState
 from control.fuzzy_controller import FuzzyController, FuzzyInputs, FuzzyOutputs
 from control.state_machine import StateMachine, RobotState, StateTransitionConditions
-from navigation import LocalMap, Odometry, Pose2D
+from navigation import LocalMap, Odometry, Pose2D, get_deposit_box_pose
 from manipulation import GraspController, DepositController
 
 
@@ -303,11 +303,11 @@ class MainController:
         # Get current position from odometry
         pose = self.odometry.get_pose()
 
-        # Known box positions (approximate)
+        # Known box positions (from IA_20252.wbt world file)
         box_positions = {
-            'green': (-2.0, 1.5),
-            'blue': (-2.0, 0.0),
-            'red': (-2.0, -1.5)
+            'green': (0.48, 1.58),
+            'blue': (0.48, -1.62),
+            'red': (2.31, 0.01)
         }
 
         target = box_positions.get(self.current_cube_color)
@@ -317,6 +317,59 @@ class MainController:
         # Check if close enough (within 0.3m)
         distance = np.sqrt((pose.x - target[0])**2 + (pose.y - target[1])**2)
         return distance < 0.3
+
+    def _compute_navigation_to_box(self) -> Tuple[float, float]:
+        """
+        Compute velocities to navigate to target deposit box
+
+        Uses proportional controller for heading and distance.
+
+        Returns:
+            (vx, omega) velocities for navigation
+        """
+        target = get_deposit_box_pose(self.current_cube_color)
+        if not target:
+            return 0.0, 0.0
+
+        pose = self.odometry.get_pose()
+
+        # Distance and angle to target
+        dx = target.x - pose.x
+        dy = target.y - pose.y
+        distance = np.sqrt(dx**2 + dy**2)
+        desired_heading = np.arctan2(dy, dx)
+        heading_error = desired_heading - pose.theta
+
+        # Normalize angle to [-pi, pi]
+        while heading_error > np.pi:
+            heading_error -= 2 * np.pi
+        while heading_error < -np.pi:
+            heading_error += 2 * np.pi
+
+        # P-controller gains
+        K_angular = 0.5
+        K_linear = 0.3
+
+        # Angular velocity
+        omega = K_angular * heading_error
+        omega = np.clip(omega, -0.4, 0.4)
+
+        # Only move forward when roughly aligned (< 30 degrees)
+        if abs(heading_error) < 0.5:
+            vx = K_linear * min(distance, 1.0)
+            vx = np.clip(vx, 0.0, 0.2)
+        else:
+            vx = 0.0  # Turn in place first
+
+        # Debug logging every ~1 second (30 frames)
+        if self.loop_count % 30 == 0:
+            self._log(
+                f"NAV: pose=({pose.x:.2f}, {pose.y:.2f}, θ={np.degrees(pose.theta):.1f}°) "
+                f"→ target=({target.x:.2f}, {target.y:.2f}) "
+                f"dist={distance:.2f}m heading_err={np.degrees(heading_error):.1f}°"
+            )
+
+        return vx, omega
 
     def execute_control(self, fuzzy_outputs: FuzzyOutputs) -> None:
         """
@@ -357,6 +410,14 @@ class MainController:
             self.base.move(vx=0.0, vy=0.0, omega=omega)
             dt = self.time_step / 1000.0
             self.odometry.update_from_command(vx=0.0, vy=0.0, omega=omega, dt=dt)
+            return
+
+        # Handle NAVIGATING_TO_BOX with dedicated navigation controller
+        if current_state == RobotState.NAVIGATING_TO_BOX:
+            vx, omega = self._compute_navigation_to_box()
+            self.base.move(vx=vx, vy=0.0, omega=omega)
+            dt = self.time_step / 1000.0
+            self.odometry.update_from_command(vx=vx, vy=0.0, omega=omega, dt=dt)
             return
 
         # Normal movement states

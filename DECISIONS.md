@@ -27,6 +27,7 @@
 | 020 | Mock Perception System | Fase 3 | ✅ |
 | 021 | Controller Integration | Fase 6 | ✅ |
 | 022 | Perception/Control Bug Fixes | Fase 6 | ✅ |
+| 023 | Navigation & Grasp Critical Fixes | Fase 6 | ✅ |
 
 ---
 
@@ -315,6 +316,42 @@
 - `src/main_controller.py` - camera warmup, GPS enable
 - `src/control/state_machine.py` - stable detection, min approaching time, AVOIDING thresholds
 - `src/control/fuzzy_controller.py` - output smoothing
+
+---
+
+## DECISÃO 023: Navigation & Grasp Critical Fixes
+
+**O que:** Corrigir 3 bugs críticos que impediam funcionamento do robô:
+1. **Box positions errados:** Hardcoded x=-2.0 mas world file tem x=0.48/2.31
+2. **Grasp success falso:** `_verify_grasp()` verificava flag, não sensor físico
+3. **Color misclassification:** HSV ranges muito amplos causavam GREEN→BLUE
+
+**Por quê:** Testes mostraram:
+- Robot parava após NAVIGATING_TO_BOX (navegava para coordenadas inexistentes)
+- Robot reportava "SUCCESS - blue cube" mas não pegou nada (verificação por flag)
+- Cubo verde na frente foi classificado como azul (overlap HSV no espectro cyan)
+
+**Base teórica:**
+- Thrun et al. (2005) - sensor verification over blind actuation
+- Saffiotti (1997) - hysteresis and validation in fuzzy navigation
+- OpenCV HSV color space - gap necessário entre ranges de hue
+
+**Alternativas consideradas:**
+1. GPS para navegação ❌ proibido na demo final
+2. Só verificação por timeout ❌ não detecta grasp falho
+3. CNN para cores ❌ infraestrutura pronta mas não treinada ainda
+
+**Impacto:**
+- Robot navega para coordenadas corretas das caixas
+- Grasp verification detecta quando gripper fecha no vazio
+- Cores classificadas corretamente (green H:40-70, blue H:100-130)
+
+**Arquivos modificados:**
+- `IA_20252/controllers/youbot/gripper.py` - finger_sensor, has_object()
+- `src/manipulation/grasping.py` - _verify_grasp() usa sensor físico
+- `src/perception/cube_detector.py` - HSV ranges tightened, debug logging
+- `src/main_controller.py` - box positions, _compute_navigation_to_box()
+- `src/navigation/odometry.py` - DEPOSIT_BOXES coordinates
 
 ---
 

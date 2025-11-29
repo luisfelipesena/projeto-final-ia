@@ -49,20 +49,22 @@ class ColorSegmenter:
     """
 
     # HSV ranges calibrated for Webots simulation lighting
+    # TIGHTENED: Avoid overlap between green (H:40-70) and blue (H:100-130)
+    # Previous ranges had green H:35-85 which overlapped with cyan spectrum
     COLOR_RANGES = {
         'green': {
-            'lower': np.array([35, 100, 100]),
-            'upper': np.array([85, 255, 255])
+            'lower': np.array([40, 150, 100]),   # H:40-70, stricter S threshold
+            'upper': np.array([70, 255, 255])
         },
         'blue': {
-            'lower': np.array([100, 100, 100]),
+            'lower': np.array([100, 150, 100]),  # H:100-130, stricter S threshold
             'upper': np.array([130, 255, 255])
         },
         'red': {
             # Red wraps around in HSV, need two ranges
-            'lower1': np.array([0, 100, 100]),
+            'lower1': np.array([0, 150, 100]),
             'upper1': np.array([10, 255, 255]),
-            'lower2': np.array([160, 100, 100]),
+            'lower2': np.array([160, 150, 100]),
             'upper2': np.array([180, 255, 255])
         }
     }
@@ -300,6 +302,9 @@ class CubeDetector:
 
         best_color = max(counts, key=counts.get)
         confidence = counts[best_color] / total
+
+        # Debug logging for color classification
+        print(f"[ColorDebug] G={counts.get('green',0)} B={counts.get('blue',0)} R={counts.get('red',0)} → {best_color} ({confidence:.2f})")
 
         return best_color, confidence
 
