@@ -119,6 +119,11 @@ class PerceptionSystem:
         self.last_state: Optional[PerceptionState] = None
         self.update_count = 0
 
+        # Cube tracking to prevent target switching
+        self.tracked_cube_color: Optional[str] = None
+        self.cube_lost_frames = 0
+        self.CUBE_LOST_THRESHOLD = 10  # Lost if not seen for 10 consecutive frames
+
         print("PerceptionSystem initialized")
 
     def process_lidar(self, ranges: np.ndarray) -> Tuple[Optional[ObstacleMap], float, float]:
@@ -237,11 +242,38 @@ class PerceptionSystem:
         if camera_image is not None:
             cube_detections = self.process_camera(camera_image)
 
-        # Find closest valid cube
+        # Find closest valid cube WITH TRACKING
         closest_cube = None
         valid_cubes = [d for d in cube_detections if d.is_valid]
+
         if valid_cubes:
-            closest_cube = valid_cubes[0]  # Already sorted by distance
+            if self.tracked_cube_color is not None:
+                # LOCKED MODE: prefer tracked color, only switch if completely lost
+                tracked_cubes = [d for d in valid_cubes if d.color == self.tracked_cube_color]
+                if tracked_cubes:
+                    # Found tracked cube - use it and reset lost counter
+                    closest_cube = tracked_cubes[0]
+                    self.cube_lost_frames = 0
+                else:
+                    # Tracked cube not visible - increment lost counter
+                    self.cube_lost_frames += 1
+                    if self.cube_lost_frames >= self.CUBE_LOST_THRESHOLD:
+                        # Lost for too long - unlock and switch to nearest cube
+                        print(f"PerceptionSystem: Lost {self.tracked_cube_color} cube for {self.cube_lost_frames} frames, switching target")
+                        self.tracked_cube_color = None
+                        self.cube_lost_frames = 0
+                        closest_cube = valid_cubes[0]  # Switch to closest
+                    else:
+                        # Still searching for tracked cube - return None to avoid oscillation
+                        closest_cube = None
+            else:
+                # UNLOCKED MODE: pick closest cube
+                closest_cube = valid_cubes[0]
+        else:
+            # No cubes detected at all
+            self.cube_lost_frames += 1
+            if self.cube_lost_frames >= self.CUBE_LOST_THRESHOLD:
+                self.tracked_cube_color = None  # Unlock tracking
 
         # Build state
         state = PerceptionState(
@@ -296,6 +328,26 @@ class PerceptionSystem:
             'angle_to_cube': cube.angle,
             'cube_color': cube.color
         }
+
+    def set_cube_tracking(self, color: str) -> None:
+        """
+        Lock onto a specific cube color to prevent target switching
+
+        Args:
+            color: Color to track ('green' | 'blue' | 'red')
+        """
+        self.tracked_cube_color = color
+        self.cube_lost_frames = 0
+        print(f"PerceptionSystem: Locked onto {color} cube")
+
+    def clear_cube_tracking(self) -> None:
+        """
+        Unlock cube tracking to allow new target selection
+        """
+        if self.tracked_cube_color:
+            print(f"PerceptionSystem: Unlocked {self.tracked_cube_color} cube tracking")
+        self.tracked_cube_color = None
+        self.cube_lost_frames = 0
 
 
 def test_perception_system():

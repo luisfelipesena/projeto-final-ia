@@ -439,12 +439,48 @@ class MainController:
             self.odometry.update_from_command(vx=vx, vy=0.0, omega=omega, dt=dt)
             return
 
+        # Handle APPROACHING state - align with cube before grasping
+        if current_state == RobotState.APPROACHING:
+            cube_info = self.perception.get_cube_info()
+            cube_angle = cube_info.get('angle_to_cube', 0.0)
+            cube_dist = cube_info.get('distance_to_cube', 3.0)
+            cube_color = cube_info.get('cube_color', 'unknown')
+
+            # Priority 1: ALIGN with cube (turn to face it)
+            if abs(cube_angle) > 5.0:
+                # Turn toward cube, don't move forward yet
+                K_turn = 0.03  # rad/s per degree
+                omega = -K_turn * cube_angle  # Negative: positive angle = cube on right → turn right
+                omega = np.clip(omega, -0.4, 0.4)
+                vx = 0.0  # Stop forward motion while aligning
+                if self.loop_count % 30 == 0:  # Log every ~1s
+                    self._log(f"ALIGN {cube_color}: angle={cube_angle:.1f}° → omega={omega:.2f}")
+            else:
+                # Priority 2: APPROACH cube (move forward when aligned)
+                vx = 0.12 if cube_dist > 0.35 else 0.06  # Slow down when close
+                omega = -0.01 * cube_angle  # Minor correction while moving
+                if self.loop_count % 30 == 0:  # Log every ~1s
+                    self._log(f"APPROACH {cube_color}: dist={cube_dist:.2f}m angle={cube_angle:.1f}°")
+
+            self.base.move(vx=vx, vy=0.0, omega=omega)
+            dt = self.time_step / 1000.0
+            self.odometry.update_from_command(vx=vx, vy=0.0, omega=omega, dt=dt)
+            return
+
         # Handle manipulation states
         if current_state == RobotState.GRASPING:
             if not self.grasp_controller.is_done():
                 self.grasp_controller.update()
-            # Robot should be stationary during grasp
-            self.base.reset()
+
+            # During approach phase, drive forward slowly to close gap
+            if self.grasp_controller.is_approaching():
+                vx = self.grasp_controller.get_approach_velocity()
+                self.base.move(vx=vx, vy=0.0, omega=0.0)
+                dt = self.time_step / 1000.0
+                self.odometry.update_from_command(vx=vx, vy=0.0, omega=0.0, dt=dt)
+            else:
+                # Robot should be stationary during actual grasp
+                self.base.reset()
             return
 
         if current_state == RobotState.DEPOSITING:
@@ -497,7 +533,15 @@ class MainController:
         Args:
             new_state: State being entered
         """
-        if new_state == RobotState.GRASPING:
+        if new_state == RobotState.APPROACHING:
+            # Lock perception tracking when starting approach
+            cube_info = self.perception.get_cube_info()
+            color = cube_info.get('cube_color')
+            if color:
+                self.perception.set_cube_tracking(color)
+                self._log(f"Locked tracking onto {color} cube")
+
+        elif new_state == RobotState.GRASPING:
             # Start grasp sequence
             cube_info = self.perception.get_cube_info()
             color = cube_info.get('cube_color', 'unknown')
@@ -536,6 +580,9 @@ class MainController:
             self.grasp_controller.reset()
             self.deposit_controller.reset()
             self.current_cube_color = None
+
+            # Unlock perception tracking to allow new target selection
+            self.perception.clear_cube_tracking()
 
     def step(self) -> bool:
         """

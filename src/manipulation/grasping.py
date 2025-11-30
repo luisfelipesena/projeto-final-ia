@@ -15,6 +15,7 @@ import logging
 class GraspState(Enum):
     """States in the grasp sequence"""
     IDLE = auto()
+    APPROACH_FINAL = auto()   # Drive closer while arm prepares (NEW)
     PREPARE_ARM = auto()      # Move arm to pre-grasp position
     LOWER_ARM = auto()        # Lower arm to grasp height
     CLOSE_GRIPPER = auto()    # Close gripper on cube
@@ -66,12 +67,16 @@ class GraspController:
 
     # State timing (seconds) - increased for arm motor speed
     STATE_DURATIONS = {
-        GraspState.PREPARE_ARM: 2.5,   # Was 1.5 - arm needs time to reach position
+        GraspState.APPROACH_FINAL: 2.0, # Drive forward to close gap (2s × 0.10 m/s = 20cm)
+        GraspState.PREPARE_ARM: 2.0,    # Arm to front position (reduced since approach started)
         GraspState.LOWER_ARM: 2.0,      # Was 1.0 - lower slowly
         GraspState.CLOSE_GRIPPER: 1.5,  # Was 0.8 - ensure grip
         GraspState.VERIFY_GRASP: 0.5,   # Was 0.3
         GraspState.LIFT_CUBE: 2.0,      # Was 1.0 - lift slowly
     }
+
+    # Approach speed during final approach (m/s)
+    APPROACH_SPEED = 0.10  # 0.10 m/s × 2.0s = 20cm additional approach
 
     MAX_ATTEMPTS = 3
 
@@ -112,7 +117,7 @@ class GraspController:
         self.attempt_count = 1
         self.sequence_start_time = time.time()
         self._result = None
-        self._transition_to(GraspState.PREPARE_ARM)
+        self._transition_to(GraspState.APPROACH_FINAL)
 
     def update(self, dt: float = 0.032) -> GraspState:
         """
@@ -131,7 +136,14 @@ class GraspController:
         duration = self.STATE_DURATIONS.get(self.state, 1.0)
 
         # State-specific actions and transitions
-        if self.state == GraspState.PREPARE_ARM:
+        if self.state == GraspState.APPROACH_FINAL:
+            # Robot should be moving forward (handled in main_controller)
+            # Start preparing arm while approaching
+            self._execute_prepare_arm()
+            if elapsed >= duration:
+                self._transition_to(GraspState.PREPARE_ARM)
+
+        elif self.state == GraspState.PREPARE_ARM:
             self._execute_prepare_arm()
             if elapsed >= duration:
                 self._transition_to(GraspState.LOWER_ARM)
@@ -256,6 +268,16 @@ class GraspController:
     def is_done(self) -> bool:
         """Check if sequence is complete (success or failure)"""
         return self.state in (GraspState.COMPLETE, GraspState.FAILED, GraspState.IDLE)
+
+    def is_approaching(self) -> bool:
+        """Check if in final approach phase (robot should drive forward)"""
+        return self.state == GraspState.APPROACH_FINAL
+
+    def get_approach_velocity(self) -> float:
+        """Get approach velocity for final approach phase"""
+        if self.state == GraspState.APPROACH_FINAL:
+            return self.APPROACH_SPEED
+        return 0.0
 
     def is_success(self) -> bool:
         """Check if grasp was successful"""

@@ -72,7 +72,7 @@ class StateMachine:
         SEARCHING → APPROACHING: cube_detected=True
         SEARCHING → AVOIDING: obstacle_distance < 0.3m
 
-        APPROACHING → GRASPING: cube_distance < 0.15m AND |cube_angle| < 5°
+        APPROACHING → GRASPING: cube_distance < 0.30m AND |cube_angle| < 5°
         APPROACHING → SEARCHING: cube_detected=False (lost detection)
         APPROACHING → AVOIDING: obstacle_distance < 0.3m
 
@@ -270,7 +270,9 @@ class StateMachine:
                 self.cube_lost_frames = 0  # Reset counter when cube detected
                 # Check approaching time requirement
                 approaching_duration = time.time() - self.approaching_start_time
-                if conditions.cube_distance < 0.25 and abs(conditions.cube_angle) < 15.0:
+                # Trigger GRASPING at 0.30m when ALIGNED (< 5°)
+                # At 0.30m, 5° offset = 2.6cm lateral error, within gripper tolerance
+                if conditions.cube_distance < 0.30 and abs(conditions.cube_angle) < 5.0:
                     # Must spend minimum time approaching to avoid instant transitions
                     if approaching_duration >= self.MIN_APPROACHING_TIME:
                         self.transition_to(RobotState.GRASPING, {

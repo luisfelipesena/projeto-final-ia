@@ -69,9 +69,14 @@ class ColorSegmenter:
         }
     }
 
-    # CRITICAL: 1500 was WAY too high - a 5cm cube at 1m is only ~300-600 pixels area
-    MIN_CONTOUR_AREA = 200   # pixels - lowered to detect cubes at distance
-    MAX_CONTOUR_AREA = 20000  # pixels - filter out large objects (deposit boxes)
+    # Cube detection thresholds
+    # 5cm cube at 1m ≈ 300-600 pixels area, at 2m ≈ 75-150 pixels
+    MIN_CONTOUR_AREA = 100   # pixels - detect cubes at distance
+    MAX_CONTOUR_AREA = 8000  # pixels - filter deposit boxes (reduced from 20000)
+
+    # Maximum bbox size as fraction of image - deposit boxes are much larger than cubes
+    # 5cm cube at 0.3m ≈ 30% of image, so anything >40% is probably not a cube
+    MAX_BBOX_FRACTION = 0.35
 
     # Debug: save images to diagnose detection issues
     DEBUG_SAVE_IMAGES = False  # Set True to save debug images
@@ -137,6 +142,12 @@ class ColorSegmenter:
                 # Relaxed from 0.4 to 0.3 to handle perspective distortion
                 bbox_aspect = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0
                 if bbox_aspect < 0.3:  # Too elongated, not a cube
+                    continue
+
+                # Maximum bbox size filter - deposit boxes are much larger than cubes
+                # A cube taking up >35% of image is either too close or a false detection
+                bbox_fraction = max(bw / w, bh / h)
+                if bbox_fraction > self.MAX_BBOX_FRACTION:
                     continue
 
                 # Calculate normalized bbox center
