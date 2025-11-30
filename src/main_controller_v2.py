@@ -40,6 +40,9 @@ from perception.cube_detector import CubeDetector
 # Import RNA model for LIDAR (MATA64 requirement)
 from perception.models.simple_lidar_mlp import SimpleLIDARMLP
 
+# Import Fuzzy Controller (MATA64 requirement)
+from control.fuzzy_controller import FuzzyController, FuzzyInputs
+
 
 class RobotStateV2(Enum):
     """Simplified robot states"""
@@ -58,6 +61,14 @@ class ControllerStats:
     state_changes: int = 0
     time_started: float = 0
     current_state_time: float = 0
+
+
+# Deposit box coordinates (from odometry.py)
+DEPOSIT_BOXES = {
+    'green': (0.48, 1.58),
+    'blue': (0.48, -1.62),
+    'red': (2.31, 0.01),
+}
 
 
 class MainControllerV2:
@@ -100,9 +111,11 @@ class MainControllerV2:
         self.camera.enable(self.time_step)
 
         # LIDAR (for obstacle detection)
-        self.lidar = self.robot.getDevice("Hokuyo URG-04LX-UG01")
+        # Webots uses lowercase device names by default
+        self.lidar = self.robot.getDevice("lidar")
         if self.lidar:
             self.lidar.enable(self.time_step)
+            print(f"[LIDAR] Device enabled")
 
         # Load RNA model for LIDAR (MATA64 requirement)
         self.lidar_model = self._load_lidar_model()
@@ -113,8 +126,14 @@ class MainControllerV2:
         self.detector = CubeDetector()
         self.vision = VisionService(self.detector, self.time_step)
         self.navigation = NavigationService(
-            self.movement, self.vision, self.robot, self.camera, self.time_step
+            self.movement, self.vision, self.robot, self.camera, self.time_step,
+            lidar=self.lidar, lidar_model=self.lidar_model
         )
+
+        # Initialize Fuzzy Controller (MATA64 requirement)
+        self.fuzzy = FuzzyController(config={'logging': True})
+        self.fuzzy.initialize()
+        print("[MainControllerV2] Fuzzy controller initialized")
 
         # State
         self.state = RobotStateV2.SEARCHING
@@ -209,18 +228,63 @@ class MainControllerV2:
         if not valid:
             return float('inf')
 
-        # Log RNA usage periodically (every ~1s)
-        if hasattr(self, '_rna_log_counter'):
-            self._rna_log_counter += 1
-        else:
-            self._rna_log_counter = 0
-
-        if self._rna_log_counter % 30 == 0:
-            active_sectors = sum(1 for o in obstacle_map if o > 0.5)
-            if active_sectors > 0:
-                print(f"[RNA] Obstacles: {active_sectors}/9 sectors, min_dist={min(valid):.2f}m")
-
         return min(valid)
+
+    def _get_obstacle_sectors(self) -> dict:
+        """Get obstacle presence per sector from RNA."""
+        if not self.lidar:
+            return {'left': False, 'front': False, 'right': False}
+
+        ranges = self.lidar.getRangeImage()
+        if not ranges:
+            return {'left': False, 'front': False, 'right': False}
+
+        obstacles = self._get_obstacle_map_rna(ranges)
+        # Sectors: 0-2 left, 3-5 front, 6-8 right
+        return {
+            'left': any(o > 0.5 for o in obstacles[0:3]),
+            'front': any(o > 0.5 for o in obstacles[3:6]),
+            'right': any(o > 0.5 for o in obstacles[6:9]),
+        }
+
+    def _compute_fuzzy_inputs(self) -> FuzzyInputs:
+        """Convert sensor data to FuzzyInputs for controller."""
+        # Get obstacle data from RNA
+        obstacle_dist = self._get_min_obstacle_distance()
+        sectors = self._get_obstacle_sectors()
+
+        # Compute obstacle angle from sectors
+        if sectors['left'] and not sectors['right']:
+            obstacle_angle = -45.0
+        elif sectors['right'] and not sectors['left']:
+            obstacle_angle = 45.0
+        elif sectors['front']:
+            obstacle_angle = 0.0
+        else:
+            obstacle_angle = 0.0
+
+        # Get cube data from vision
+        target = self.vision.get_target()
+        if target:
+            cube_dist = target.distance
+            cube_angle = target.angle
+            cube_detected = True
+        else:
+            cube_dist = 3.0
+            cube_angle = 0.0
+            cube_detected = False
+
+        # Holding state
+        holding = self.state == RobotStateV2.DEPOSITING
+
+        return FuzzyInputs(
+            distance_to_obstacle=min(obstacle_dist, 5.0),
+            angle_to_obstacle=max(-135, min(135, obstacle_angle)),
+            distance_to_cube=min(cube_dist, 3.0),
+            angle_to_cube=max(-135, min(135, cube_angle)),
+            cube_detected=cube_detected,
+            holding_cube=holding
+        )
 
     def _transition_to(self, new_state: RobotStateV2, reason: str = "") -> None:
         """Transition to new state."""
@@ -258,8 +322,9 @@ class MainControllerV2:
                 self._transition_to(RobotStateV2.SEARCHING, "timeout")
                 continue
 
-            # Check for obstacle emergency (except during manipulation)
-            if self.state not in (RobotStateV2.GRASPING, RobotStateV2.DEPOSITING):
+            # Check for obstacle emergency (except during manipulation & approaching)
+            # During APPROACHING, NavigationService handles obstacle-aware movement
+            if self.state not in (RobotStateV2.GRASPING, RobotStateV2.DEPOSITING, RobotStateV2.APPROACHING):
                 obstacle_dist = self._get_min_obstacle_distance()
                 if obstacle_dist < 0.25:
                     self._handle_obstacle(obstacle_dist)
@@ -285,7 +350,7 @@ class MainControllerV2:
         self._print_final_stats()
 
     def _do_searching(self) -> None:
-        """SEARCHING: Rotate to scan for cubes."""
+        """SEARCHING: Use fuzzy controller for intelligent search."""
         target = self.vision.get_target()
 
         if target and target.is_reliable:
@@ -295,11 +360,15 @@ class MainControllerV2:
             self._transition_to(RobotStateV2.APPROACHING, f"found {target.color}")
             return
 
-        # No cube - rotate to scan
-        now = time.time()
-        if now - self.last_rotate_time > self.SEARCH_ROTATE_INTERVAL:
-            self.movement.move_continuous(vx=0, vy=0, omega=0.3)  # Slow rotation
-            self.last_rotate_time = now
+        # Use fuzzy controller for search behavior
+        inputs = self._compute_fuzzy_inputs()
+        outputs = self.fuzzy.infer(inputs)
+
+        # Fuzzy outputs guide movement (with search-appropriate defaults)
+        vx = outputs.linear_velocity if outputs.linear_velocity > 0.01 else 0.05
+        omega = outputs.angular_velocity if abs(outputs.angular_velocity) > 0.05 else 0.3
+
+        self.movement.move_continuous(vx=vx, vy=0, omega=omega)
 
     def _do_approaching(self) -> None:
         """APPROACHING: Use NavigationService to approach target."""
@@ -309,12 +378,18 @@ class MainControllerV2:
             self.movement.stop()
             self._transition_to(RobotStateV2.GRASPING, f"dist={result.final_distance:.2f}m")
         elif result.phase.name == "LOST":
-            self.vision.unlock()
+            # Don't unlock - let LOST_THRESHOLD persistence handle brief detection failures
+            # If target is truly lost, we'll re-acquire in SEARCHING
             self._transition_to(RobotStateV2.SEARCHING, "target_lost")
 
     def _do_grasping(self) -> None:
         """GRASPING: Use ArmService for grasp sequence."""
         print(f"[Grasping] Attempting grasp of {self.target_cube_color} cube")
+
+        # Final approach: move forward to close gap between camera distance and arm reach
+        # 15cm brings cube within gripper reach (~27cm from robot center)
+        print("[Grasping] Final approach")
+        self.movement.forward(distance_m=0.15, speed=0.06)
 
         # Prepare and execute grasp
         if not self.arm_svc.prepare_grasp():
@@ -335,26 +410,56 @@ class MainControllerV2:
             self._transition_to(RobotStateV2.SEARCHING, "grasp_failed")
 
     def _do_depositing(self) -> None:
-        """DEPOSITING: Navigate to box and deposit cube."""
-        print(f"[Depositing] Moving to {self.target_cube_color} box")
-
-        # TODO: Navigate to correct box based on color
-        # For now, just deposit in place (proof of concept)
-
-        if not self.arm_svc.prepare_deposit():
-            self._transition_to(RobotStateV2.SEARCHING, "deposit_failed")
+        """DEPOSITING: Navigate to correct box and deposit cube."""
+        if not self.target_cube_color:
+            self._transition_to(RobotStateV2.SEARCHING, "no_color")
             return
 
-        if not self.arm_svc.execute_deposit():
-            self._transition_to(RobotStateV2.SEARCHING, "deposit_failed")
+        # Get target box position
+        box_pos = DEPOSIT_BOXES.get(self.target_cube_color)
+        if not box_pos:
+            self._transition_to(RobotStateV2.SEARCHING, "unknown_color")
             return
 
-        self.arm_svc.return_to_rest()
-        self.vision.unlock()
-        self.target_cube_color = None
+        # Timed navigation phases: turn → drive → drop
+        if not hasattr(self, '_deposit_phase'):
+            self._deposit_phase = 'turn'
+            self._deposit_start = time.time()
+            print(f"[Deposit] Starting turn toward {self.target_cube_color} box at {box_pos}")
 
-        print(f"[Depositing] Complete! Cubes: {self.stats.cubes_collected}")
-        self._transition_to(RobotStateV2.SEARCHING, "deposit_complete")
+        if self._deposit_phase == 'turn':
+            # Turn 180° (arm is at back) for ~2 seconds
+            if time.time() - self._deposit_start < 2.0:
+                self.movement.move_continuous(vx=0, vy=0, omega=0.8)
+                return
+            self.movement.stop()
+            self._deposit_phase = 'drive'
+            self._deposit_start = time.time()
+            print("[Deposit] Driving toward box")
+
+        if self._deposit_phase == 'drive':
+            # Drive for ~3 seconds
+            if time.time() - self._deposit_start < 3.0:
+                self.movement.move_continuous(vx=0.15, vy=0, omega=0)
+                return
+            self.movement.stop()
+            self._deposit_phase = 'drop'
+            print("[Deposit] Executing drop")
+
+        if self._deposit_phase == 'drop':
+            # Execute deposit sequence
+            self.arm_svc.prepare_deposit()
+            self.arm_svc.execute_deposit()
+            self.arm_svc.return_to_rest()
+
+            # Cleanup state
+            del self._deposit_phase
+            del self._deposit_start
+            self.vision.unlock()
+            self.target_cube_color = None
+
+            print(f"[Deposit] Complete! Cubes: {self.stats.cubes_collected}")
+            self._transition_to(RobotStateV2.SEARCHING, "deposit_complete")
 
     def _do_avoiding(self) -> None:
         """AVOIDING: Back away from obstacle."""

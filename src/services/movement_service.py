@@ -154,8 +154,6 @@ class MovementService:
 
     def stop(self) -> None:
         """Immediately stop all motion."""
-        if self.is_moving:
-            print("[Movement] STOP")
         self.base.move(vx=0, vy=0, omega=0)
         self.is_moving = False
 
@@ -169,8 +167,6 @@ class MovementService:
             vy: Strafe velocity (m/s)
             omega: Angular velocity (rad/s)
         """
-        if not self.is_moving or vx != 0 or vy != 0 or omega != 0:
-            print(f"[Movement] Continuous: vx={vx:.2f} vy={vy:.2f} omega={omega:.2f}")
         self.base.move(vx, vy, omega)
         self.is_moving = True
 

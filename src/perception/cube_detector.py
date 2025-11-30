@@ -70,13 +70,22 @@ class ColorSegmenter:
     }
 
     # Cube detection thresholds
-    # 5cm cube at 1m ≈ 300-600 pixels area, at 2m ≈ 75-150 pixels
-    MIN_CONTOUR_AREA = 100   # pixels - detect cubes at distance
-    MAX_CONTOUR_AREA = 8000  # pixels - filter deposit boxes (reduced from 20000)
+    # 5cm cube at 1m ≈ 300-600 pixels area, at 0.3m ≈ 15000 pixels, at 0.20m ≈ 25000 pixels
+    MIN_CONTOUR_AREA = 100    # pixels - detect cubes at distance
+    MAX_CONTOUR_AREA = 30000  # pixels - reject deposit boxes (they're huge)
 
-    # Maximum bbox size as fraction of image - deposit boxes are much larger than cubes
-    # 5cm cube at 0.3m ≈ 30% of image, so anything >40% is probably not a cube
+    # Maximum bbox size as fraction of image
+    # 5cm cube at 0.30m ≈ 15% of image, at 0.20m ≈ 25%, at 0.15m ≈ 35%
+    # Deposit boxes are 40%+ of image - reject them
     MAX_BBOX_FRACTION = 0.35
+
+    # Minimum aspect ratio (width/height or height/width)
+    # Cubes are SQUARE (aspect ~1.0), deposit boxes are rectangular (aspect ~0.3-0.5)
+    MIN_BBOX_ASPECT = 0.70
+
+    # Cubes are on the floor - center_y should be in lower half of image
+    # This rejects elevated deposit boxes
+    MIN_CENTER_Y = 0.35  # Cube center must be below 35% from top
 
     # Debug: save images to diagnose detection issues
     DEBUG_SAVE_IMAGES = False  # Set True to save debug images
@@ -97,11 +106,7 @@ class ColorSegmenter:
         # Convert to HSV
         hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
 
-        # Debug: log HSV statistics every 100 frames
         ColorSegmenter._debug_frame_count += 1
-        if ColorSegmenter._debug_frame_count % 100 == 0:
-            h_mean, s_mean, v_mean = hsv[:,:,0].mean(), hsv[:,:,1].mean(), hsv[:,:,2].mean()
-            print(f"[HSV Debug] H_mean={h_mean:.1f} S_mean={s_mean:.1f} V_mean={v_mean:.1f}")
 
         h, w = image.shape[:2]
 
@@ -122,10 +127,6 @@ class ColorSegmenter:
             # Find contours
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Debug: log contour stats every 100 frames
-            if ColorSegmenter._debug_frame_count % 100 == 0 and len(contours) > 0:
-                areas = [cv2.contourArea(c) for c in contours]
-                print(f"[Contour Debug] {color_name}: {len(contours)} contours, areas: {sorted(areas, reverse=True)[:5]}")
 
             for contour in contours:
                 area = cv2.contourArea(contour)
@@ -139,9 +140,8 @@ class ColorSegmenter:
                 x, y, bw, bh = cv2.boundingRect(contour)
 
                 # Aspect ratio filter - cubes should be roughly square
-                # Relaxed from 0.4 to 0.3 to handle perspective distortion
                 bbox_aspect = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0
-                if bbox_aspect < 0.3:  # Too elongated, not a cube
+                if bbox_aspect < self.MIN_BBOX_ASPECT:  # Too elongated, not a cube
                     continue
 
                 # Maximum bbox size filter - deposit boxes are much larger than cubes
@@ -156,6 +156,11 @@ class ColorSegmenter:
                 bbox_w = bw / w
                 bbox_h = bh / h
 
+                # Position filter: cubes are on the floor (lower part of image)
+                # Deposit boxes are elevated and appear higher in the image
+                if cy < self.MIN_CENTER_Y:
+                    continue
+
                 # Estimate distance based on bbox size (larger = closer)
                 # Calibrated for 5cm cube: at 1m apparent_size ~0.05, at 0.5m ~0.10
                 apparent_size = max(bbox_w, bbox_h)
@@ -166,7 +171,7 @@ class ColorSegmenter:
                     # distance = real_size / (apparent_size * tan(FOV/2))
                     # tan(30°) = 0.577 for 60° horizontal FOV
                     distance = CUBE_REAL_SIZE / (apparent_size * 0.577)
-                    distance = np.clip(distance, 0.15, 3.0)  # Min 15cm, max 3m
+                    distance = np.clip(distance, 0.05, 3.0)  # Min 5cm, max 3m
                 else:
                     distance = 3.0  # Far away or noise
 
@@ -187,11 +192,6 @@ class ColorSegmenter:
                     distance=distance,
                     angle=angle
                 ))
-
-        # Debug: log when cubes are found
-        if detections and ColorSegmenter._debug_frame_count % 30 == 0:
-            for d in detections:
-                print(f"[Detection] {d.color} cube: dist={d.distance:.2f}m angle={d.angle:.1f}° conf={d.confidence:.2f}")
 
         return detections
 

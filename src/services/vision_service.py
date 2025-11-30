@@ -33,7 +33,7 @@ class TrackedCube:
 
     @property
     def is_reliable(self) -> bool:
-        """Cube tracked for enough frames to be reliable."""
+        """Cube tracked for enough frames to be reliable (~100ms)."""
         return self.frames_tracked >= 3
 
 
@@ -69,10 +69,11 @@ class VisionService:
     """
 
     # Tracking parameters
-    LOST_THRESHOLD = 20         # Frames to wait before declaring lost (~640ms)
+    LOST_THRESHOLD = 30         # Frames to wait before declaring lost (~1s) - balance stability/responsiveness
     MIN_CONFIDENCE = 0.60       # Minimum confidence to accept detection
     POSITION_TOLERANCE = 0.30   # Max distance change to consider same cube (meters)
     ANGLE_TOLERANCE = 20.0      # Max angle change to consider same cube (degrees)
+    MIN_FRAMES_RELIABLE = 10    # Frames needed for reliable tracking (~320ms)
 
     def __init__(self, cube_detector, time_step: int):
         """
@@ -130,12 +131,6 @@ class VisionService:
             self._update_tracked(valid_detections)
         else:
             self._acquire_target(valid_detections)
-
-        # Throttled logging (every 5 frames)
-        if self._update_count % 5 == 0 and self.tracked_target:
-            t = self.tracked_target
-            print(f"[Vision] Frame {self._update_count}: target={t.color}(id={t.track_id}) "
-                  f"dist={t.distance:.2f}m angle={t.angle:.1f} lost={self.frames_lost}")
 
         return self.tracked_target
 

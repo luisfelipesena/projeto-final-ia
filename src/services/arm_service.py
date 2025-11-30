@@ -54,11 +54,11 @@ class ArmService:
         arm_svc.test_grasp_cycle()
     """
 
-    # Timing constants (seconds)
-    MOVE_TIME_HIGH = 2.0     # Time for arm to reach high position
-    MOVE_TIME_LOW = 1.5      # Time for arm to lower to floor
-    GRIP_TIME = 1.0          # Time for gripper to close
-    LIFT_TIME = 2.0          # Time for arm to lift
+    # Timing constants (seconds) - generous timing for reliable grasping
+    MOVE_TIME_HIGH = 2.5     # Time for arm to reach high position
+    MOVE_TIME_LOW = 2.0      # Time for arm to lower to floor
+    GRIP_TIME = 2.5          # Time for gripper to close fully (increased)
+    LIFT_TIME = 2.5          # Time for arm to lift with cube
 
     def __init__(self, arm, gripper, robot, time_step: int):
         """
@@ -105,7 +105,6 @@ class ArmService:
         Returns:
             True if completed
         """
-        print("[ArmService] Resetting arm to REST position")
         self.arm.set_height(self.arm.RESET)
         self.arm.set_orientation(self.arm.FRONT)
         self.state = ArmState.MOVING
@@ -114,7 +113,6 @@ class ArmService:
             return False
 
         self.state = ArmState.REST
-        print("[ArmService] Arm at REST")
         return True
 
     def prepare_grasp(self) -> bool:
@@ -124,11 +122,25 @@ class ArmService:
         Returns:
             True if completed
         """
-        print("[ArmService] PREPARE GRASP: Moving arm to front-high position")
         self.state = ArmState.MOVING
 
         # Open gripper first
+        print(f"[ArmService] Opening gripper...")
         self.gripper.release()
+
+        # Wait for gripper to open
+        if not self._wait(0.5):
+            return False
+
+        # Log finger position after opening
+        if self.gripper.finger_sensor:
+            finger_pos = self.gripper.finger_sensor.getValue()
+            print(f"[ArmService] Gripper opened: finger_pos={finger_pos:.5f} (should be ~0.025)")
+            # Write to grasp log
+            from pathlib import Path
+            log_file = Path(__file__).parent.parent.parent / "youbot_mcp" / "data" / "youbot" / "grasp_log.txt"
+            with open(log_file, 'a') as f:
+                f.write(f"{time.time()}: [ARM] gripper_opened: finger_pos={finger_pos:.5f}\n")
 
         # Move arm to front, raised position
         self.arm.set_orientation(self.arm.FRONT)
@@ -138,14 +150,17 @@ class ArmService:
             return False
 
         self.state = ArmState.FRONT_HIGH
-        print("[ArmService] Arm at FRONT_HIGH, gripper open")
         return True
 
-    def execute_grasp(self) -> GraspResult:
+    def execute_grasp(self, use_ik: bool = False, forward_reach: float = 0.22) -> GraspResult:
         """
         Execute grasp sequence: lower arm, close gripper, verify, lift.
 
         Requires arm to be at FRONT_HIGH position (call prepare_grasp first).
+
+        Args:
+            use_ik: If True, use IK for precise positioning instead of preset
+            forward_reach: Forward distance for IK (meters from arm base)
 
         Returns:
             GraspResult with success status
@@ -161,8 +176,13 @@ class ArmService:
             )
 
         # Step 1: Lower arm to floor level
-        print("[ArmService] GRASP: Lowering arm to floor level")
-        self.arm.set_height(self.arm.FRONT_FLOOR)
+        if use_ik:
+            # Use IK for precise positioning: (x=0 centered, y=forward, z=cube height)
+            print(f"[ArmService] Using IK: x=0, y={forward_reach:.3f}, z=0.025")
+            self.arm.inverse_kinematics(x=0.0, y=forward_reach, z=0.025)
+        else:
+            print(f"[ArmService] Lowering to FRONT_FLOOR")
+            self.arm.set_height(self.arm.FRONT_FLOOR)
         self.state = ArmState.MOVING
 
         if not self._wait(self.MOVE_TIME_LOW):
@@ -174,19 +194,8 @@ class ArmService:
             )
 
         self.state = ArmState.FRONT_LOW
-        print("[ArmService] Arm at FRONT_LOW")
 
         # Step 2: Close gripper
-        print("[ArmService] GRASP: Closing gripper")
-
-        # Log sensor values before grip
-        try:
-            left_pos = self.gripper.left_sensor.getValue()
-            right_pos = self.gripper.right_sensor.getValue()
-            print(f"[Arm] Gripper sensors BEFORE: L={left_pos:.4f} R={right_pos:.4f}")
-        except Exception:
-            pass
-
         self.gripper.grip()
 
         if not self._wait(self.GRIP_TIME):
@@ -197,20 +206,24 @@ class ArmService:
                 error="Simulation ended during grip"
             )
 
-        # Log sensor values after grip
-        try:
-            left_pos = self.gripper.left_sensor.getValue()
-            right_pos = self.gripper.right_sensor.getValue()
-            print(f"[Arm] Gripper sensors AFTER: L={left_pos:.4f} R={right_pos:.4f}")
-        except Exception:
-            pass
-
         # Step 3: Check if object grasped
         self._has_object = self.gripper.has_object()
-        print(f"[Arm] has_object={self._has_object}")
+
+        # Debug: log finger position to file for MCP visibility
+        finger_pos = 0.0
+        finger_pos_before = 0.0
+        if self.gripper.finger_sensor:
+            finger_pos = self.gripper.finger_sensor.getValue()
+            print(f"[ArmService] Gripper finger position after close: {finger_pos:.5f} (threshold: 0.003)")
+        print(f"[ArmService] has_object = {self._has_object}")
+
+        # Write to grasp log for debugging
+        from pathlib import Path
+        log_file = Path(__file__).parent.parent.parent / "youbot_mcp" / "data" / "youbot" / "grasp_log.txt"
+        with open(log_file, 'a') as f:
+            f.write(f"{time.time()}: [ARM] finger_pos_after_close={finger_pos:.5f}, has_object={self._has_object}\n")
 
         # Step 4: Lift arm (regardless of success, so we can retry)
-        print("[ArmService] GRASP: Lifting arm")
         self.arm.set_height(self.arm.FRONT_PLATE)
         self.state = ArmState.MOVING
 
@@ -243,10 +256,6 @@ class ArmService:
         Returns:
             True if completed
         """
-        if not self._has_object:
-            print("[ArmService] WARNING: No object held, but preparing deposit anyway")
-
-        print("[ArmService] PREPARE DEPOSIT: Moving arm to deposit position")
         self.state = ArmState.MOVING
 
         # Move to back plate position (over deposit box)
@@ -257,7 +266,6 @@ class ArmService:
             return False
 
         self.state = ArmState.DEPOSIT
-        print("[ArmService] Arm at DEPOSIT position")
         return True
 
     def execute_deposit(self) -> bool:
@@ -267,17 +275,12 @@ class ArmService:
         Returns:
             True if completed
         """
-        if self.state != ArmState.DEPOSIT:
-            print("[ArmService] WARNING: Not at deposit position")
-
-        print("[ArmService] DEPOSIT: Opening gripper")
         self.gripper.release()
 
         if not self._wait(0.5):
             return False
 
         self._has_object = False
-        print("[ArmService] DEPOSIT COMPLETE")
         return True
 
     def return_to_rest(self) -> bool:
