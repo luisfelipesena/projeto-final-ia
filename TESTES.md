@@ -1,260 +1,360 @@
-# Guia de Testes - YouBot Autônomo
+# Guia de Testes - Serviços Modulares YouBot
 
-## Status Atual
-
-**GPS:** ⚠️ Dispositivo não existe no YouBot padrão - usando apenas odometria
-
-**Fixes aplicados (DECISÃO 022):**
-- Camera warmup (10 frames)
-- Stable detection (3 frames consecutivos)
-- Min approaching time (2s)
-- AVOIDING thresholds ajustados (0.4m/0.6m)
-- Output smoothing (EMA 0.3)
-- Distance estimation calibrada
-- **MAX_CONTOUR_AREA = 15000** - Filtra deposit boxes (objetos grandes)
-- **Grasp timing** - 8.5s total (aumentado para dar tempo ao braço)
-- **Print spam fix** - Logs de grasp só aparecem 1x por estado
-- **AVOIDING excluído durante GRASPING/DEPOSITING** - Cubo próximo não triggera AVOIDING
-- **Log spam reduzido** - "Waiting for min approach time" aparece apenas 1x/segundo
-
-**Fixes aplicados (DECISÃO 023 - CRÍTICO):**
-- **DEPOSIT_BOXES corrigidos** - Coordenadas do world file: GREEN(0.48, 1.58), BLUE(0.48, -1.62), RED(2.31, 0.01)
-- **Navigation controller** - P-controller para navegar até caixas (vx, omega)
-- **Grasp verification física** - Usa `finger::left sensor` para verificar se gripper pegou algo
-- **HSV ranges tightened** - GREEN H:40-70, BLUE H:100-130 (evita overlap cyan)
-- **Debug logging** - Logs de navegação e cor a cada segundo
+**DECISÃO 028:** Arquitetura modular com serviços testáveis isoladamente.
 
 ---
 
-## FASE 1: Teste com GPS (Treinamento)
+## 🚀 Quick Start: Como Testar no Webots
 
-### 1.1 Executar no Webots
+### Passo 1: Abrir Webots
 
 ```bash
-# Abrir Webots
 open -a Webots
-
-# Ou via linha de comando
-/Applications/Webots.app/Contents/MacOS/webots
+# Ou: /Applications/Webots.app/Contents/MacOS/webots
 ```
 
-**Carregar World:**
-- `File → Open World...`
-- Selecionar: `IA_20252/worlds/IA_20252.wbt`
-- Clicar Play (▶)
+### Passo 2: Carregar o World
 
-### 1.2 O que observar no Console
+1. `File → Open World...`
+2. Selecionar: `IA_20252/worlds/IA_20252.wbt`
+3. **NÃO** clique Play ainda!
 
-**Inicialização esperada (SUCESSO):**
-```
-[youbot] Starting Autonomous YouBot Controller
-[youbot] MATA64 Final Project - Cube Collection Task
-[youbot] GPS Disabled - Odometry Navigation Only
+### Passo 3: Configurar o Controlador de Teste
 
-[youbot] Initializing MainController...
-Device "gps" was not found on robot "youBot"
-[MainController] GPS not found - using odometry only
-Initializing Main Controller...
-  Perception system initialized
-  Fuzzy controller initialized (26 rules)
-  State machine initialized
-  Navigation initialized
-  Manipulation initialized
-Main Controller ready!
-[youbot] MainController ready - starting autonomous operation
-Spawn complete. The supervisor has spawned 15/15 objects
-[INFO] Camera warmup complete (10 frames)          ← warmup OK
-```
-
-### 1.3 Comportamento esperado APÓS fixes (DECISÃO 022 + 023)
-
-| Antes | Depois |
-|-------|--------|
-| SEARCHING → GRASPING em <1s | Espera 3 detecções + 2s approaching |
-| cube_distance: 0.1 sempre | Distâncias realistas (0.15-3.0m) |
-| Oscilação +15°/-15° | Movimento suave (smoothing) |
-| AVOIDING lock 2min | Exit rápido (0.6m threshold) |
-| Detecta deposit box | Filtra objetos >15000px |
-| Print spam GRASP | 1 print por estado |
-| GRASPING → AVOIDING (cubo = obstáculo) | AVOIDING desativado durante GRASPING/DEPOSITING |
-| Log spam "Waiting..." ~50x/s | 1 log por segundo |
-| **GREEN → BLUE misclassification** | **HSV ranges separados (40-70 vs 100-130)** |
-| **Grasp SUCCESS sem cubo** | **Position sensor verifica se pegou** |
-| **Robot para em NAVIGATING_TO_BOX** | **P-controller navega até caixa** |
-| **Box positions errados (x=-2)** | **Coordenadas corretas do world file** |
-
-### 1.4 Observações sobre GPS
-
-**NOTA:** GPS não existe no YouBot padrão do world file.
-O sistema usa apenas **odometria + LIDAR + câmera** (como requerido na demo final).
-
----
-
-## FASE 2: Checklist de Validação
-
-### Teste A: Inicialização (30s)
-
-- [ ] Console mostra "GPS not found - using odometry only"?
-- [ ] "Camera warmup complete (10 frames)"?
-- [ ] 15 cubos visíveis na arena?
-- [ ] Robô começa em SEARCHING (não GRASPING imediato)?
-
-**Me envie:** Screenshot do console nos primeiros 30s
-
-### Teste B: Detecção Estável (2min)
-
-Observe transições de estado:
-
-- [ ] SEARCHING por alguns segundos antes de APPROACHING?
-- [ ] "Waiting for min approach time" aparece?
-- [ ] Distâncias reportadas são realistas (não 0.1m constante)?
-
-**Me envie:** Console log mostrando transições
-
-### Teste C: Movimento Suave (2min)
-
-- [ ] Robô move sem oscilar +15°/-15°?
-- [ ] Velocidades parecem suaves?
-- [ ] AVOIDING não trava por 2min?
-
-**Me envie:** Descrição do comportamento ou vídeo curto
-
-### Teste D: Ciclo Completo (5min)
-
-Fluxo esperado:
-```
-SEARCHING (alguns segundos)
-    ↓ cube_detected (3 frames estáveis)
-APPROACHING (mín 2s)
-    ↓ distance < 0.25m + 2s elapsed
-GRASPING (sequência de 5s)
-    ↓ grasp_success
-NAVIGATING_TO_BOX
-    ↓ at_target_box
-DEPOSITING
-    ↓ deposit_complete
-SEARCHING (reinicia)
-```
-
-- [ ] Completou ao menos 1 ciclo?
-- [ ] Se parou, em qual estado?
-
-**Me envie:** Logs do ciclo ou estado onde travou
-
----
-
-## FASE 3: Desabilitar GPS para Demo Final
-
-### 3.1 Como desabilitar
-
-Editar `src/main_controller.py`:
+1. Pausar simulação (botão `||`)
+2. Na árvore à esquerda, expandir `youBot`
+3. Clicar em `controller "youbot"`
+4. No painel direito, mudar `controller` de `"youbot"` para `"<extern>"`
+5. **OU** editar `IA_20252/controllers/youbot/youbot.py`:
 
 ```python
-# Linha ~157-161: COMENTAR estas linhas
-# self.gps = robot.getDevice("gps")
-# if self.gps:
-#     self.gps.enable(self.time_step)
-#     print("[MainController] GPS enabled for training mode")
+# ANTES (linha ~100):
+from src.main_controller import MainController
 
-# Ou simplesmente:
-self.gps = None  # Desabilita GPS
+# DEPOIS (para testes isolados):
+from service_tests import run_all_tests
 ```
 
-E comentar o log de GPS no step():
+### Passo 4: Escolher o Teste
+
+Editar `IA_20252/controllers/youbot/service_tests.py` linha 350:
+
 ```python
-# Linha ~432-434: COMENTAR
-# if self.gps and self.loop_count % 30 == 0:
-#     pos = self.gps.getValues()
-#     self._log(f"GPS: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
+# Opções: arm_positions, arm_grasp, movement, vision
+TEST_TO_RUN = "arm_positions"  # Mudar conforme necessário
 ```
 
-### 3.2 Validação End-to-End sem GPS
+### Passo 5: Rodar
 
-**Objetivo:** Confirmar que sistema funciona APENAS com odometria + LIDAR + câmera
-
-**Teste crítico:**
-1. Desabilitar GPS (passo 3.1)
-2. Recarregar world no Webots
-3. Observar que NÃO aparece "GPS enabled"
-4. Robô deve completar ciclo usando apenas odometria
-
-**Checklist final:**
-- [ ] Sem "GPS enabled" no console
-- [ ] Robô navega para caixa correta
-- [ ] Deposita cubo na cor certa
-- [ ] Sistema completa ≥1 ciclo
+1. Salvar arquivos
+2. Clicar Play (`▶`)
+3. Observar console para output
 
 ---
 
-## O que me enviar após testes
+## 📋 Ordem de Testes (Validação Incremental)
 
-### Obrigatório (Fase 2)
+### TESTE 1: ARM POSITIONS (Primeiro - Sem Setup)
 
-1. **Screenshot console inicialização** - mostrando warmup + GPS
-2. **Logs de transição de estados** - SEARCHING→APPROACHING→etc
-3. **Comportamento:** suave ou ainda oscila?
-4. **Ciclo completo?** SIM/PARCIAL/NÃO + estado onde parou
+**Objetivo:** Verificar se o braço se move corretamente entre posições.
 
-### Se houver problemas
+**Setup:** Nenhum. Não precisa de cubo.
 
-5. **Texto completo de erros/tracebacks**
-6. **Distâncias reportadas** (ainda 0.1m?)
-7. **Tempo em cada estado** antes de transição
+**O que faz:**
+1. Move braço para RESET (tucked)
+2. Move para FRONT_PLATE (raised)
+3. Move para FRONT_FLOOR (lowered)
+4. Retorna para FRONT_PLATE
+5. Retorna para RESET
 
-### Validação Final (Fase 3)
+**Configurar:**
+```python
+TEST_TO_RUN = "arm_positions"
+```
 
-8. **Confirmação:** sistema funciona SEM GPS?
-9. **Screenshot:** console sem "GPS enabled"
-10. **Ciclo completo sem GPS?** SIM/NÃO
+**Sucesso esperado:**
+```
+=================================================
+TESTE: ARM POSITIONS
+=================================================
+  → Movendo para: RESET (tucked)
+    ✓ Chegou em RESET (tucked)
+  → Movendo para: FRONT_PLATE (raised)
+    ✓ Chegou em FRONT_PLATE (raised)
+  ...
+TESTE ARM POSITIONS: COMPLETO
+=================================================
+```
+
+**Checklist:**
+- [ ] Braço move suavemente entre posições?
+- [ ] Nenhum erro de motor?
+- [ ] Posições finais parecem corretas?
 
 ---
 
-## Troubleshooting
+### TESTE 2: MOVEMENT SQUARE (Segundo - Sem Setup)
 
-### "GPS: x=nan, y=nan"
-GPS não está habilitado no world file. Verificar se sensor GPS existe no YouBot.
+**Objetivo:** Verificar se a base móvel funciona corretamente.
 
-### Ainda detecta cube_distance: 0.1
-Verificar se `cube_detector.py` foi atualizado (MIN_CONTOUR_AREA = 1500).
+**Setup:** Nenhum. Certifique que área à frente está livre.
 
-### Detecta deposit box como cubo
-Verificar se `cube_detector.py` tem MAX_CONTOUR_AREA = 15000 para filtrar objetos grandes.
+**O que faz:**
+1. Move 0.5m para frente
+2. Gira 90° esquerda
+3. Repete 4x (quadrado completo)
+4. Deve retornar ~posição inicial
 
-### Ainda transita SEARCHING→GRASPING instantâneo
-Verificar se `state_machine.py` foi atualizado (CUBE_DETECTED_THRESHOLD = 3).
+**Configurar:**
+```python
+TEST_TO_RUN = "movement"
+```
 
-### Robot não se move
+**Sucesso esperado:**
+```
+=================================================
+TESTE: MOVEMENT SQUARE
+=================================================
+  Lado 1/4:
+    → Frente 0.5m...
+    → Girando 90°...
+  Lado 2/4:
+    ...
+TESTE MOVEMENT SQUARE: COMPLETO
+Verificar: robot voltou ao ponto inicial?
+=================================================
+```
+
+**Checklist:**
+- [ ] Robot move para frente corretamente?
+- [ ] Giros são ~90°?
+- [ ] Retorna aproximadamente ao ponto inicial?
+- [ ] Movimento é suave (sem tremores)?
+
+---
+
+### TESTE 3: ARM GRASP (Terceiro - REQUER Setup Manual)
+
+**Objetivo:** Verificar ciclo completo de grasp.
+
+**⚠️ SETUP OBRIGATÓRIO:**
+
+1. **ANTES de dar Play**, pausar simulação (`||`)
+2. Na árvore à esquerda, encontrar um cubo (ex: `DEF GREEN_CUBE_0 WoodenCube`)
+3. No painel direito, editar `translation`:
+   - X: `0` (centro frente do robot)
+   - Y: `0.025` (altura do cubo no chão)
+   - Z: `-0.25` (25cm à frente do robot)
+4. Dar Play (`▶`)
+
+**Configurar:**
+```python
+TEST_TO_RUN = "arm_grasp"
+```
+
+**O que faz:**
+1. Abre gripper
+2. Move braço para FRONT_PLATE (raised)
+3. Abaixa braço para FRONT_FLOOR
+4. Fecha gripper
+5. Verifica sensor `has_object()`
+6. Levanta braço
+7. Abre gripper (deposita)
+8. Retorna para RESET
+
+**Sucesso esperado:**
+```
+=================================================
+TESTE: ARM GRASP CYCLE
+=================================================
+  [1/7] Abrindo gripper...
+    ✓ Gripper aberto
+  [2/7] Movendo braço para frente (raised)...
+    ✓ Braço em FRONT_PLATE
+  [3/7] Abaixando braço para o chão...
+    ✓ Braço em FRONT_FLOOR
+  [4/7] Fechando gripper...
+    ✓ Gripper fechado
+  [5/7] Verificando sensor...
+    → has_object() = True
+    ✓✓✓ CUBO DETECTADO! Grasp funcionou!
+  [6/7] Levantando braço...
+    ✓ Braço levantado
+  [7/7] Abrindo gripper (depositar)...
+    ✓ Gripper aberto
+TESTE ARM GRASP: SUCESSO!
+=================================================
+```
+
+**Checklist:**
+- [ ] `has_object() = True`? Se False, cubo mal posicionado
+- [ ] Cubo foi fisicamente agarrado?
+- [ ] Cubo levantou junto com o braço?
+- [ ] Cubo caiu ao abrir gripper?
+
+**Troubleshooting se `has_object() = False`:**
+1. Cubo muito longe (>30cm)
+2. Cubo muito perto (<15cm)
+3. Cubo desalinhado lateralmente
+4. Gripper não fechou completamente
+
+---
+
+### TESTE 4: VISION TRACKING (Quarto - Setup: Cubos Visíveis)
+
+**Objetivo:** Verificar estabilidade do tracking de cubos.
+
+**Setup:** Ter cubos visíveis na frente do robot (spawned pelo supervisor).
+
+**O que faz:**
+1. Processa 100 frames de câmera
+2. Registra quantas vezes o tracking "pulou" entre cubos diferentes
+3. Reporta switches (oscilações)
+
+**Configurar:**
+```python
+TEST_TO_RUN = "vision"
+```
+
+**Sucesso esperado:**
+```
+=================================================
+TESTE: VISION TRACKING
+=================================================
+  Frame 0: Primeiro target: green (id=1)
+  Frame 20: green id=1 dist=1.45m angle=-3.2°
+  Frame 40: green id=1 dist=1.45m angle=-3.1°
+  ...
+TESTE VISION TRACKING: 0 switches
+  ✓ ESTÁVEL - Tracking não oscilou
+=================================================
+```
+
+**Checklist:**
+- [ ] `switches = 0`? Tracking estável
+- [ ] Se switches > 0, verificar se há múltiplos cubos próximos
+- [ ] Distâncias e ângulos parecem realistas?
+
+---
+
+## 🔧 Validação do Controller Principal (main_controller_v2)
+
+Após validar serviços isolados, testar integração:
+
+### Configurar youbot.py:
+
+```python
+# IA_20252/controllers/youbot/youbot.py
+
+# Comentar:
+# from src.main_controller import MainController
+
+# Descomentar/adicionar:
+from src.main_controller_v2 import MainControllerV2 as MainController
+```
+
+### Comportamento Esperado:
+
+```
+[MainControllerV2] Initializing...
+[MainControllerV2] Initialization complete
+[MainControllerV2] Starting main loop
+  Time step: 32ms
+[State] SEARCHING → APPROACHING (found green)
+[Navigation] ALIGNED: angle=2.3° → APPROACH
+[Navigation] APPROACH: dist=1.20m angle=1.5°
+[Navigation] APPROACH: dist=0.85m angle=0.8°
+[Navigation] COMPLETE: dist=0.28m angle=0.5°
+[State] APPROACHING → GRASPING (dist=0.28m)
+[Grasping] Attempting grasp of green cube
+[Grasping] SUCCESS! Total: 1
+[State] GRASPING → DEPOSITING (grasp_success)
+[Depositing] Moving to green box
+[Depositing] Complete! Cubes: 1
+[State] DEPOSITING → SEARCHING (deposit_complete)
+...
+```
+
+---
+
+## 📊 Matriz de Validação
+
+| Teste | Precisa Setup? | Duração | Valida |
+|-------|---------------|---------|--------|
+| ARM_POSITIONS | Não | ~15s | Motores do braço |
+| MOVEMENT | Não | ~30s | Base omnidirecional |
+| ARM_GRASP | Sim (cubo) | ~20s | Grasp físico + sensor |
+| VISION | Não | ~5s | Tracking estável |
+| MAIN_V2 | Não | ~5min | Integração completa |
+
+---
+
+## ❌ Problemas Comuns
+
+### "ImportError: No module named 'services'"
+
+Path não configurado. Verificar se `service_tests.py` tem:
+```python
+src_path = Path(__file__).resolve().parent.parent.parent.parent / 'src'
+sys.path.insert(0, str(src_path))
+```
+
+### Braço não move
+
+1. Verificar se `Arm` foi importado corretamente
+2. Recarregar world: `Ctrl+Shift+L`
+
+### `has_object() = False` sempre
+
+1. Posicionar cubo mais próximo (~20cm)
+2. Verificar alinhamento lateral
+3. Sensor pode precisar de mais frames após fechar gripper
+
+### Tracking oscila muito
+
+Múltiplos cubos da mesma cor muito próximos. VisionService usa posição para distinguir, mas se distâncias são muito similares pode confundir.
+
+### Robot não se move (MOVEMENT test)
+
 1. Simulação pausada?
-2. Erros no console?
-3. Recarregar world: `Ctrl+Shift+L`
-
-### AVOIDING ainda trava
-Verificar thresholds em `state_machine.py`: entry=0.4m, exit=0.6m
-
-### GRASPING → AVOIDING interrompe grasp (CORRIGIDO)
-**Problema anterior:** Durante GRASPING, o cubo (a ~0.13m) era detectado como obstáculo, causando transição para AVOIDING e rotação infinita.
-**Solução:** `state_machine.py` agora exclui GRASPING e DEPOSITING do trigger de AVOIDING.
+2. Área à frente bloqueada?
+3. Verificar console para erros
 
 ---
 
-## Métricas de Sucesso
+## 📁 Arquivos de Teste
 
-| Métrica | Meta | Status |
-|---------|------|--------|
-| Camera warmup | 10 frames | ✅ Implementado |
-| Stable detection | 3 frames | ✅ Implementado |
-| Min approach time | 2s | ✅ Implementado |
-| AVOIDING exit | <30s | ✅ Threshold 0.6m |
-| Output smoothing | EMA 0.3 | ✅ Implementado |
-| GPS training mode | Ativo | N/A (GPS não existe) |
-| Deposit box filter | MAX_CONTOUR_AREA | ✅ Implementado (15000px) |
-| Grasp timing | 8.5s | ✅ Implementado |
-| Print spam fix | 1x/estado | ✅ Implementado |
-| AVOIDING excluído manipulação | GRASPING/DEPOSITING | ✅ Implementado |
-| Log spam approach | 1x/segundo | ✅ Implementado |
-| **HSV color ranges** | GREEN≠BLUE | ✅ H:40-70 vs H:100-130 |
-| **Grasp verification** | Physical sensor | ✅ finger::left sensor |
-| **Box coordinates** | World file | ✅ GREEN(0.48,1.58) BLUE(0.48,-1.62) RED(2.31,0.01) |
-| **Navigation controller** | P-control | ✅ _compute_navigation_to_box() |
-| Ciclo completo | ≥1 | ⏳ A validar |
-| GPS desabilitado | Demo final | ✅ (sempre odometria) |
+| Arquivo | Função |
+|---------|--------|
+| `IA_20252/controllers/youbot/service_tests.py` | Testes isolados (ARM, MOVEMENT, VISION) |
+| `src/services/movement_service.py` | MovementService + test_square() |
+| `src/services/arm_service.py` | ArmService + test_grasp_cycle() |
+| `src/services/vision_service.py` | VisionService |
+| `src/services/navigation_service.py` | NavigationService + test_approach() |
+| `src/main_controller_v2.py` | Controller integrado usando serviços |
+
+---
+
+## ✅ Checklist Final de Validação
+
+### Fase 1: Serviços Isolados
+- [ ] ARM_POSITIONS passou (braço move)
+- [ ] MOVEMENT passou (base move em quadrado)
+- [ ] ARM_GRASP passou (cubo detectado e pegou)
+- [ ] VISION passou (0 switches)
+
+### Fase 2: Integração
+- [ ] main_controller_v2.py roda sem erros
+- [ ] Estado transita SEARCHING → APPROACHING corretamente
+- [ ] Estado transita APPROACHING → GRASPING corretamente
+- [ ] Grasp físico funciona (cubo levanta)
+- [ ] Depositing funciona
+
+### Fase 3: Ciclo Completo
+- [ ] Pelo menos 1 cubo coletado e depositado
+- [ ] Sem oscilação de estados excessiva
+- [ ] Performance aceitável (15 cubos em <10min)
+
+---
+
+**Última atualização:** 2024-11-30 (DECISÃO 028 - Arquitetura Modular)

@@ -1,21 +1,10 @@
 """
 Manipulation Module
 
-Provides grasping and depositing sequences for cube collection.
+Cube manipulation is now handled by ArmService in src/services/arm_service.py
 
-Components:
-- grasping: Grasp sequence controller
-- depositing: Deposit sequence controller
+This module kept for compatibility - actual grasping/depositing
+done via modular services (DECISAO 028).
 """
 
-from .grasping import GraspController, GraspState, GraspResult
-from .depositing import DepositController, DepositState, DepositResult
-
-__all__ = [
-    'GraspController',
-    'GraspState',
-    'GraspResult',
-    'DepositController',
-    'DepositState',
-    'DepositResult',
-]
+__all__ = []

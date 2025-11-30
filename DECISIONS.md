@@ -30,6 +30,10 @@
 | 023 | Navigation & Grasp Critical Fixes | Fase 6 | ✅ |
 | 024 | Search Pattern & Post-Deposit Fixes | Fase 6 | ✅ |
 | 025 | Cube Detection Pipeline Overhaul | Fase 6 | ✅ |
+| 026 | Fix Tracking HSV e Abordagem | Fase 6 | ✅ |
+| 027 | Grasp Alignment Fix | Fase 6 | ✅ |
+| 028 | Modular Service Architecture | Fase 6 | ✅ |
+| 029 | SimpleLIDARMLP + Cleanup | Fase 6 | ✅ |
 
 ---
 
@@ -498,3 +502,181 @@ else:
 | GPS proibido na demo | ⚠️ Habilitado para treino (desabilitar antes da demo) |
 | supervisor.py inalterado | ✅ ZERO modificações |
 | Vídeo 15min sem código | ⏳ Template pronto |
+
+---
+
+## DECISÃO 026: Fix Tracking HSV e Abordagem Aproximação
+
+**O que:** Correções críticas na detecção de cubos e comportamento de aproximação:
+
+1. **HSV ranges expandidos:** Blue H=[90,140], Green H=[30,90]
+2. **MIN_CONTOUR_AREA:** 200 → 50 para detectar cubos pequenos
+3. **Approach control dedicado:** Turn-then-approach strategy
+4. **Angle threshold:** 15° → 5° para GRASPING trigger
+
+**Por quê:** Robot detectava cubos mas não conseguia alinhar corretamente:
+- Osciava entre múltiplos cubos
+- GRASPING trigger muito permissivo (15°)
+- Arm estendia reto mas robot estava desalinhado
+
+**Base teórica:**
+- Craig (2005) - End-effector positioning requires target alignment
+- Siciliano et al. (2009) - Visual servoing for manipulation
+
+**Arquivos modificados:**
+- `src/perception/cube_detector.py` - HSV ranges
+- `src/control/state_machine.py` - angle threshold
+- `src/main_controller.py` - APPROACHING control block
+
+---
+
+## DECISÃO 027: Grasp Alignment Fix
+
+**O que:** Fix robot alignment before grasping - tighten angle threshold and add dedicated APPROACHING control
+
+**Por quê:** Robot was attempting grasp at 15° offset, causing gripper to miss cube by 5-7cm
+
+**Correções:**
+1. Angle threshold 15° → 5° (state_machine.py:274)
+2. Dedicated APPROACHING control with turn-then-approach
+3. Extended APPROACH_FINAL: 1.5s → 2.0s, speed 0.08 → 0.10 m/s
+
+**Base teórica:**
+- Craig (2005) - End-effector positioning requires target alignment
+- Siciliano et al. (2009) - Visual servoing for manipulation
+
+**Arquivos modificados:**
+- `src/control/state_machine.py` - angle threshold
+- `src/main_controller.py` - APPROACHING control
+- `src/manipulation/grasping.py` - approach timing
+
+---
+
+## DECISÃO 028: Modular Service Architecture
+
+**O que:** Reestruturação completa do controlador monolítico em serviços modulares testáveis:
+
+1. **MovementService** - Comandos de movimento básicos (forward, turn, strafe)
+2. **ArmService** - Sequências de grasp/deposit sem movimento
+3. **VisionService** - Tracking estável com persistência por posição
+4. **NavigationService** - Coordenação movimento + visão
+5. **MainControllerV2** - Controlador limpo usando serviços
+
+**Por quê:** Sistema anterior apresentava problemas críticos:
+- **State oscillation:** SEARCHING↔APPROACHING ~50x/min (threshold mismatch)
+- **Multiple cube confusion:** Tracking apenas por cor, não posição
+- **GRASPING never triggers:** Condições resetavam a cada unlock
+- **Cube "run over":** Sem proximity stop, GRASPING inalcançável
+- **Impossível testar componentes isoladamente**
+
+**Root causes identificados:**
+| Issue | Causa | Fix |
+|-------|-------|-----|
+| State oscillation | perception=10 frames, state_machine=5 frames | Unificar thresholds |
+| Multiple cube confusion | Tracking só por cor | Position-based matching |
+| GRASPING unreachable | Timer reseta em unlock | Tracking persistente |
+| No isolated testing | Monolithic controller | Service extraction |
+
+**Novos arquivos criados:**
+- `src/services/__init__.py`
+- `src/services/movement_service.py`
+- `src/services/arm_service.py`
+- `src/services/vision_service.py`
+- `src/services/navigation_service.py`
+- `src/main_controller_v2.py`
+
+**Testes disponíveis:**
+```bash
+# Testar movimento isolado
+python -m src.services.movement_service --test square
+
+# Testar arm com cubo posicionado manualmente
+python -m src.services.arm_service --test grasp
+
+# Testar estabilidade de tracking
+python -m src.services.vision_service --test stability
+
+# Testar approach
+python -m src.services.navigation_service --test approach
+```
+
+**Base teórica:**
+- Brooks (1986) - Subsumption architecture: layers of behavior
+- Arkin (1998) - Behavior-based robotics: modular behaviors
+- Meyer & Wilson (1991) - Animat approach: test components separately
+
+**Impacto esperado:**
+| Métrica | Antes | Depois |
+|---------|-------|--------|
+| State transitions/min | 50+ | 2-3 |
+| Tracking stability | 5 frames | 50+ frames |
+| GRASPING reached | Nunca | Cada cubo |
+| Testabilidade | Zero | Cada serviço isolado |
+
+---
+
+## DECISÃO 029: SimpleLIDARMLP + Codebase Cleanup
+
+**O que:** Implementação completa de RNA para LIDAR e limpeza de código obsoleto:
+
+1. **SimpleLIDARMLP** - MLP simples para detecção de obstáculos via LIDAR
+2. **Cleanup** - Remoção de 8 arquivos v1 obsoletos
+3. **Logging** - Adição de logging comprehensivo em todos os serviços
+4. **Integração** - RNA integrada em MainControllerV2
+
+**Por quê:**
+- **REQUISITO OBRIGATÓRIO** do projeto: RNA para detecção de obstáculos
+- Pasta `models/` estava VAZIA - sistema rodava em modo heurístico
+- Código v1 causava oscilações e conflitos com arquitetura v2 (DECISÃO 028)
+
+**Arquitetura SimpleLIDARMLP:**
+```
+Input: 512 pontos LIDAR (normalizados 0-1)
+Hidden1: Linear(512→128) + ReLU + Dropout(0.2)
+Hidden2: Linear(128→64) + ReLU + Dropout(0.2)
+Output: Linear(64→9) + Sigmoid
+Parâmetros: 74,505
+Accuracy: 97.7% (dados sintéticos)
+```
+
+**Arquivos deletados (v1 obsoleto):**
+- `src/main_controller.py` → substituído por `main_controller_v2.py`
+- `src/control/state_machine.py` → lógica em services
+- `src/control/robot_controller.py` → não usado
+- `src/control/logger.py` → não usado por v2
+- `src/control/types.py` → não usado por v2
+- `src/navigation/local_map.py` → não integrado
+- `src/manipulation/grasping.py` → substituído por ArmService
+- `src/manipulation/depositing.py` → substituído por ArmService
+
+**Arquivos criados:**
+- `src/perception/models/simple_lidar_mlp.py` - Modelo MLP
+- `scripts/train_lidar_mlp.py` - Script de treinamento
+- `models/lidar_mlp.pth` - Modelo treinado (301KB)
+
+**Logging adicionado:**
+- `[Movement]` - vx, vy, omega em cada ação
+- `[Arm]` - Sensor values antes/depois grip, has_object
+- `[Vision]` - Track ID, distância, ângulo (throttled 1/5 frames)
+- `[Nav]` - Phase, distância, ângulo, attempt
+- `[State]` - Transições de estado
+- `[RNA]` - Setores com obstáculos detectados
+
+**Base teórica:**
+- Goodfellow et al. (2016) - Deep Learning: MLP fundamentals
+- Thrun et al. (2005) - Probabilistic Robotics: LIDAR processing
+- Auto-labeling: threshold < 0.5m = obstáculo (setor ocupado)
+
+**Alternativas consideradas:**
+1. HybridLIDARNet (já existente) ❌ - Requer hand-crafted features, mais complexo
+2. PointNet ❌ - Overkill para 1D scan
+3. SimpleLIDARMLP ✅ - Rápido de implementar, suficiente para o requisito
+
+**Impacto:**
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| RNA implementada | ❌ | ✅ SimpleLIDARMLP |
+| Modelo treinado | Nenhum | models/lidar_mlp.pth |
+| Arquivos obsoletos | 8 | 0 |
+| Logging | Mínimo | Comprehensivo |
+| Compliance MATA64 | Parcial | ✅ Completo |
