@@ -67,3 +67,5 @@ logs/
 *.toc
 *.vrb
 slides-template/*.pdf
+
+assets/*

@@ -10,16 +10,17 @@ Components:
 - perception_system: Unified perception interface
 """
 
-from .lidar_processor import LIDARProcessor, ObstacleMap
-from .cube_detector import CubeDetector, CubeObservation, BoundingBox
-from .perception_system import PerceptionSystem, WorldState
+from .lidar_processor import LIDARProcessor, ObstacleMap, HandCraftedFeatures
+from .cube_detector import CubeDetector, CubeDetection, ColorSegmenter
+from .perception_system import PerceptionSystem, PerceptionState
 
 __all__ = [
     'LIDARProcessor',
     'ObstacleMap',
+    'HandCraftedFeatures',
     'CubeDetector',
-    'CubeObservation',
-    'BoundingBox',
+    'CubeDetection',
+    'ColorSegmenter',
     'PerceptionSystem',
-    'WorldState',
+    'PerceptionState',
 ]

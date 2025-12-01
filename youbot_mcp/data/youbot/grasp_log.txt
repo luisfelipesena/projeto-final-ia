@@ -1,0 +1,40 @@
+1764626947.0303712: [MCP] GRASPING: Step 2 - Prepare grasp
+1764626947.536872: [ARM] gripper_opened: finger_pos=0.02178
+1764626950.1040692: [MCP] GRASPING: Prepare result = True, arm = FRONT_PLATE
+1764626950.1042728: [MCP] GRASPING: Prepare complete
+1764626950.104533: [MCP] GRASPING: Step 3 - Execute grasp with IK (reach=0.225m)
+1764626954.7233238: [ARM] finger_pos_after_close=-0.00000, has_object=False
+1764626957.3120582: [MCP] GRASPING: Execute complete - success=False, has_object=False, error=
+1764626957.312294: [MCP] GRASPING: Arm after execute = FRONT_PLATE
+1764626957.31247: [MCP] GRASPING: FAILED: 
+1764626959.870553: [MCP] GRASPING: Complete, new state = SEARCHING
+1764626959.938546: [MCP] GRASPING: Attempting grasp of blue cube
+1764626959.938644: [MCP] GRASPING: Current arm height = RESET
+1764626959.939373: [MCP] GRASPING: Current target at 0.301m, -5.6° (color=blue)
+1764626959.9394078: [MCP] GRASPING: Step 0 - Pre-alignment (turning -5.6° to center cube at -5.6°)
+1764626960.7691: [MCP] GRASPING: After alignment: 0.301m, 1.6°
+1764626960.7702389: [MCP] GRASPING: Step 1 - Forward approach (25cm)
+1764626969.343155: [MCP] GRASPING: Step 2 - Prepare grasp
+1764626969.8601658: [ARM] gripper_opened: finger_pos=0.01488
+1764626972.422267: [MCP] GRASPING: Prepare result = True, arm = FRONT_PLATE
+1764626972.4224782: [MCP] GRASPING: Prepare complete
+1764626972.42271: [MCP] GRASPING: Step 3 - Execute grasp with IK (reach=0.201m)
+1764626977.065056: [ARM] finger_pos_after_close=-0.00000, has_object=False
+1764626979.6444402: [MCP] GRASPING: Execute complete - success=False, has_object=False, error=
+1764626979.644607: [MCP] GRASPING: Arm after execute = FRONT_PLATE
+1764626979.644728: [MCP] GRASPING: FAILED: 
+1764626982.219907: [MCP] GRASPING: Complete, new state = SEARCHING
+1764626982.287385: [MCP] GRASPING: Attempting grasp of blue cube
+1764626982.287476: [MCP] GRASPING: Current arm height = RESET
+1764626982.288169: [MCP] GRASPING: Current target at 0.283m, 1.9° (color=blue)
+1764626982.288206: [MCP] GRASPING: Step 1 - Forward approach (25cm)
+1764626990.86799: [MCP] GRASPING: Step 2 - Prepare grasp
+1764626991.38912: [ARM] gripper_opened: finger_pos=0.01488
+1764626993.956425: [MCP] GRASPING: Prepare result = True, arm = FRONT_PLATE
+1764626993.9566479: [MCP] GRASPING: Prepare complete
+1764626993.957081: [MCP] GRASPING: Step 3 - Execute grasp with IK (reach=0.183m)
+1764626998.559505: [ARM] finger_pos_after_close=-0.00000, has_object=False
+1764627001.133445: [MCP] GRASPING: Execute complete - success=False, has_object=False, error=
+1764627001.133663: [MCP] GRASPING: Arm after execute = FRONT_PLATE
+1764627001.1338081: [MCP] GRASPING: FAILED: 
+1764627003.7018728: [MCP] GRASPING: Complete, new state = SEARCHING

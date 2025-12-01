@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "youbot-mcp": {
+      "command": "/opt/homebrew/opt/python@3.11/bin/python3.11",
+      "args": [
+        "/Users/luisfelipesena/Development/Personal/projeto-final-ia/youbot_mcp/youbot_mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/luisfelipesena/Development/Personal/projeto-final-ia/venv/lib/python3.11/site-packages:/Users/luisfelipesena/Development/Personal/projeto-final-ia/src:/Users/luisfelipesena/Development/Personal/projeto-final-ia/IA_20252/controllers/youbot"
+      }
+    }
+  }
+}
