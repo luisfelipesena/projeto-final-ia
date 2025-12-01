@@ -19,6 +19,7 @@ from glob import glob
 import numpy as np
 
 # Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
@@ -30,7 +31,8 @@ except ImportError:
     print("Error: PyTorch not available. Install with: pip install torch")
     sys.exit(1)
 
-from src.perception.lidar_mlp import LidarMLP, train_model
+# Direct import to avoid Webots controller dependency
+from perception.lidar_mlp import LidarMLP, train_model
 
 
 def load_data(data_files: list) -> tuple:
