@@ -1,0 +1,67 @@
+{
+  "version": "2025-12-01-V3",
+  "last_update": 1764627010.3500218,
+  "current_state": "SEARCHING",
+  "autonomous_mode": true,
+  "base_velocity": {
+    "vx": 0,
+    "vy": 0,
+    "omega": 0.4
+  },
+  "arm_height": "RESET",
+  "arm_orientation": "FRONT",
+  "gripper_state": "closed",
+  "gripper_has_object": false,
+  "cubes_collected": 0,
+  "cube_detections": [],
+  "current_target": null,
+  "min_obstacle_distance": Infinity,
+  "obstacle_sectors": {
+    "far_left": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "left": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "front_left": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "front": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "front_right": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "right": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "far_right": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "back_right": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    },
+    "back_left": {
+      "min": Infinity,
+      "avg": Infinity,
+      "obstacle": false
+    }
+  },
+  "lidar_enabled": true
+}
