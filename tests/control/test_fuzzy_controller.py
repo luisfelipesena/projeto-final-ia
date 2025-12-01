@@ -224,4 +224,23 @@ class TestRuleCoverage:
             assert not np.isnan(outputs.angular_velocity)
             assert outputs.action in ['search', 'approach', 'grasp', 'navigate', 'deposit']
 
+    def test_front_blocked_rule(self):
+        """Ensure new front_blocked rule enforces stop"""
+        controller = FuzzyController({'logging': False})
+        controller.initialize()
+
+        inputs = FuzzyInputs(
+            distance_to_obstacle=1.0,
+            angle_to_obstacle=0.0,
+            distance_to_cube=3.0,
+            angle_to_cube=0.0,
+            cube_detected=False,
+            holding_cube=False,
+            front_blocked=1.0,
+            lateral_blocked=0.0
+        )
+
+        outputs = controller.infer(inputs)
+        assert outputs.linear_velocity <= 0.04, f"Front blocked should stop, got {outputs.linear_velocity}"
+
 

@@ -7,6 +7,7 @@ Based on: Redmon et al. (2016) - YOLO, Custom Lightweight CNN (DECISAO 017)
 Contract: specs/003-neural-networks/contracts/cube_detector.py
 """
 
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -49,29 +50,29 @@ class ColorSegmenter:
     """
 
     # HSV ranges calibrated for Webots simulation lighting
-    # Saturation lowered to 80 (was 150) - Webots cubes have moderate saturation
-    # Value lowered to 50 (was 100) - handle shadows better
+    # Saturation lowered to 70 (was 80) - provides tolerance to desaturation
+    # Value lowered to 40 (was 50) - handle mild shadows
     COLOR_RANGES = {
         'green': {
-            'lower': np.array([35, 80, 50]),    # H:35-85, relaxed S/V for Webots
+            'lower': np.array([35, 70, 40]),    # H:35-85, relaxed S/V for Webots
             'upper': np.array([85, 255, 255])
         },
         'blue': {
-            'lower': np.array([100, 80, 50]),   # H:100-130, relaxed S/V
+            'lower': np.array([100, 70, 40]),   # H:100-130, relaxed S/V
             'upper': np.array([130, 255, 255])
         },
         'red': {
             # Red wraps around in HSV, need two ranges
-            'lower1': np.array([0, 80, 50]),
+            'lower1': np.array([0, 70, 40]),
             'upper1': np.array([10, 255, 255]),
-            'lower2': np.array([160, 80, 50]),
+            'lower2': np.array([160, 70, 40]),
             'upper2': np.array([180, 255, 255])
         }
     }
 
     # Cube detection thresholds
     # 5cm cube at 1m ≈ 300-600 pixels area, at 0.3m ≈ 15000 pixels, at 0.20m ≈ 25000 pixels
-    MIN_CONTOUR_AREA = 100    # pixels - detect cubes at distance
+    MIN_CONTOUR_AREA = 120    # pixels - detect cubes at distance
     MAX_CONTOUR_AREA = 30000  # pixels - reject deposit boxes (they're huge)
 
     # Maximum bbox size as fraction of image
@@ -83,9 +84,21 @@ class ColorSegmenter:
     # Cubes are SQUARE (aspect ~1.0), deposit boxes are rectangular (aspect ~0.3-0.5)
     MIN_BBOX_ASPECT = 0.70
 
-    # Cubes are on the floor - center_y should be in lower half of image
-    # This rejects elevated deposit boxes
-    MIN_CENTER_Y = 0.35  # Cube center must be below 35% from top
+    # Cubes are on the floor - center_y should be in lower portion of image
+    # But distant cubes appear higher (closer to horizon)
+    MIN_CENTER_Y = 0.30  # Cube center must be below 30% from top (allow distant cubes)
+    MAX_CENTER_Y = 0.95  # Ignore reflections at the extreme bottom edge
+
+    MIN_SOLIDITY = 0.80   # Reject elongated/highly concave blobs (e.g., rims of bins)
+    MIN_EXTENT = 0.65     # Ensures blob fills bounding box similar to a square
+
+    # Reject extremely tall/wide blobs (deposit bins)
+    MAX_PROJECTED_WIDTH = 0.35
+    MAX_PROJECTED_HEIGHT = 0.35
+
+    CAMERA_VERTICAL_FOV = math.radians(60.0)  # Webots default for youBot camera
+    CUBE_REAL_SIZE = 0.05  # 5 cm
+    CAMERA_OFFSET = 0.15   # Camera to arm-base offset
 
     # Debug: save images to diagnose detection issues
     DEBUG_SAVE_IMAGES = False  # Set True to save debug images
@@ -144,10 +157,23 @@ class ColorSegmenter:
                 if bbox_aspect < self.MIN_BBOX_ASPECT:  # Too elongated, not a cube
                     continue
 
+                hull = cv2.convexHull(contour)
+                hull_area = cv2.contourArea(hull)
+                solidity = area / hull_area if hull_area > 0 else 0
+                if solidity < self.MIN_SOLIDITY:
+                    continue
+
+                extent = area / (bw * bh) if bw * bh > 0 else 0
+                if extent < self.MIN_EXTENT:
+                    continue
+
                 # Maximum bbox size filter - deposit boxes are much larger than cubes
                 # A cube taking up >35% of image is either too close or a false detection
                 bbox_fraction = max(bw / w, bh / h)
                 if bbox_fraction > self.MAX_BBOX_FRACTION:
+                    continue
+
+                if bw / w > self.MAX_PROJECTED_WIDTH or bh / h > self.MAX_PROJECTED_HEIGHT:
                     continue
 
                 # Calculate normalized bbox center
@@ -158,22 +184,11 @@ class ColorSegmenter:
 
                 # Position filter: cubes are on the floor (lower part of image)
                 # Deposit boxes are elevated and appear higher in the image
-                if cy < self.MIN_CENTER_Y:
+                if cy < self.MIN_CENTER_Y or cy > self.MAX_CENTER_Y:
                     continue
 
-                # Estimate distance based on bbox size (larger = closer)
-                # Calibrated for 5cm cube: at 1m apparent_size ~0.05, at 0.5m ~0.10
-                apparent_size = max(bbox_w, bbox_h)
-                CUBE_REAL_SIZE = 0.05  # 5cm cube
-                MIN_APPARENT_SIZE = 0.02  # Minimum valid detection size
-
-                if apparent_size > MIN_APPARENT_SIZE:
-                    # distance = real_size / (apparent_size * tan(FOV/2))
-                    # tan(30°) = 0.577 for 60° horizontal FOV
-                    distance = CUBE_REAL_SIZE / (apparent_size * 0.577)
-                    distance = np.clip(distance, 0.05, 3.0)  # Min 5cm, max 3m
-                else:
-                    distance = 3.0  # Far away or noise
+                apparent_pixels = max(bbox_w * w, bbox_h * h)
+                distance = self._estimate_distance(apparent_pixels, h)
 
                 # Calculate angle from center of image
                 # Camera FOV is approximately 60 degrees
@@ -194,6 +209,26 @@ class ColorSegmenter:
                 ))
 
         return detections
+
+    @classmethod
+    def _estimate_distance(cls, apparent_pixels: float, image_height: int) -> float:
+        """
+        Estimate distance using pinhole camera model.
+
+        Args:
+            apparent_pixels: Measured cube size in pixels (max dimension of bbox)
+            image_height: Image height in pixels
+
+        Returns:
+            Distance in meters from arm base to cube
+        """
+        if apparent_pixels <= 1e-3:
+            return 3.0
+
+        focal_px = (image_height / 2.0) / math.tan(cls.CAMERA_VERTICAL_FOV / 2.0)
+        camera_distance = (cls.CUBE_REAL_SIZE * focal_px) / apparent_pixels
+        distance = camera_distance + cls.CAMERA_OFFSET
+        return float(np.clip(distance, 0.10, 3.0))
 
 
 class CubeDetector:

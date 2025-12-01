@@ -9,7 +9,7 @@ Based on: Bradski & Kaehler (2008) - Learning OpenCV
 
 import math
 import time
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Callable
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -34,7 +34,7 @@ class TrackedCube:
     @property
     def is_reliable(self) -> bool:
         """Cube tracked for enough frames to be reliable (~100ms)."""
-        return self.frames_tracked >= 3
+        return self.frames_tracked >= 3 and self.confidence >= 0.55
 
 
 @dataclass
@@ -69,13 +69,19 @@ class VisionService:
     """
 
     # Tracking parameters
-    LOST_THRESHOLD = 30         # Frames to wait before declaring lost (~1s) - balance stability/responsiveness
-    MIN_CONFIDENCE = 0.60       # Minimum confidence to accept detection
-    POSITION_TOLERANCE = 0.30   # Max distance change to consider same cube (meters)
-    ANGLE_TOLERANCE = 20.0      # Max angle change to consider same cube (degrees)
-    MIN_FRAMES_RELIABLE = 10    # Frames needed for reliable tracking (~320ms)
+    LOST_THRESHOLD = 60         # Frames to wait before declaring lost (~2s) - give time to realign
+    MIN_CONFIDENCE = 0.55       # Minimum confidence to accept detection (lowered for reliability)
+    POSITION_TOLERANCE = 0.40   # Max distance change to consider same cube (meters)
+    ANGLE_TOLERANCE = 30.0      # Max angle change to consider same cube (degrees) - tighter to prevent wrong matches
+    MIN_FRAMES_RELIABLE = 3     # Frames needed for reliable tracking (~100ms) - faster acquisition
+    LIDAR_GATE_TOLERANCE = 0.30 # Accept detections that match LIDAR depth within tolerance
+    LIDAR_GATE_MAX_RANGE = 2.0  # Ignore targets farther than this (likely bins/walls)
+    COAST_FRAMES_MAX = 30       # Frames to keep target alive when LIDAR still confirms
+    ANGLE_PENALTY = 0.010       # meters of penalty per degree when scoring candidates
+    SWITCH_MARGIN = 0.20        # minimum score improvement required to switch targets
 
-    def __init__(self, cube_detector, time_step: int):
+    def __init__(self, cube_detector, time_step: int,
+                 lidar_probe: Optional[Callable[[float], Optional[float]]] = None):
         """
         Initialize VisionService.
 
@@ -90,9 +96,14 @@ class VisionService:
         self.tracked_target: Optional[TrackedCube] = None
         self.frames_lost = 0
         self.next_track_id = 1
+        self._coast_frames = 0
+        self._drift_frames = 0
 
         # Lock mode
         self._locked_color: Optional[str] = None
+
+        # Optional LIDAR probe (angle degrees -> distance)
+        self._range_probe = lidar_probe
 
         # Debug
         self._last_raw_count = 0
@@ -120,12 +131,20 @@ class VisionService:
 
         # Filter by validity and confidence
         valid_detections = [d for d in detections
-                           if d.is_valid and d.confidence >= self.MIN_CONFIDENCE]
+                            if d.is_valid and d.confidence >= self.MIN_CONFIDENCE]
 
         # Apply color lock if active
         if self._locked_color:
             valid_detections = [d for d in valid_detections
-                               if d.color == self._locked_color]
+                                if d.color == self._locked_color]
+
+        # Apply LIDAR gate when available
+        if self._range_probe:
+            gated = []
+            for det in valid_detections:
+                if self._passes_lidar_gate(det):
+                    gated.append(det)
+            valid_detections = gated
 
         if self.tracked_target:
             self._update_tracked(valid_detections)
@@ -151,18 +170,29 @@ class VisionService:
             self.tracked_target.last_seen = time.time()
             self.tracked_target.last_position = self._calc_position(match)
             self.frames_lost = 0
+            self._coast_frames = 0
+            self._drift_frames = 0 if abs(match.angle) <= 15 else self._drift_frames + 1
+            self._maybe_switch_target(detections)
         else:
             # Cube not found this frame
+            if self._lidar_confirms_target(self.tracked_target):
+                self._coast_frames = min(self._coast_frames + 1, self.COAST_FRAMES_MAX)
+                # keep last_seen fresh so controller can continue approaching
+                self.tracked_target.last_seen = time.time()
+                return
+
             self.frames_lost += 1
+            if self.frames_lost == 1:
+                print(f"[VisionService] TRACKING MISS: frames_lost=1 (target was at {self.tracked_target.distance:.2f}m, {self.tracked_target.angle:.1f}°)")
 
             if self.frames_lost >= self.LOST_THRESHOLD:
-                # Lost for too long - release tracking
-                if self._update_count % 30 == 0:
-                    print(f"[VisionService] Lost {self.tracked_target.color} cube "
-                          f"(track_id={self.tracked_target.track_id}) after "
-                          f"{self.LOST_THRESHOLD} frames")
+                # Lost for too long - release tracking but KEEP color lock
+                # Color lock should only be released by controller calling unlock()
+                print(f"[VisionService] Lost {self.tracked_target.color} cube "
+                      f"(track_id={self.tracked_target.track_id}) after "
+                      f"{self.LOST_THRESHOLD} frames")
                 self.tracked_target = None
-                self._locked_color = None
+                # DO NOT release _locked_color here - controller decides when to unlock
             # else: Keep returning last known position (persistence)
 
     def _acquire_target(self, detections: list) -> None:
@@ -170,26 +200,30 @@ class VisionService:
         if not detections:
             return
 
-        # Pick closest cube
-        closest = min(detections, key=lambda d: d.distance)
+        # Pick cube that balances distance and angle
+        forward_candidates = [d for d in detections if abs(d.angle) <= 10.0]
+        pool = forward_candidates if forward_candidates else detections
+        best = min(pool, key=self._target_score)
 
         # Create new tracked cube
         self.tracked_target = TrackedCube(
             track_id=self.next_track_id,
-            color=closest.color,
-            distance=closest.distance,
-            angle=closest.angle,
-            confidence=closest.confidence,
+            color=best.color,
+            distance=best.distance,
+            angle=best.angle,
+            confidence=best.confidence,
             frames_tracked=1,
             last_seen=time.time(),
-            last_position=self._calc_position(closest)
+            last_position=self._calc_position(best)
         )
         self.next_track_id += 1
         self.frames_lost = 0
+        self._coast_frames = 0
+        self._drift_frames = 0
 
-        print(f"[VisionService] Acquired {closest.color} cube "
+        print(f"[VisionService] Acquired {best.color} cube "
               f"(track_id={self.tracked_target.track_id}) "
-              f"at {closest.distance:.2f}m, {closest.angle:.1f}°")
+              f"at {best.distance:.2f}m, {best.angle:.1f}°")
 
     def _find_match(self, detections: list, target: TrackedCube):
         """
@@ -240,10 +274,14 @@ class VisionService:
     def _handle_no_detection(self) -> None:
         """Handle frame with no detections."""
         if self.tracked_target:
+            if self._lidar_confirms_target(self.tracked_target):
+                self._coast_frames = min(self._coast_frames + 1, self.COAST_FRAMES_MAX)
+                return
+
             self.frames_lost += 1
             if self.frames_lost >= self.LOST_THRESHOLD:
                 self.tracked_target = None
-                self._locked_color = None
+                # DO NOT release _locked_color here - controller decides when to unlock
 
     def get_target(self) -> Optional[TrackedCube]:
         """
@@ -281,6 +319,86 @@ class VisionService:
             frames_locked=self.tracked_target.frames_tracked if self.tracked_target else 0,
             frames_lost=self.frames_lost
         )
+
+    def set_range_probe(self, probe: Optional[Callable[[float], Optional[float]]]) -> None:
+        """Inject or update LIDAR probe callable."""
+        self._range_probe = probe
+
+    def _passes_lidar_gate(self, detection) -> bool:
+        """Check whether detection has consistent LIDAR range."""
+        lidar_distance = self._lidar_range_at(detection.angle)
+        if lidar_distance is None:
+            return True
+        if math.isinf(lidar_distance) or lidar_distance > self.LIDAR_GATE_MAX_RANGE:
+            return False
+
+        angle_factor = 1.0 + abs(detection.angle) / 45.0
+        tolerance = max(self.LIDAR_GATE_TOLERANCE, detection.distance * 0.2) * angle_factor
+        return abs(lidar_distance - detection.distance) <= tolerance
+
+    def _lidar_confirms_target(self, target: TrackedCube) -> bool:
+        """Use LIDAR to keep target alive during brief visual occlusions."""
+        lidar_distance = self._lidar_range_at(target.angle)
+        if lidar_distance is None:
+            return False
+
+        angle_factor = 1.0 + abs(target.angle) / 45.0
+        tolerance = max(self.LIDAR_GATE_TOLERANCE, target.distance * 0.2) * angle_factor
+        if abs(lidar_distance - target.distance) <= tolerance:
+            target.distance = lidar_distance
+            return True
+        return False
+
+    def _lidar_range_at(self, angle: float) -> Optional[float]:
+        """Call range probe safely."""
+        if not self._range_probe:
+            return None
+        try:
+            return self._range_probe(angle)
+        except Exception:
+            return None
+
+    def _target_score(self, detection) -> float:
+        """Combined distance + angle score (lower is better)."""
+        return detection.distance + self.ANGLE_PENALTY * abs(detection.angle)
+
+    def _tracked_score(self) -> float:
+        if not self.tracked_target:
+            return float('inf')
+        return self.tracked_target.distance + self.ANGLE_PENALTY * abs(self.tracked_target.angle)
+
+    def _maybe_switch_target(self, detections: list) -> None:
+        """Switch to a better candidate if it significantly improves the score."""
+        if not self.tracked_target or not detections:
+            return
+
+        # DISABLE target switching when close - commit to current target
+        # This prevents oscillation between two same-color cubes
+        if self.tracked_target.distance < 0.40:
+            return  # Don't switch when close to target
+
+        if self._locked_color:
+            detections = [d for d in detections if d.color == self._locked_color]
+            if not detections:
+                return
+
+        forward_candidates = [d for d in detections if abs(d.angle) <= 10.0]
+        pool = forward_candidates if forward_candidates else detections
+        best = min(pool, key=self._target_score)
+
+        # Increase drift threshold to prevent premature unlocking
+        should_unlock = self._drift_frames > 45 and abs(self.tracked_target.angle) > 30.0
+        if should_unlock:
+            print("[VisionService] Drift detected, unlocking target")
+            self.unlock()
+            return
+
+        if self._target_score(best) + self.SWITCH_MARGIN < self._tracked_score():
+            self.tracked_target.color = best.color
+            self.tracked_target.distance = best.distance
+            self.tracked_target.angle = best.angle
+            self.tracked_target.confidence = best.confidence
+            self.tracked_target.last_position = self._calc_position(best)
 
     # ==================== TEST METHODS ====================
 

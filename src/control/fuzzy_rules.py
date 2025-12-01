@@ -100,9 +100,10 @@ def create_linguistic_variables() -> Dict[str, LinguisticVariable]:
         universe=(0.0, 0.3),
         membership_functions={
             'stop': MembershipFunctionParams('stop', 'trimf', (0.0, 0.0, 0.05)),
-            'slow': MembershipFunctionParams('slow', 'trimf', (0.03, 0.08, 0.13)),
-            'medium': MembershipFunctionParams('medium', 'trimf', (0.10, 0.18, 0.25)),
-            'fast': MembershipFunctionParams('fast', 'trapmf', (0.20, 0.30, 0.30, 0.30)),
+            'slow': MembershipFunctionParams('slow', 'trimf', (0.02, 0.06, 0.10)),
+            'medium': MembershipFunctionParams('medium', 'trimf', (0.08, 0.14, 0.22)),
+            'fast': MembershipFunctionParams('fast', 'trapmf', (0.18, 0.24, 0.30, 0.30)),
+            'crawl': MembershipFunctionParams('crawl', 'trimf', (0.00, 0.02, 0.04)),
         },
         mf_type='triangular'
     )
@@ -131,6 +132,27 @@ def create_linguistic_variables() -> Dict[str, LinguisticVariable]:
             'grasp': MembershipFunctionParams('grasp', 'trimf', (1.0, 2.0, 3.0)),
             'navigate': MembershipFunctionParams('navigate', 'trimf', (2.5, 3.0, 3.5)),
             'deposit': MembershipFunctionParams('deposit', 'trimf', (3.0, 4.0, 4.0)),
+        },
+        mf_type='triangular'
+    )
+
+    # Additional boolean-like inputs for obstacle blocking
+    vars_dict['front_blocked'] = LinguisticVariable(
+        name='front_blocked',
+        universe=(0.0, 1.0),
+        membership_functions={
+            'clear': MembershipFunctionParams('clear', 'trimf', (0.0, 0.0, 0.5)),
+            'blocked': MembershipFunctionParams('blocked', 'trimf', (0.5, 1.0, 1.0)),
+        },
+        mf_type='triangular'
+    )
+
+    vars_dict['lateral_blocked'] = LinguisticVariable(
+        name='lateral_blocked',
+        universe=(0.0, 1.0),
+        membership_functions={
+            'clear': MembershipFunctionParams('clear', 'trimf', (0.0, 0.0, 0.5)),
+            'blocked': MembershipFunctionParams('blocked', 'trimf', (0.5, 1.0, 1.0)),
         },
         mf_type='triangular'
     )
@@ -437,6 +459,54 @@ def create_rules() -> List[FuzzyRule]:
         category='task'
     ))
 
+    # R027: Final approach creep when front clear
+    rules.append(FuzzyRule(
+        rule_id='R027_final_creep',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'near'),
+            FuzzyRuleCondition('front_blocked', 'clear')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'straight'),
+            FuzzyRuleAssignment('action', 'approach')
+        ],
+        weight=7.5,
+        category='task'
+    ))
+
+    # R028: Abort forward motion if cube near but front blocked
+    rules.append(FuzzyRule(
+        rule_id='R028_front_blocked_abort',
+        antecedents=[
+            FuzzyRuleCondition('distance_to_cube', 'near'),
+            FuzzyRuleCondition('front_blocked', 'blocked')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'strong_left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=9.5,
+        category='safety'
+    ))
+
+    # R029: Lateral blockage triggers re-orientation
+    rules.append(FuzzyRule(
+        rule_id='R029_lateral_clearance',
+        antecedents=[
+            FuzzyRuleCondition('lateral_blocked', 'blocked'),
+            FuzzyRuleCondition('distance_to_obstacle', 'near')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'slow'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=7.0,
+        category='safety'
+    ))
+
     # ========================================================================
     # Exploration Rules (R021-R025): Search Patterns
     # Basic implementation for Phase 3, will be expanded in Phase 4
@@ -534,6 +604,37 @@ def create_rules() -> List[FuzzyRule]:
         ],
         weight=2.0,
         category='exploration'
+    ))
+
+    # Safety rule: front blocked -> stop
+    rules.append(FuzzyRule(
+        rule_id='R030_front_block_stop',
+        antecedents=[
+            FuzzyRuleCondition('front_blocked', 'blocked')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'stop'),
+            FuzzyRuleAssignment('angular_velocity', 'strong_left'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=10.0,
+        category='safety'
+    ))
+
+    # Safety rule: lateral blocked -> crawl
+    rules.append(FuzzyRule(
+        rule_id='R031_lateral_crawl',
+        antecedents=[
+            FuzzyRuleCondition('lateral_blocked', 'blocked'),
+            FuzzyRuleCondition('distance_to_obstacle', 'medium')
+        ],
+        consequents=[
+            FuzzyRuleAssignment('linear_velocity', 'crawl'),
+            FuzzyRuleAssignment('angular_velocity', 'right'),
+            FuzzyRuleAssignment('action', 'search')
+        ],
+        weight=6.5,
+        category='safety'
     ))
 
     return rules

@@ -60,6 +60,10 @@ class ArmService:
     GRIP_TIME = 2.5          # Time for gripper to close fully (increased)
     LIFT_TIME = 2.5          # Time for arm to lift with cube
 
+    # Geometry constants
+    CAMERA_ARM_OFFSET = 0.15  # Camera is ~15cm in front of arm base
+    CUBE_HEIGHT = 0.05        # Cube is 5cm tall, grip at center
+
     def __init__(self, arm, gripper, robot, time_step: int):
         """
         Initialize ArmService.
@@ -152,7 +156,7 @@ class ArmService:
         self.state = ArmState.FRONT_HIGH
         return True
 
-    def execute_grasp(self, use_ik: bool = False, forward_reach: float = 0.22) -> GraspResult:
+    def execute_grasp(self, use_ik: bool = True, forward_reach: float = 0.22) -> GraspResult:
         """
         Execute grasp sequence: lower arm, close gripper, verify, lift.
 
@@ -177,9 +181,11 @@ class ArmService:
 
         # Step 1: Lower arm to floor level
         if use_ik:
-            # Use IK for precise positioning: (x=0 centered, y=forward, z=cube height)
-            print(f"[ArmService] Using IK: x=0, y={forward_reach:.3f}, z=0.025")
-            self.arm.inverse_kinematics(x=0.0, y=forward_reach, z=0.025)
+            # Use IK for precise positioning: (x=0 centered, y=forward, z=cube center)
+            # Grip at center height of cube (CUBE_HEIGHT / 2)
+            grip_height = self.CUBE_HEIGHT / 2  # 0.025m = 2.5cm
+            print(f"[ArmService] Using IK: x=0, y={forward_reach:.3f}, z={grip_height:.3f}")
+            self.arm.inverse_kinematics(x=0.0, y=forward_reach, z=grip_height)
         else:
             print(f"[ArmService] Lowering to FRONT_FLOOR")
             self.arm.set_height(self.arm.FRONT_FLOOR)

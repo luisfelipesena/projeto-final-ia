@@ -7,12 +7,13 @@ Based on: Latombe (1991) - Robot Motion Planning
 
 import math
 import time
-from typing import Optional
+from typing import Optional, Callable
 from dataclasses import dataclass
 from enum import Enum, auto
 
 from .movement_service import MovementService
 from .vision_service import VisionService, TrackedCube
+from perception.lidar_processor import ObstacleMap
 
 
 class ApproachPhase(Enum):
@@ -54,17 +55,20 @@ class NavigationService:
     """
 
     # Approach parameters
-    ALIGN_THRESHOLD_ENTER = 20.0  # degrees - start considering aligned (forgiving for approach)
-    ALIGN_THRESHOLD_EXIT = 12.0   # degrees - stop aligning (hysteresis prevents oscillation)
-    APPROACH_DISTANCE = 0.22     # meters - stop at 22cm, then forward approach
+    ALIGN_THRESHOLD_ENTER = 15.0  # degrees - start considering aligned (tighter for precision)
+    ALIGN_THRESHOLD_EXIT = 8.0    # degrees - stop aligning (stricter for grasp accuracy)
+    # Distance is now measured from ARM BASE (includes 15cm camera offset)
+    # IK can reach 15-35cm from arm base, stop at 22cm for optimal grasp
+    APPROACH_DISTANCE = 0.22     # meters - stop at 22cm from arm base (theory)
     TURN_GAIN = 0.5              # Proportional gain for turning
     MIN_TURN = 5.0               # Minimum turn angle (degrees)
     APPROACH_STEP = 0.10         # Forward step size (meters)
-    APPROACH_SPEED = 0.08        # Forward speed (m/s) - slower for precision
-    MAX_ATTEMPTS = 100           # Max iterations before giving up
+    APPROACH_SPEED = 0.12        # Forward speed (m/s)
+    MAX_ATTEMPTS = 300           # Max iterations before giving up (~10 seconds)
 
     def __init__(self, movement: MovementService, vision: VisionService,
-                 robot, camera, time_step: int, lidar=None, lidar_model=None):
+                 robot, camera, time_step: int, lidar=None, lidar_model=None,
+                 obstacle_map_provider: Optional[Callable[[], Optional[ObstacleMap]]] = None):
         """
         Initialize NavigationService.
 
@@ -84,15 +88,23 @@ class NavigationService:
         self.time_step = time_step
         self.lidar = lidar
         self.lidar_model = lidar_model
+        self._obstacle_map_provider = obstacle_map_provider
 
         self.phase = ApproachPhase.ALIGN
         self._attempts = 0
+        self._final_dwell = 0
 
-    def _get_front_obstacle_distance(self) -> float:
+    def _get_front_obstacle_distance(self, obstacle_map: Optional[ObstacleMap] = None) -> float:
         """
         Get minimum distance to obstacle in front sectors (3-5).
         Returns float('inf') if no LIDAR available.
         """
+        obstacle_map = obstacle_map or self._fetch_obstacle_map()
+        if obstacle_map:
+            clearance = obstacle_map.get_clearance([3, 4, 5])
+            if math.isfinite(clearance):
+                return float(clearance)
+
         if not self.lidar:
             return float('inf')
 
@@ -133,6 +145,10 @@ class NavigationService:
             image_array = np.frombuffer(image, np.uint8).reshape((height, width, 4))
             image_rgb = image_array[:, :, :3]
             self.vision.update(image_rgb)
+        else:
+            from pathlib import Path
+            with open(Path(__file__).parent.parent / "youbot_mcp" / "data" / "youbot" / "nav_debug.log", 'a') as f:
+                f.write("WARNING: No camera image!\n")
 
         return True
 
@@ -166,6 +182,9 @@ class NavigationService:
             target = self.vision.get_target()
 
             if not target:
+                from pathlib import Path
+                with open(Path(__file__).parent.parent.parent / "youbot_mcp" / "data" / "youbot" / "nav_debug.log", 'a') as f:
+                    f.write(f"TARGET_LOST at attempt {self._attempts} (was {self.phase.name})\n")
                 self.phase = ApproachPhase.LOST
                 return ApproachResult(
                     success=False,
@@ -183,7 +202,7 @@ class NavigationService:
                 continue
 
             # Phase 2: APPROACH
-            if self.phase == ApproachPhase.APPROACH:
+            if self.phase in (ApproachPhase.APPROACH, ApproachPhase.FINAL):
                 result = self._do_approach(target)
                 if result:
                     return result
@@ -214,8 +233,8 @@ class NavigationService:
             return None
 
         # Calculate turn angle (proportional control)
-        # POSITIVE angle = cube to RIGHT → need POSITIVE omega to turn RIGHT
-        # (YouBot convention: positive omega = turn right/clockwise from above)
+        # POSITIVE angle = cube to RIGHT → need NEGATIVE omega to turn RIGHT
+        # YouBot convention: POSITIVE omega = LEFT, NEGATIVE omega = RIGHT
         turn_angle = target.angle * self.TURN_GAIN
 
         # Ensure minimum turn for responsiveness
@@ -225,8 +244,13 @@ class NavigationService:
         # Limit turn angle
         turn_angle = max(-30, min(30, turn_angle))
 
-        # Execute turn (non-blocking single step)
-        self.movement.move_continuous(vx=0, vy=0, omega=math.radians(turn_angle) * 2)
+        # Execute turn - NEGATE because: positive angle (cube RIGHT) needs negative omega (turn RIGHT)
+        # base.py: negative omega → [+,-,+,-] wheel pattern → turn RIGHT
+        omega = -math.radians(turn_angle) * 2.0
+        from pathlib import Path
+        with open(Path(__file__).parent.parent.parent / "youbot_mcp" / "data" / "youbot" / "nav_debug.log", 'a') as f:
+            f.write(f"ALIGN: angle={target.angle:.1f}° turn={turn_angle:.1f}° omega={omega:.3f}\n")
+        self.movement.move_continuous(vx=0, vy=0, omega=omega)
 
         return None
 
@@ -243,12 +267,15 @@ class NavigationService:
             print(f"[Navigation] COMPLETE: dist={target.distance:.2f}m angle={target.angle:.1f}°")
             self.movement.stop()
             self.phase = ApproachPhase.COMPLETE
+            self._final_dwell = 0
             return ApproachResult(
                 success=True,
                 phase=self.phase,
                 final_distance=target.distance,
                 final_angle=target.angle
             )
+
+        obstacle_map = self._fetch_obstacle_map()
 
         # Check if still aligned (use ALIGN_THRESHOLD_ENTER for consistency)
         # Re-align if angle drifts beyond threshold during approach
@@ -258,8 +285,13 @@ class NavigationService:
             self.phase = ApproachPhase.ALIGN
             return None
 
+        # Promote to FINAL phase when within slow zone
+        if self.phase == ApproachPhase.APPROACH and target.distance < 0.40:
+            print("[Navigation] FINAL phase engaged (<0.40m)")
+            self.phase = ApproachPhase.FINAL
+
         # Check for obstacle in front (but ignore if it's the cube we're approaching)
-        front_obstacle = self._get_front_obstacle_distance()
+        front_obstacle = self._get_front_obstacle_distance(obstacle_map)
 
         # Only trigger obstacle avoidance if:
         # 1. Obstacle is closer than target by significant margin (>0.15m difference)
@@ -276,20 +308,63 @@ class NavigationService:
             self.movement.move_continuous(vx=0.05, vy=vy, omega=0)
             return None
 
+        if obstacle_map and self._front_conflicts_with_target(obstacle_map, target.angle):
+            print("[Navigation] Front obstacle conflicts with target heading → ALIGN")
+            self.phase = ApproachPhase.ALIGN
+            return None
+
+        # Micro adjustments when very close
+        if self.phase == ApproachPhase.FINAL and target.distance <= 0.30:
+            self._final_dwell += 1
+            if self._final_dwell > 20:
+                print("[Navigation] FINAL dwell satisfied, signalling completion")
+                self.movement.stop()
+                self.phase = ApproachPhase.COMPLETE
+                return ApproachResult(
+                    success=True,
+                    phase=self.phase,
+                    final_distance=target.distance,
+                    final_angle=target.angle
+                )
+            vx = 0.02
+            vy = 0.02 if target.angle > 2 else (-0.02 if target.angle < -2 else 0.0)
+            omega = -math.radians(target.angle) * 0.2  # Negate: positive angle → negative omega → turn RIGHT
+            self.movement.move_continuous(vx=vx, vy=vy, omega=omega)
+            return None
+        else:
+            self._final_dwell = 0
+
         # Normal approach: move forward with angle correction
-        omega = target.angle * 0.05  # Proportional correction for better tracking
+        # Negate: positive angle (cube RIGHT) → negative omega → turn RIGHT
+        omega = -math.radians(target.angle) * 0.5
+        speed = 0.04 if self.phase == ApproachPhase.FINAL else self.APPROACH_SPEED
 
         # Log distance periodically
         if self._attempts % 10 == 0:
             print(f"[Navigation] APPROACH: dist={target.distance:.2f}m (target={self.APPROACH_DISTANCE:.2f}m)")
 
-        self.movement.move_continuous(vx=self.APPROACH_SPEED, vy=0, omega=omega)
+        self.movement.move_continuous(vx=speed, vy=0, omega=omega)
 
         return None
 
     def stop(self) -> None:
         """Stop any ongoing movement."""
         self.movement.stop()
+
+    def _fetch_obstacle_map(self) -> Optional[ObstacleMap]:
+        if not self._obstacle_map_provider:
+            return None
+        try:
+            return self._obstacle_map_provider()
+        except Exception:
+            return None
+
+    def _front_conflicts_with_target(self, obstacle_map: ObstacleMap, target_angle: float) -> bool:
+        """Detect cases where LIDAR sees a frontal obstacle not aligned with the cube."""
+        center_blocked = obstacle_map.is_sector_occupied(4)
+        if center_blocked and abs(target_angle) > self.ALIGN_THRESHOLD_EXIT:
+            return True
+        return False
 
     # ==================== TEST METHODS ====================
 
