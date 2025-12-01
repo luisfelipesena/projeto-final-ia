@@ -1,42 +1,42 @@
 {
   "version": "2025-12-01-V3",
-  "last_update": 1764623658.1129842,
+  "last_update": 1764623673.893833,
   "current_state": "APPROACHING",
   "autonomous_mode": true,
   "base_velocity": {
-    "vx": 0.05997212464034653,
+    "vx": 0,
     "vy": 0,
-    "omega": -0.06544984694978737
+    "omega": -0.2
   },
   "arm_height": "RESET",
   "arm_orientation": "FRONT",
-  "gripper_state": "closed",
+  "gripper_state": "open",
   "gripper_has_object": false,
   "cubes_collected": 0,
   "cube_detections": [
     {
       "color": "blue",
-      "confidence": 0.8307692307692307,
-      "distance": 0.545897327444315,
-      "angle": 4.6875,
+      "confidence": 0.8999999999999999,
+      "distance": 0.45792014356780053,
+      "angle": -5.15625,
       "bbox": [
-        0.578125,
-        0.46484375,
-        0.109375,
-        0.0859375
+        0.4140625,
+        0.4453125,
+        0.140625,
+        0.140625
       ]
     }
   ],
   "current_target": {
     "color": "blue",
-    "distance": 0.545897327444315,
-    "angle": 4.6875
+    "distance": 0.45792014356780053,
+    "angle": -5.15625
   },
-  "min_obstacle_distance": 0.9565930366516113,
+  "min_obstacle_distance": Infinity,
   "obstacle_sectors": {
     "far_left": {
-      "min": 0.9565930366516113,
-      "avg": 0.9713355017744977,
+      "min": Infinity,
+      "avg": Infinity,
       "obstacle": false
     },
     "left": {
