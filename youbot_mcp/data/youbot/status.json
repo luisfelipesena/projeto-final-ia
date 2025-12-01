@@ -1,6 +1,6 @@
 {
   "version": "2025-12-01-V3",
-  "last_update": 1764627007.75408,
+  "last_update": 1764627010.3500218,
   "current_state": "SEARCHING",
   "autonomous_mode": true,
   "base_velocity": {
@@ -15,7 +15,7 @@
   "cubes_collected": 0,
   "cube_detections": [],
   "current_target": null,
-  "min_obstacle_distance": 0.9803691506385803,
+  "min_obstacle_distance": Infinity,
   "obstacle_sectors": {
     "far_left": {
       "min": Infinity,
@@ -28,18 +28,18 @@
       "obstacle": false
     },
     "front_left": {
-      "min": 0.9832131862640381,
-      "avg": 0.9868284397655063,
+      "min": Infinity,
+      "avg": Infinity,
       "obstacle": false
     },
     "front": {
-      "min": 0.9897037744522095,
-      "avg": 0.9900454580783844,
+      "min": Infinity,
+      "avg": Infinity,
       "obstacle": false
     },
     "front_right": {
-      "min": 0.9803691506385803,
-      "avg": 0.987949733932813,
+      "min": Infinity,
+      "avg": Infinity,
       "obstacle": false
     },
     "right": {
