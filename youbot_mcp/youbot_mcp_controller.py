@@ -294,6 +294,18 @@ class YouBotMCPController:
             return image_array[:, :, :3]  # RGB only
         return None
 
+    def _save_grasp_screenshot(self, stage: str) -> None:
+        """Save screenshot during grasp for debugging."""
+        import cv2
+        image = self._get_camera_image()
+        if image is not None:
+            timestamp = int(time.time())
+            filename = DATA_DIR / f"grasp_{stage}_{timestamp}.jpg"
+            # Convert RGB to BGR for OpenCV
+            bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(filename), bgr)
+            print(f"[MCP] Screenshot saved: {filename.name}")
+
     def _update_vision(self) -> None:
         """Update vision service with current frame."""
         image = self._get_camera_image()
@@ -627,6 +639,11 @@ class YouBotMCPController:
                 self.state = MCPState.APPROACHING
                 print(f"[MCP Search] Target acquired: {target.color} at {target.distance:.2f}m, {target.angle:.1f}° (frames={target.frames_tracked}) → APPROACHING")
                 return  # Don't do anything else this frame
+            elif target and target.frames_tracked == 1 and target.confidence >= 0.60:
+                # NEW: Promising detection found - PAUSE rotation to let tracking stabilize
+                # This gives VisionService one more frame to confirm (reach frames_tracked=2)
+                self.base.reset()
+                return  # Wait one frame for tracking to confirm
             else:
                 # Get LIDAR data - only consider FRONT sectors for obstacle avoidance
                 lidar_data = self._get_lidar_data()
@@ -811,30 +828,53 @@ class YouBotMCPController:
 
                 log(f"[MCP] GRASPING: Attempting grasp of {self.target_cube_color} cube")
                 log(f"[MCP] GRASPING: Current arm height = {self._height_to_string(self.arm.current_height)}")
+                self._save_grasp_screenshot("before")
 
                 try:
                     import math
-                    # Use SAVED target parameters (VisionService may lose tracking)
-                    target_distance = getattr(self, '_grasp_target_distance', 0.28)
-                    target_angle = getattr(self, '_grasp_target_angle', 0.0)
-                    log(f"[MCP] GRASPING: Saved target at {target_distance:.3f}m, {target_angle:.1f}°")
 
-                    # Step 0: Lateral correction if needed
-                    # tan(angle) gives offset from center: positive=right, negative=left
-                    # strafe() uses positive=left, negative=right
-                    # So we need to NEGATE to strafe TOWARD the cube
-                    lateral_offset = -math.tan(math.radians(target_angle)) * target_distance
-                    if abs(lateral_offset) > 0.015:  # >1.5cm offset
-                        log(f"[MCP] GRASPING: Step 0a - Lateral correction {lateral_offset*100:.1f}cm")
-                        self.movement.strafe(lateral_offset, speed=0.04)
+                    # VERIFY cube is actually visible before grasp
+                    self._update_vision()
+                    current_target = self.vision.get_target()
+                    if not current_target:
+                        log("[MCP] GRASPING: ABORT - No cube visible!")
+                        self._save_grasp_screenshot("abort_no_cube")
+                        self.vision.unlock()
+                        self.state = MCPState.SEARCHING
+                        self.grasp_started = False
+                        return
 
-                    # Distance now measured from arm base (includes camera offset)
-                    # Camera is 15cm ahead of arm. Need to position cube INSIDE gripper.
-                    # Gripper has ~5cm length past arm tip. Need to reach PAST cube center.
-                    # Use 22cm forward: get VERY close so arm can definitely reach
-                    forward_move = 0.22
+                    # Use CURRENT target parameters (not saved)
+                    target_distance = current_target.distance
+                    target_angle = current_target.angle
+                    log(f"[MCP] GRASPING: Current target at {target_distance:.3f}m, {target_angle:.1f}° (color={current_target.color})")
+
+                    # Step 0: PRE-ALIGNMENT - rotate to center cube in view
+                    # Cube at negative angle (left) -> turn by same angle (CW/right) to center
+                    # Cube at positive angle (right) -> turn by same angle (CCW/left) to center
+                    if abs(target_angle) > 5:
+                        turn_angle = target_angle  # Same sign as target angle
+                        log(f"[MCP] GRASPING: Step 0 - Pre-alignment (turning {turn_angle:.1f}° to center cube at {target_angle:.1f}°)")
+                        self.movement.turn(angle_deg=turn_angle, speed=0.3)
+                        # Wait for robot to settle after rotation (30 steps ~ 0.5s)
+                        for _ in range(30):
+                            self._step()
+                        self._update_vision()
+                        current_target = self.vision.get_target()
+                        if current_target:
+                            target_angle = current_target.angle
+                            target_distance = current_target.distance
+                            log(f"[MCP] GRASPING: After alignment: {target_distance:.3f}m, {target_angle:.1f}°")
+                        self._save_grasp_screenshot("after_align")
+
+                    # With FRONT_FLOOR preset, gripper position is fixed.
+                    # Need to drive robot VERY close so cube is directly under gripper.
+                    # Forward move should put the cube at the gripper's reach position.
+                    # For target at ~0.30m, need to close ~25cm to reach FRONT_FLOOR position.
+                    forward_move = 0.25
                     log(f"[MCP] GRASPING: Step 1 - Forward approach ({forward_move*100:.0f}cm)")
                     self.movement.forward(distance_m=forward_move, speed=0.03)
+                    self._save_grasp_screenshot("after_forward")
 
                     # 2. Prepare grasp (opens gripper, moves arm to FRONT_PLATE)
                     log("[MCP] GRASPING: Step 2 - Prepare grasp")
@@ -849,16 +889,16 @@ class YouBotMCPController:
                         return
                     log("[MCP] GRASPING: Prepare complete")
 
-                    # Calculate forward reach for IK based on target distance
-                    # Camera is ~15cm ahead of arm base, so arm needs to reach FURTHER
-                    # Also add ~3cm to reach PAST cube center so gripper closes around it
+                    # Use IK for precise positioning to 3cm cube
+                    # After forward_move, remaining distance from camera = target_distance - forward_move
+                    # forward_reach = remaining_distance + CAMERA_ARM_OFFSET
                     CAMERA_ARM_OFFSET = 0.15
-                    GRIPPER_OFFSET = 0.05  # Reach past cube center
-                    camera_dist = target_distance - forward_move
-                    forward_reach = camera_dist + CAMERA_ARM_OFFSET + GRIPPER_OFFSET
-                    forward_reach = max(0.18, min(0.29, forward_reach))  # Clamp to arm physical reach (~0.29m)
-                    log(f"[MCP] GRASPING: Step 3 - Execute grasp with IK (camera_dist={camera_dist:.2f}m + offset={CAMERA_ARM_OFFSET:.2f}m = reach={forward_reach:.2f}m)")
+                    remaining_dist = max(0.03, target_distance - forward_move)
+                    forward_reach = remaining_dist + CAMERA_ARM_OFFSET
+                    forward_reach = max(0.18, min(0.32, forward_reach))
+                    log(f"[MCP] GRASPING: Step 3 - Execute grasp with IK (reach={forward_reach:.3f}m)")
                     result = self.arm_svc.execute_grasp(use_ik=True, forward_reach=forward_reach)
+                    self._save_grasp_screenshot("after_grasp")
                     log(f"[MCP] GRASPING: Execute complete - success={result.success}, has_object={result.has_object}, error={result.error}")
                     log(f"[MCP] GRASPING: Arm after execute = {self._height_to_string(self.arm.current_height)}")
 

@@ -1,1 +1,5 @@
-{"action": "start_autonomous", "params": {}, "timestamp": 1764620765.0532632, "id": 2}
+{
+  "id": 1764626941960,
+  "action": "start_autonomous",
+  "params": {}
+}

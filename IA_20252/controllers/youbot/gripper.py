@@ -117,5 +117,5 @@ class Gripper:
         # If position > 0.003, fingers were blocked by object before fully closing
         # MIN_POS is 0.0 (fully closed), so any pos > 0.003 indicates obstruction
         has_obj = pos > 0.003
-        print(f"[Gripper] Position sensor: {pos:.4f} → has_object={has_obj}")
+        # Removed repetitive log - grasp_log.txt has the important info
         return has_obj

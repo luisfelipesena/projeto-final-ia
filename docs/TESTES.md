@@ -1,536 +1,416 @@
-# YouBot MCP - Guia Completo de Testes e Debugging
+# YouBot MCP - Documentação de Testes e Debugging
 
-**Atualizado:** 2025-12-01
-**Status:** Correções V3 aplicadas - pronto para validação (VERSION: 2025-12-01-V3)
+**Atualizado:** 2025-12-01 (Sessão Intensiva de Debug)
+**Status:** Detecção corrigida, grasp em refinamento
 
 ---
 
-## 1. Arquitetura MCP (Model Context Protocol)
+## 1. Resumo dos Problemas Encontrados e Soluções
 
-O sistema usa comunicação baseada em arquivos JSON entre Webots e ferramentas externas.
+### 1.1 PROBLEMA CRÍTICO: Detecção de Obstáculos como Cubos
 
-### 1.1 Estrutura de Arquivos
+**Sintoma:** Robot detectava caixas de madeira azuis (WoodenBox) como "blue cubes"
+
+**Evidência via Screenshots:**
+- `grasp_before_*.jpg`: Mostra caixa de madeira azul grande no centro-esquerda
+- Cubo azul real visível como pequeno quadrado na direita da imagem
+- Robot se aproximava da caixa de madeira pensando ser um cubo
+
+**Causa Raiz:** Saturação HSV muito baixa (S=70) permitia cores "lavadas" dos obstáculos
+
+**Solução Aplicada:**
+```python
+# cube_detector.py - COLOR_RANGES
+# ANTES: S=70 (detectava obstáculos)
+'blue': {'lower': np.array([100, 70, 40]), ...}
+
+# DEPOIS: S=120 (filtra obstáculos, detecta apenas cubos puros)
+'blue': {'lower': np.array([100, 120, 60]), ...}
+```
+
+**Resultado:** Após correção, robot passou a detectar cubo real a +27° (lado direito)
+
+---
+
+### 1.2 Convenções de Sinais (CRÍTICO para navegação)
+
+#### Ângulo de Visão (CubeDetector)
+```python
+angle = (cx - 0.5) * 60.0  # FOV 60°
+# cx=0.0 (esquerda) → angle=-30°
+# cx=0.5 (centro)   → angle=0°
+# cx=1.0 (direita)  → angle=+30°
+```
+
+#### Rotação do Robot (MovementService)
+```python
+def turn(angle_deg):
+    # positive → CCW (esquerda)
+    # negative → CW (direita)
+```
+
+#### Para Alinhar com Cubo
+```python
+# Cubo à ESQUERDA (angle=-10°) → girar ESQUERDA → turn(+10°)
+# Cubo à DIREITA (angle=+10°) → girar DIREITA → turn(-10°)
+# CORRETO: turn_angle = -target_angle (NEGATIVO do ângulo)
+```
+
+---
+
+### 1.3 Sequência de Grasping Atual
 
 ```
-youbot_mcp/
-├── youbot_mcp_controller.py   # Controller principal com lógica autônoma
-└── data/youbot/
-    ├── commands.json          # Comandos enviados para o robô
-    ├── status.json            # Estado atual (atualizado a cada step)
-    ├── nav_debug.log          # Logs de navegação/approach
-    ├── grasp_log.txt          # Logs de grasping
-    ├── camera_image.jpg       # Última imagem capturada
-    └── lidar_data.json        # Dados LIDAR processados
+GRASPING State:
+1. Verificar cubo visível (abort se não)
+2. Screenshot "before"
+3. Pre-alignment se |angle| > 5°
+4. Screenshot "after_align"
+5. Forward approach (25cm)
+6. Screenshot "after_forward"
+7. Prepare grasp (arm to FRONT_PLATE, gripper open)
+8. Execute grasp (FRONT_FLOOR preset)
+9. Screenshot "after_grasp"
+10. Verificar has_object()
 ```
 
-### 1.2 Fluxo de Inicialização
+---
 
-1. **Webots carrega** `IA_20252/worlds/IA_20252.wbt`
-2. **youbot.py** é executado com argumento `--mcp` (configurado em controllerArgs)
-3. **youbot.py importa** `YouBotMCPController` de `youbot_mcp/youbot_mcp_controller.py`
-4. **Loop principal**: lê comandos → atualiza visão → executa estado → escreve status
+## 2. Parâmetros Calibrados
 
-### 1.3 Dependências Críticas
+### 2.1 Detecção de Cubos (cube_detector.py)
+
+| Parâmetro | Valor | Justificativa |
+|-----------|-------|---------------|
+| HSV Saturation min | 120 | Filtra caixas de madeira (S~80-100) |
+| HSV Value min | 60 | Tolera sombras leves |
+| MAX_BBOX_FRACTION | 0.30 | Rejeita objetos muito grandes |
+| MAX_PROJECTED_WIDTH | 0.30 | Limite de largura no frame |
+| MIN_BBOX_ASPECT | 0.70 | Cubos são ~quadrados |
+| MIN_SOLIDITY | 0.80 | Rejeita formas côncavas |
+
+### 2.2 Tracking (vision_service.py)
+
+| Parâmetro | Valor | Justificativa |
+|-----------|-------|---------------|
+| LOST_THRESHOLD | 60 frames | ~2s para realinhar |
+| ANGLE_TOLERANCE | 30° | Permite rotação durante approach |
+| POSITION_TOLERANCE | 0.40m | Permite movimento |
+| MIN_CONFIDENCE | 0.55 | Aceita detecções menos certas |
+
+### 2.3 Grasping
+
+| Parâmetro | Valor | Justificativa |
+|-----------|-------|---------------|
+| forward_move | 0.25m | Aproximar bem do cubo |
+| CAMERA_ARM_OFFSET | 0.15m | Câmera à frente do braço |
+| grasp_threshold_dist | 0.32m | Trigger GRASPING |
+| grasp_threshold_angle | 12° | Alinhamento mínimo |
+
+---
+
+## 3. Arquitetura LIDAR + Fuzzy para Navegação
+
+### 3.1 Setores LIDAR
+
+```
+      front_left(2)   front(3)   front_right(4)
+              \         |         /
+               \        |        /
+    left(1) ----[     ROBOT     ]---- right(5)
+               /        |        \
+              /         |         \
+      far_left(0)              far_right(6)
+            \                      /
+             back_left(8)  back_right(7)
+```
+
+### 3.2 Uso Proposto do LIDAR para Validação de Cubos
 
 ```python
-# youbot.py linha ~100
-elif len(sys.argv) > 1 and sys.argv[1] == "--mcp":
-    mcp_path = Path(__file__).resolve().parent.parent.parent.parent / 'youbot_mcp'
-    sys.path.insert(0, str(mcp_path))
-    from youbot_mcp_controller import YouBotMCPController
+def validate_cube_detection(detection, lidar_data):
+    """
+    Usar LIDAR para confirmar se detecção é cubo real ou obstáculo.
+
+    Cubos: 5cm - LIDAR não detecta (muito pequeno)
+    Obstáculos: 30-50cm - LIDAR detecta como parede
+
+    Se LIDAR mostra obstáculo na direção do "cubo" detectado,
+    provavelmente é um falso positivo (caixa de madeira).
+    """
+    cube_angle = detection.angle  # graus
+    cube_distance = detection.distance  # metros
+
+    # Mapear ângulo para setor LIDAR
+    if cube_angle < -30:
+        sector = 'far_left'
+    elif cube_angle < -15:
+        sector = 'left'
+    elif cube_angle < -5:
+        sector = 'front_left'
+    elif cube_angle < 5:
+        sector = 'front'
+    elif cube_angle < 15:
+        sector = 'front_right'
+    elif cube_angle < 30:
+        sector = 'right'
+    else:
+        sector = 'far_right'
+
+    lidar_dist = lidar_data['obstacle_sectors'][sector]['min']
+
+    # Se LIDAR mostra obstáculo PRÓXIMO da distância do cubo detectado
+    # E obstáculo está PERTO → provavelmente é falso positivo
+    if lidar_dist < cube_distance + 0.10:
+        return False  # Rejeitar - provavelmente obstáculo
+
+    return True  # Aceitar - parece ser cubo real
+```
+
+### 3.3 Integração Fuzzy Controller
+
+```python
+# Inputs do Fuzzy (já implementado em fuzzy_controller.py)
+class FuzzyInputs:
+    obstacle_front: float    # 0-1, maior = mais longe
+    obstacle_left: float
+    obstacle_right: float
+    cube_distance: float     # 0-1, maior = mais perto
+    cube_angle: float        # -1 a +1, 0 = centrado
+    lateral_blocked: float   # 0-1
+
+# Outputs do Fuzzy
+class FuzzyOutputs:
+    forward_speed: float     # 0-1
+    rotation_speed: float    # -1 a +1
+    action: str              # 'search', 'approach', 'avoid', 'grasp'
+```
+
+### 3.4 Lógica de Navegação Proposta
+
+```python
+def navigate_to_cube(self):
+    # 1. Obter dados de sensores
+    lidar = self._get_lidar_data()
+    cube = self.vision.get_target()
+
+    # 2. Validar cubo com LIDAR
+    if cube and not validate_cube_detection(cube, lidar):
+        print("[NAV] Detecção rejeitada - parece obstáculo")
+        return 'search'
+
+    # 3. Computar inputs fuzzy
+    inputs = self._compute_fuzzy_inputs()
+
+    # 4. Obter decisão fuzzy
+    outputs = self.fuzzy.compute(inputs)
+
+    # 5. Executar ação
+    if outputs.action == 'avoid':
+        # Obstáculo detectado - desviar
+        self.base.move(0, 0, outputs.rotation_speed)
+    elif outputs.action == 'approach':
+        # Caminho livre - aproximar do cubo
+        self.base.move(outputs.forward_speed * 0.1, 0,
+                       outputs.rotation_speed * 0.3)
+    elif outputs.action == 'grasp':
+        # Perto o suficiente - iniciar grasp
+        return 'grasp'
+    else:
+        # Procurar
+        return 'search'
 ```
 
 ---
 
-## 2. Como Rodar em Modo Autônomo
+## 4. Screenshots de Debug (Funcionalidade Adicionada)
 
-### 2.1 Passo a Passo
+### 4.1 Localização
+```
+youbot_mcp/data/youbot/
+├── grasp_before_*.jpg       # Visão antes de iniciar grasp
+├── grasp_after_align_*.jpg  # Após pre-alinhamento
+├── grasp_after_forward_*.jpg # Após aproximação
+├── grasp_after_grasp_*.jpg  # Após tentativa de grasp
+└── grasp_abort_no_cube_*.jpg # Se cubo não visível
+```
+
+### 4.2 Como Interpretar
+
+| Screenshot | O que verificar |
+|------------|-----------------|
+| before | Cubo está visível? Na posição correta? |
+| after_align | Cubo está mais centralizado? |
+| after_forward | Cubo está próximo? Gripper pode alcançar? |
+| after_grasp | Cubo foi capturado? Está no gripper? |
+
+---
+
+## 5. Comandos Úteis para Debug
+
+### 5.1 Monitoramento em Tempo Real
 
 ```bash
-# 1. Abrir Webots com o world
-open /Applications/Webots.app --args /path/to/IA_20252/worlds/IA_20252.wbt
+# Monitor simples (recomendado)
+python3 /tmp/monitor.py
 
-# 2. Aguardar inicialização (~15 segundos até "MCP Controller Starting")
-
-# 3. Enviar comando de início autônomo
-echo '{"action": "start_autonomous", "params": {}, "timestamp": '$(date +%s)', "id": 1}' \
-  > youbot_mcp/data/youbot/commands.json
-
-# 4. Monitorar em tempo real
-watch -n 1 'cat youbot_mcp/data/youbot/status.json | jq "{state: .current_state, cubes: .cubes_collected, target: .current_target}"'
+# Conteúdo do monitor.py:
+import json, re, time
+for i in range(20):
+    try:
+        with open('youbot_mcp/data/youbot/status.json') as f:
+            txt = f.read()
+        txt = re.sub(r': Infinity', ': 999', txt)
+        d = json.loads(txt)
+        t = d.get('current_target') or {}
+        state = d['current_state']
+        color = t.get('color', '-')
+        dist = t.get('distance', 0)
+        angle = t.get('angle', 0)
+        cubes = d['cubes_collected']
+        print(f"[{i:2d}] {state:12} {color:5} d={dist:.2f} a={angle:+6.1f} c={cubes}")
+    except Exception as e:
+        print(f"[{i:2d}] ERR")
+    time.sleep(1.5)
 ```
 
-### 2.2 Comandos MCP Disponíveis
-
-| Action | Parâmetros | Descrição |
-|--------|------------|-----------|
-| `start_autonomous` | - | Inicia coleta autônoma |
-| `stop_autonomous` | - | Para e volta para IDLE |
-| `move` | `vx`, `vy`, `omega` | Movimento manual |
-| `arm_height` | `height: LOW/MID/HIGH/RESET` | Define altura do braço |
-| `arm_orientation` | `orientation: FRONT/LEFT/RIGHT` | Orientação do braço |
-| `grip` | - | Fecha garra |
-| `release` | - | Abre garra |
-| `capture_camera` | - | Salva imagem em camera_image.jpg |
-| `detect_cubes` | - | Força detecção |
-| `grasp_sequence` | - | Executa sequência completa de grasp |
-| `deposit_cube` | `color: green/blue/red` | Deposita na caixa da cor |
-
-### 2.3 Exemplo de Monitoramento
+### 5.2 Reinício Limpo
 
 ```bash
-# Terminal 1: Status em tempo real
-watch -n 0.5 'cat youbot_mcp/data/youbot/status.json | jq "."'
-
-# Terminal 2: Log de navegação
-tail -f youbot_mcp/data/youbot/nav_debug.log
-
-# Terminal 3: Console Webots (prints do controller)
-# Visível diretamente na interface do Webots
-```
-
----
-
-## 3. Estados do Robô (State Machine)
-
-```
-IDLE ─────────────────────────────────────────────────────────┐
-  │                                                           │
-  └──(start_autonomous)──> SEARCHING                          │
-                              │                               │
-                         (target found)                       │
-                              │                               │
-                              v                               │
-                         APPROACHING                          │
-                              │                               │
-                         (close enough)                       │
-                              │                               │
-                              v                               │
-                         GRASPING                             │
-                              │                               │
-                         (grasp complete)                     │
-                              │                               │
-                              v                               │
-                         DEPOSITING ────(done)───> SEARCHING  │
-                                                              │
-                         (stop_autonomous) ───────────────────┘
-```
-
-### 3.1 SEARCHING
-
-**Comportamento:**
-- Rotaciona ~270° (4.7 rad) em uma direção
-- Alterna direção após cada scan completo
-- Move para frente ~2 segundos entre scans
-- Verifica obstáculos frontais antes de mover
-
-**Código relevante:** `youbot_mcp_controller.py:478-518`
-
-### 3.2 APPROACHING
-
-**Comportamento esperado:**
-1. Se `|angle| > 10°`: rotaciona para alinhar
-2. Se `|angle| <= 10°`: move para frente
-3. Completa quando `distance <= 0.25m`
-
-**Código relevante:** `youbot_mcp_controller.py:527-565`
-
-**PROBLEMA ATUAL:** Robô não rotaciona durante approach (ver seção 5)
-
-### 3.3 GRASPING
-
-**Sequência:**
-1. Abre garra
-2. Posiciona braço em FRONT_FLOOR
-3. Avança suavemente
-4. Fecha garra
-5. Verifica sensor `has_object()`
-6. Levanta braço
-
-**Código relevante:** `youbot_mcp_controller.py:567-640`
-
-### 3.4 DEPOSITING
-
-**Comportamento:**
-1. Levanta braço (FRONT_PLATE)
-2. Navega até caixa da cor correspondente
-3. Posiciona sobre a caixa
-4. Abre garra
-
-**Coordenadas das caixas:**
-```python
-DEPOSIT_BOXES = {
-    'green': (0.48, 1.58),
-    'blue': (0.48, -1.62),
-    'red': (2.31, 0.01),
-}
-```
-
----
-
-## 4. Sistema de Percepção
-
-### 4.1 Detecção de Cubos (CubeDetector)
-
-**Arquivo:** `src/perception/cube_detector.py`
-
-**Pipeline:**
-1. Segmentação HSV por cor (verde, azul, vermelho)
-2. Detecção de contornos
-3. Filtragem por área mínima (1000 pixels)
-4. Cálculo de distância via modelo pinhole
-5. Cálculo de ângulo: `angle = (cx - 0.5) * 60.0` (FOV 60°)
-
-**HSV Ranges (aproximados):**
-```python
-'green': (35, 100, 100) - (85, 255, 255)
-'blue': (100, 100, 100) - (130, 255, 255)
-'red': (0, 100, 100) - (10, 255, 255) + (170, 100, 100) - (180, 255, 255)
-```
-
-### 4.2 Tracking (VisionService)
-
-**Arquivo:** `src/services/vision_service.py`
-
-**Parâmetros chave:**
-```python
-LOST_THRESHOLD = 30       # Frames até declarar perdido (~1s)
-MIN_CONFIDENCE = 0.60     # Confiança mínima
-POSITION_TOLERANCE = 0.30 # Tolerância de posição (metros)
-ANGLE_TOLERANCE = 20.0    # Tolerância de ângulo (graus)
-```
-
-**Comportamento:**
-- Mantém tracking de um cubo por vez
-- Usa position matching (não só cor)
-- Persiste posição mesmo se perdido temporariamente
-- `lock_color()` limita detecção à cor selecionada
-
-### 4.3 LIDAR
-
-**Configuração:**
-- 512 pontos em 360°
-- Dividido em 9 setores (~40° cada)
-- Range: 0.01m - 10.0m
-
-**Setores:**
-```
-far_left | left | front_left | front | front_right | right | far_right | back_right | back_left
-    0       1         2          3          4          5         6           7            8
-```
-
----
-
-## 5. PROBLEMAS ATUAIS IDENTIFICADOS
-
-### 5.1 CRÍTICO: Robô não rotaciona durante approach
-
-**Sintoma:**
-- Ângulo do cubo permanece constante (~-26°) durante APPROACHING
-- `omega` é enviado (0.8 rad/s) mas robô não gira
-- `nav_debug.log` fica VAZIO ou mostra valores estáticos
-
-**Investigação realizada:**
-
-1. **Testado omega positivo e negativo** - nenhum funciona
-2. **Testado `turn_left()`/`turn_right()` direto** - não funciona
-3. **Verificado sintaxe Python** - OK
-4. **Cache limpo múltiplas vezes** - problema persiste
-
-**Evidência de cache:**
-- Status mostra state=APPROACHING
-- Mas `nav_debug.log` não é escrito
-- Código novo inclui escrita no log que não aparece
-- CONCLUSÃO: Webots está usando código antigo cacheado
-
-**Causa raiz provável:**
-Python importa `youbot_mcp_controller.py` uma vez e cacheia o módulo. Mesmo limpando `__pycache__`, o módulo já está carregado em memória.
-
-**Soluções a tentar:**
-1. Reiniciar Webots completamente (`pkill -9 -f webots`)
-2. Usar `importlib.reload()` no youbot.py
-3. Renomear o arquivo temporariamente para forçar reimportação
-4. Adicionar timestamp no print inicial para verificar versão
-
-### 5.2 Ângulo sempre ~26°
-
-**Observação:** Cubos detectados consistentemente em -26° a -26.5°
-
-**Hipótese:**
-- FOV da câmera é 60° (±30°)
-- Cubo no limite do FOV
-- Quando robô tenta girar, cubo sai do view → target_lost
-- Search rotaciona de volta → encontra mesmo cubo no mesmo ângulo
-
-**Validação necessária:**
-- Verificar se search está funcionando (omega alterna?)
-- Verificar se target_lost ocorre rapidamente durante approach
-
-### 5.3 Detecção de cor inconsistente
-
-**Sintoma:** Status mostra cor diferente dos cubos visíveis
-
-**Possíveis causas:**
-- HSV thresholds inadequados para iluminação do ambiente
-- Reflexos ou sombras afetando detecção
-- Múltiplos cubos detectados, ordem incorreta
-
----
-
-## 6. Cinemática das Rodas Mecanum
-
-### 6.1 Convenção de Sinais
-
-**Arquivo:** `IA_20252/controllers/youbot/base.py`
-
-```python
-# Kinematics formula:
-speeds[0] = (1/R) * (vx - vy - K * omega)  # front-left
-speeds[1] = (1/R) * (vx + vy + K * omega)  # front-right
-speeds[2] = (1/R) * (vx + vy - K * omega)  # rear-left
-speeds[3] = (1/R) * (vx - vy + K * omega)  # rear-right
-
-# K = LX + LY = 0.386
-# R = WHEEL_RADIUS = 0.05
-```
-
-### 6.2 Padrões de Movimento
-
-| omega | Pattern wheels | Direção |
-|-------|---------------|---------|
-| +0.8 | [-,+,-,+] | Esquerda (anti-horário) |
-| -0.8 | [+,-,+,-] | Direita (horário) |
-
-### 6.3 Código Correto para Alinhar
-
-```python
-# Cubo à ESQUERDA (angle < 0) → girar ESQUERDA → omega POSITIVO
-# Cubo à DIREITA (angle > 0) → girar DIREITA → omega NEGATIVO
-
-omega = -math.radians(target.angle) * gain
-# angle=-26° → omega = -(-0.454)*gain = +0.454*gain → gira ESQUERDA ✓
-# angle=+26° → omega = -(+0.454)*gain = -0.454*gain → gira DIREITA ✓
-```
-
----
-
-## 7. Comandos de Debug Úteis
-
-### 7.1 Reinício Limpo
-
-```bash
-# Matar tudo e limpar cache
 pkill -9 -f webots
-find /path/to/projeto -name "*.pyc" -delete
-find /path/to/projeto -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
-rm -f youbot_mcp/data/youbot/nav_debug.log
-
-# Reiniciar
-open /Applications/Webots.app --args /path/to/IA_20252/worlds/IA_20252.wbt
+sleep 2
+rm -f youbot_mcp/data/youbot/grasp_*.jpg
+echo "" > youbot_mcp/data/youbot/grasp_log.txt
+open -a "Webots" "IA_20252/worlds/IA_20252.wbt"
 ```
 
-### 7.2 Verificar Versão do Código
-
-Adicionar no início do APPROACHING:
-```python
-print("[MCP-V3] APPROACHING running version 2025-12-01-A")
-```
-
-Se não aparecer, código antigo está cacheado.
-
-### 7.3 Teste Manual de Rotação
+### 5.3 Ver Screenshots
 
 ```bash
-# Enviar comando de rotação direta
-echo '{"action": "move", "params": {"vx": 0, "vy": 0, "omega": 0.5}, "timestamp": '$(date +%s)', "id": 99}' \
-  > youbot_mcp/data/youbot/commands.json
-```
+# Listar screenshots recentes
+ls -la youbot_mcp/data/youbot/grasp_*.jpg
 
-### 7.4 Monitoramento Contínuo
-
-```bash
-# Estado e target
-watch -n 0.5 'cat youbot_mcp/data/youbot/status.json | jq "{state: .current_state, angle: .current_target.angle, dist: .current_target.distance, omega: .base_velocity.omega}"'
-
-# Detecções brutas
-watch -n 0.5 'cat youbot_mcp/data/youbot/status.json | jq ".cube_detections"'
-
-# LIDAR
-watch -n 1 'cat youbot_mcp/data/youbot/status.json | jq ".obstacle_sectors.front"'
+# Abrir no preview (macOS)
+open youbot_mcp/data/youbot/grasp_before_*.jpg
 ```
 
 ---
 
-## 8. Requisitos vs Estado Atual
+## 6. Checklist de Validação
 
-| Requisito | Status | Problema | Arquivo |
-|-----------|--------|----------|---------|
-| Detectar cubos | ✅ | Cores às vezes incorretas | `cube_detector.py` |
-| Navegar até cubo | ⚠️ | Debug aprimorado - validar | `youbot_mcp_controller.py:681-740` |
-| Pegar cubo | ⚠️ | Implementado, não testado | `youbot_mcp_controller.py:742-824` |
-| Identificar cor | ⚠️ | Precisão a validar | `cube_detector.py:100-140` |
-| Depositar | ⚠️ | Coordenadas definidas | `youbot_mcp_controller.py:71-74` |
-| Evitar obstáculos | ✅ | LIDAR + Fuzzy funciona | `youbot_mcp_controller.py:620-679` |
-| Usar RNA | ✅ | MLP LIDAR treinado (97.8%) | `models/lidar_mlp.pth` |
-| Usar Fuzzy | ✅ | Integrado em SEARCHING/APPROACHING | `youbot_mcp_controller.py:620-740` |
+### 6.1 Detecção
+- [x] HSV saturation aumentada para 120 (filtra obstáculos)
+- [x] Tamanho máximo de bbox reduzido para 0.30
+- [ ] Validação com LIDAR (a implementar)
 
----
+### 6.2 Tracking
+- [x] LOST_THRESHOLD aumentado para 60 frames
+- [x] ANGLE_TOLERANCE aumentada para 30°
+- [ ] Estabilidade durante rotação
 
-## 9. Próximos Passos Priorizados
+### 6.3 Aproximação
+- [x] Pre-alinhamento adicionado (rotate to center)
+- [x] Sign convention documentada
+- [ ] Validar rotação funciona corretamente
 
-### P0: Resolver Cache (Bloqueador)
-1. Verificar com timestamp único se código novo executa
-2. Se não, investigar `importlib.reload()` ou renomear arquivo
-3. Ou mover lógica para novo arquivo
-
-### P1: Validar Rotação
-1. Testar comando `move` manual com omega
-2. Se funciona manual, problema é no código de approach
-3. Se não funciona, problema na base.py ou mundo
-
-### P2: Testar Grasp Isolado
-1. Posicionar robô manualmente próximo ao cubo
-2. Enviar `grasp_sequence`
-3. Verificar `has_object()` e movimento físico
-
-### P3: Validar Detecção de Cores
-1. Capturar imagens de teste
-2. Verificar HSV em cada canal
-3. Ajustar thresholds se necessário
-
-### P4: Integrar Fuzzy
-1. Conectar `FuzzyController` ao loop principal
-2. Usar para decisões de velocidade/navegação
-
----
-
-## 10. Testes Isolados (Legado)
-
-Ver seção original abaixo para testes de serviços individuais (ARM, MOVEMENT, VISION).
-
-### 10.1 Configurar para Testes Isolados
-
-```python
-# Em service_tests.py linha 350:
-TEST_TO_RUN = "arm_positions"  # arm_positions | movement | arm_grasp | vision
-```
-
-### 10.2 Testes Disponíveis
-
-| Teste | Setup | Valida |
-|-------|-------|--------|
-| `arm_positions` | Nenhum | Motores do braço |
-| `movement` | Área livre | Base omnidirecional |
-| `arm_grasp` | Cubo a 25cm | Grasp + sensor |
-| `vision` | Cubos visíveis | Tracking estável |
-
----
-
-## 11. Checklist de Validação Final
-
-### Fase 1: Debugging
-- [x] Código novo confirmado em execução (timestamp) - VERSION: 2025-12-01-V3
-- [x] SEARCHING não para mais por obstáculos traseiros
-- [x] VisionService mantém tracking por mais tempo (LOST_THRESHOLD=60)
-- [x] APPROACHING usa controle proporcional para rotação
-- [x] Logs aparecem em nav_debug.log (enhanced logging added)
-
-### Fase 2: Funcional
-- [ ] SEARCHING → APPROACHING transita quando cubo detectado
-- [ ] Alinhamento (angle → 0°) funciona com controle proporcional
-- [ ] Approach (distance → 0.22m) funciona
-- [ ] GRASPING pega cubo fisicamente
+### 6.4 Grasping
+- [x] Forward approach calibrado (25cm)
+- [x] Screenshots em cada etapa
+- [x] Verificação de cubo visível antes de grasp
+- [ ] Captura física de cubo (em teste)
 - [ ] has_object() retorna True
-- [ ] DEPOSITING navega e solta
 
-### Fase 3: Completo
-- [ ] 1 cubo coletado e depositado
-- [ ] Cores corretas nas caixas
-- [ ] Sem colisões com obstáculos
-- [ ] 15 cubos em <10 minutos
+### 6.5 Depósito
+- [ ] Navegação até caixa de cor
+- [ ] Release do cubo
+- [ ] Retorno a SEARCHING
 
 ---
 
-## 12. Correções Aplicadas (2025-12-01)
+## 7. Problemas Conhecidos e Próximos Passos
 
-### V3 - Correções Críticas (2025-12-01)
+### 7.1 Problema: Grasp Mecânico Falha
 
-#### Bug 1: SEARCHING parava imediatamente
-- **Causa:** Checagem de obstáculo usava TODOS os setores LIDAR (incluindo traseiros)
-- **Sintoma:** `min_obstacle_distance=0.398m` (parede traseira) < threshold 0.4m → stop
-- **Fix:** Agora só considera setores FRONT (front, front_left, front_right)
+**Observação:** finger_pos_after_close=0.00000 (gripper fecha no vazio)
 
-#### Bug 2: VisionService perdia tracking muito rápido
-- **Causa:** `LOST_THRESHOLD=30` (~1s) era muito curto para realinhar
-- **Fix:** Aumentado para 60 frames (~2s), tolerâncias mais flexíveis
+**Hipóteses:**
+1. Forward approach não está movendo robot suficiente
+2. FRONT_FLOOR não posiciona gripper na altura correta
+3. Cubo é empurrado durante aproximação
 
-#### Bug 3: APPROACHING não alinhava corretamente
-- **Causa:** Omega fixo de 0.8 era muito agressivo
-- **Fix:** Controle proporcional com omega = -angle_rad * 1.5 (clampado a ±0.6)
+**Próximos testes:**
+1. Verificar se movimento forward realmente ocorre
+2. Testar IK vs FRONT_FLOOR preset
+3. Reduzir velocidade de aproximação
 
-#### Parâmetros VisionService atualizados:
+### 7.2 Problema: Target Perdido Frequentemente
+
+**Observação:** Oscila SEARCHING ↔ APPROACHING
+
+**Hipóteses:**
+1. Detecção instável (filtros muito agressivos?)
+2. Rotação move cubo para fora do FOV
+3. Frames insuficientes para tracking estável
+
+**Próximos testes:**
+1. Relaxar filtros ligeiramente se necessário
+2. Rotacionar mais devagar durante approach
+3. Aumentar MIN_FRAMES_RELIABLE
+
+### 7.3 Integração LIDAR-Visão (A Fazer)
+
 ```python
-LOST_THRESHOLD = 60       # Frames (~2s) - mais tempo para realinhar
-MIN_CONFIDENCE = 0.55     # Reduzido para aceitar mais detecções
-POSITION_TOLERANCE = 0.40 # Metros - permite mais movimento
-ANGLE_TOLERANCE = 30.0    # Graus - permite rotação durante approach
-MIN_FRAMES_RELIABLE = 3   # Aquisição mais rápida
+# Adicionar em _run_autonomous_step():
+if self.state == MCPState.APPROACHING:
+    cube = self.vision.get_target()
+    if cube:
+        # Validar com LIDAR
+        if not self._validate_with_lidar(cube):
+            print("[NAV] False positive - parece obstáculo")
+            self.vision.unlock()
+            self.state = MCPState.SEARCHING
+            return
 ```
 
-### V2 - Correções Anteriores
+---
 
-#### P0: F-String Fix
-- **Arquivo:** `youbot_mcp_controller.py` linha 177
-- **Problema:** Format specifier inválido em f-string
-- **Fix:** Separado em if/else para evitar expressão condicional no specifier
+## 8. Histórico de Versões
 
-#### P1: Fuzzy Controller Integrado
-- Importado `FuzzyController` e `FuzzyInputs`
-- Inicializado no `__init__` com logging habilitado
-- Adicionado `_compute_fuzzy_inputs()` para converter sensor data
-- Integrado em SEARCHING e APPROACHING states
+### V4 - Sessão de Debug Intensivo (2025-12-01)
+- HSV saturation: 70 → 120 (filtra caixas de madeira)
+- Screenshots automáticos em GRASPING
+- Pre-alinhamento antes de grasp
+- Documentação de sign conventions
+- Análise via imagens identificou problema de detecção
 
-#### P2: Modelo RNA LIDAR
-- Treinado `models/lidar_mlp.pth` com 2000 amostras sintéticas
-- Accuracy: 97.8% na validação
-- Carregamento automático no `__init__` com fallback heurístico
+### V3 - Correções Anteriores (2025-12-01)
+- SEARCHING: só considera setores frontais do LIDAR
+- VisionService: LOST_THRESHOLD=60, tolerâncias flexíveis
+- APPROACHING: controle proporcional de omega
+- Logs aprimorados em nav_debug.log
 
-#### P3: Debug Aprimorado no APPROACHING
-- Logging detalhado com wheel speeds e fuzzy outputs
-- Arquivo `nav_debug.log` atualizado a cada frame
-- Timestamp incluído em cada entrada
+### V2 - Integração RNA/Fuzzy
+- MLP LIDAR treinado (97.8% accuracy)
+- FuzzyController integrado
+- Debug logging
 
-#### P4: Version Check
-- `VERSION = "2025-12-01-V3"` na classe
-- Timestamp impresso no console ao iniciar
-- Versão incluída no `status.json`
+---
 
-### Comandos para Limpar Cache e Testar
-```bash
-# 1. Limpar cache Python
-find . -name "*.pyc" -delete
-find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
-rm -f youbot_mcp/data/youbot/nav_debug.log youbot_mcp/data/youbot/grasp_log.txt
+## 9. Arquivos Principais
 
-# 2. Reiniciar Webots
-pkill -9 -f webots
-open /Applications/Webots.app --args $(pwd)/IA_20252/worlds/IA_20252.wbt
-
-# 3. Verificar versão no console
-# Deve aparecer: [MCP Controller] Initializing... VERSION: 2025-12-01-V3
-
-# 4. Iniciar modo autônomo
-echo '{"action": "start_autonomous", "params": {}, "timestamp": '$(date +%s)', "id": 1}' \
-  > youbot_mcp/data/youbot/commands.json
-
-# 5. Monitorar estado e target
-watch -n 0.5 'cat youbot_mcp/data/youbot/status.json | jq "{version, state: .current_state, angle: .current_target.angle, dist: .current_target.distance, velocity: .base_velocity}"'
-
-# 6. Monitorar log de navegação
-tail -f youbot_mcp/data/youbot/nav_debug.log
-```
+| Arquivo | Responsabilidade |
+|---------|------------------|
+| `youbot_mcp/youbot_mcp_controller.py` | State machine, lógica autônoma |
+| `src/perception/cube_detector.py` | HSV segmentation, detecção |
+| `src/services/vision_service.py` | Tracking de cubo |
+| `src/services/arm_service.py` | Controle do braço/gripper |
+| `src/services/movement_service.py` | Movimentação da base |
+| `src/control/fuzzy_controller.py` | Lógica fuzzy |
+| `IA_20252/controllers/youbot/base.py` | Cinemática Mecanum |
+| `IA_20252/controllers/youbot/arm.py` | IK do braço |
+| `IA_20252/controllers/youbot/gripper.py` | Controle gripper |
 
 ---
 
 *Última atualização: 2025-12-01*
-*Status: Correções aplicadas - pronto para validação*
+*Próximo objetivo: Capturar 1 cubo com sucesso*

@@ -62,7 +62,7 @@ class ArmService:
 
     # Geometry constants
     CAMERA_ARM_OFFSET = 0.15  # Camera is ~15cm in front of arm base
-    CUBE_HEIGHT = 0.05        # Cube is 5cm tall, grip at center
+    CUBE_HEIGHT = 0.03        # Cube is 3cm tall (from supervisor.py), grip at center = 0.015m
 
     def __init__(self, arm, gripper, robot, time_step: int):
         """
@@ -181,9 +181,9 @@ class ArmService:
 
         # Step 1: Lower arm to floor level
         if use_ik:
-            # Use IK for precise positioning: (x=0 centered, y=forward, z=cube center)
-            # Grip at center height of cube (CUBE_HEIGHT / 2)
-            grip_height = self.CUBE_HEIGHT / 2  # 0.025m = 2.5cm
+            # Use IK for precise positioning: (x=0 centered, y=forward, z=height)
+            # Cubes are 3cm tall, grip at floor level to scoop from bottom
+            grip_height = 0.0  # Floor level for scooping small cube
             print(f"[ArmService] Using IK: x=0, y={forward_reach:.3f}, z={grip_height:.3f}")
             self.arm.inverse_kinematics(x=0.0, y=forward_reach, z=grip_height)
         else:

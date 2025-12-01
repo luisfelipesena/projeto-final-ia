@@ -50,22 +50,22 @@ class ColorSegmenter:
     """
 
     # HSV ranges calibrated for Webots simulation lighting
-    # Saturation lowered to 70 (was 80) - provides tolerance to desaturation
-    # Value lowered to 40 (was 50) - handle mild shadows
+    # CRITICAL: Saturation raised to 120 to filter out wooden boxes (S~80-100)
+    # Pure cubes have S~150-255, wooden obstacles have lower saturation
     COLOR_RANGES = {
         'green': {
-            'lower': np.array([35, 70, 40]),    # H:35-85, relaxed S/V for Webots
+            'lower': np.array([35, 120, 60]),   # Higher S filters wooden boxes
             'upper': np.array([85, 255, 255])
         },
         'blue': {
-            'lower': np.array([100, 70, 40]),   # H:100-130, relaxed S/V
+            'lower': np.array([100, 120, 60]),  # Higher S filters blue wooden boxes
             'upper': np.array([130, 255, 255])
         },
         'red': {
             # Red wraps around in HSV, need two ranges
-            'lower1': np.array([0, 70, 40]),
+            'lower1': np.array([0, 120, 60]),
             'upper1': np.array([10, 255, 255]),
-            'lower2': np.array([160, 70, 40]),
+            'lower2': np.array([160, 120, 60]),
             'upper2': np.array([180, 255, 255])
         }
     }
@@ -76,9 +76,10 @@ class ColorSegmenter:
     MAX_CONTOUR_AREA = 30000  # pixels - reject deposit boxes (they're huge)
 
     # Maximum bbox size as fraction of image
-    # 5cm cube at 0.30m ≈ 15% of image, at 0.20m ≈ 25%, at 0.15m ≈ 35%
-    # Deposit boxes are 40%+ of image - reject them
-    MAX_BBOX_FRACTION = 0.35
+    # 3cm cube at 0.30m ≈ 10% of image, at 0.20m ≈ 15%, at 0.15m ≈ 20%
+    # Wooden obstacles and deposit boxes are larger - reject them
+    # 0.20 filters out large obstacles while allowing close small cubes
+    MAX_BBOX_FRACTION = 0.20
 
     # Minimum aspect ratio (width/height or height/width)
     # Cubes are SQUARE (aspect ~1.0), deposit boxes are rectangular (aspect ~0.3-0.5)
@@ -92,16 +93,16 @@ class ColorSegmenter:
     MIN_SOLIDITY = 0.80   # Reject elongated/highly concave blobs (e.g., rims of bins)
     MIN_EXTENT = 0.65     # Ensures blob fills bounding box similar to a square
 
-    # Reject extremely tall/wide blobs (deposit bins)
-    MAX_PROJECTED_WIDTH = 0.35
-    MAX_PROJECTED_HEIGHT = 0.35
+    # Reject extremely tall/wide blobs (deposit bins and obstacles)
+    MAX_PROJECTED_WIDTH = 0.20
+    MAX_PROJECTED_HEIGHT = 0.20
 
     CAMERA_VERTICAL_FOV = math.radians(60.0)  # Webots default for youBot camera
-    CUBE_REAL_SIZE = 0.05  # 5 cm
+    CUBE_REAL_SIZE = 0.03  # 3 cm - actual cube size from supervisor.py
     CAMERA_OFFSET = 0.15   # Camera to arm-base offset
 
     # Debug: save images to diagnose detection issues
-    DEBUG_SAVE_IMAGES = False  # Set True to save debug images
+    DEBUG_SAVE_IMAGES = True  # ENABLED for debugging - shows what's detected
     _debug_frame_count = 0
 
     def segment(self, image: np.ndarray) -> List[CubeDetection]:
