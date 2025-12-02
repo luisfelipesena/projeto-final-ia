@@ -47,6 +47,13 @@ Fonte: `IA_20252/controllers/youbot/*.py` + `draft.md`.
 - **Braço:** presets `ArmHeight`/`ArmOrientation`; segmentos: `[0.253, 0.155, 0.135, 0.081, 0.105]` m; alcance prático no `FRONT_FLOOR` ≈ 0.25 m frontal, altura 0.016 m.
 - **Garra:** abertura útil 0–25 mm; usar os dois motores (`finger::left/right`) conforme observação do `draft.md` para garantir simetria.
 
+### 2.6 Sensores montados no corpo (`IA_20252/worlds/IA_20252.wbt`)
+| Sensor | Posição/Parâmetros | Uso |
+| --- | --- | --- |
+| `lidar_low` | `translation 0.15 0.05 0`; `tiltAngle -0.05 rad`; `horizontalResolution 180`; `fieldOfView π (180°)`; `range [0.03, 2.5]`; `type "fixed"` | Detecção de cubos rente ao solo (3 cm) — FOV frontal |
+| `lidar_high` | `translation 0 0.25 0`; 2 camadas; `horizontalResolution 360`; `fieldOfView 2π (360°)`; `range [0.1, 7.0]`; `type "rotating"`; `defaultFrequency 10` | Mapeamento de paredes/obstáculos, navegação 360° |
+| `camera` | `translation 0.27 0 -0.06`; 128×128 px | Classificação visual (YOLO → AdaBoost → HSV) |
+
 ## 3. Teoria e Referências Obrigatórias
 ### 3.1 Lógica Fuzzy (DataCamp — *Fuzzy Logic in AI*)
 - Estrutura oficial: `fuzzification → knowledge base → inference engine → defuzzification`.
@@ -75,6 +82,10 @@ Fonte: `IA_20252/controllers/youbot/*.py` + `draft.md`.
 - **Repositório `cyberbotics/webots` (branch `released`)**:
   - Exemplo de controladores avançados, especialmente integração com ROS2 e pipelines de percepção; referência para estilo.
 
+### 3.4 Frameworks de Visão Computacional
+- **OpenCV** ([opencv.org](https://opencv.org/)): biblioteca para pré-processamento (ROI crops, HSV, HOG) e carregamento do classificador AdaBoost.
+- **Darknet / YOLO** ([github.com/pjreddie/darknet](https://github.com/pjreddie/darknet)): base de dados e modelos a serem usados via Ultralytics YOLOv8 para detectar cubos/caixas.
+
 ## 4. Arquitetura de Software (Domain Driven)
 ### 4.1 Contextos Delimitados
 | Contexto | Responsabilidades | Módulos sugeridos |
@@ -85,6 +96,8 @@ Fonte: `IA_20252/controllers/youbot/*.py` + `draft.md`.
 | **Decisão Fuzzy** | Avaliar variáveis linguísticas e aplicar regras | `control/fuzzy_planner.py`
 | **Execução de Movimento** | Enfileirar comandos para `Base`, `Arm`, `Gripper` mantendo limites de velocidade | `motion/base_controller.py`, `manipulation/arm_service.py`
 | **Orquestração da Missão** | Loop de alto nível: buscar → coletar → classificar → depositar | `mission/pipeline.py`
+| **Localização** | Odometria Mecanum + correção ICP | `localization/mecanum_odometry.py`, `localization/icp_correction.py`
+| **Mapeamento** | Grid 10 cm, patches visitados, contagem de cubos | `mapping/grid_map.py`
 
 ### 4.2 Fluxo de Dados
 1. **Sensores** produzem `RangeScan`, `PointCloud`, `RGBFrame` sincronizados.
@@ -92,25 +105,44 @@ Fonte: `IA_20252/controllers/youbot/*.py` + `draft.md`.
 3. **Modelagem** alinha hipóteses com coordenadas da arena (usar odometria inferida + detecção de paredes via LIDAR).
 4. **Decisão Fuzzy** recebe variáveis (distância frontal, densidade de obstáculos, alinhamento ao cubo, estado de carga) e devolve comandos de velocidade + estados do braço.
 5. **Execução** valida contra limites (por exemplo, `Base.MAX_SPEED = 0.3 m/s`) e aplica smoothing temporal.
+6. **Máquina de estados** (`MissionState.phase`): {`SCAN_GRID`, `PICK`, `DELIVER`, `RETURN`} orientam o fluxo de busca → coleta → entrega → reposicionamento.
 
 ### 4.3 Layout de Pacotes do Controlador
 ```
 IA_20252/controllers/youbot_fuzzy/
-├── app.py                 # ponto de entrada (instancia Robot, sensores e missão)
-├── config.py              # constantes do ambiente extraídas deste guia
+├── youbot_fuzzy.py          # entrypoint Webots (adiciona sys.path e chama app.main)
+├── app.py                   # wiring: instancia Robot, sensores, percepção, missão
+├── config.py                # constantes (arena, sensores, ML, thresholds)
+├── types.py                 # dataclasses compartilhados (LidarSnapshot, CubeHypothesis, etc.)
+├── logger.py                # wrapper de logging configurável
 ├── sensors/
-│   ├── lidar_adapter.py   # wrapper para enable/get_range_image/get_point_cloud
-│   └── camera_stream.py   # frames RGB + conversões HSV
+│   ├── lidar_adapter.py     # Dual-LIDAR: summarize() + cube_candidates() + navigation_points()
+│   └── camera_stream.py     # CameraFrame com buffer RGB
 ├── perception/
-│   ├── color_classifier.py
-│   └── cube_detector.py   # interface ANN opcional
-├── world/model.py         # obstáculo + referência de caixas
-├── control/fuzzy_planner.py
-├── motion/base_controller.py
-├── manipulation/arm_service.py
-└── mission/pipeline.py    # orquestração busca/coleta/depósito
+│   ├── utils.py             # frame_to_bgr (conversão Webots → OpenCV)
+│   ├── yolo_detector.py     # YOLOv8 via ultralytics (Detection dataclass)
+│   ├── adaboost_classifier.py  # AdaBoost + HOG/HSV via joblib/OpenCV
+│   ├── color_classifier.py  # híbrido: AdaBoost → HSV heuristic
+│   └── cube_detector.py     # pipeline YOLO → AdaBoost → HSV → CubeHypothesis
+├── localization/
+│   ├── mecanum_odometry.py  # odometria via encoders ou velocidades
+│   └── icp_correction.py    # correção de drift via Open3D ICP
+├── mapping/
+│   └── grid_map.py          # occupancy grid 10cm, patches visitados, cube_counts
+├── world/
+│   └── model.py             # WorldModel: box targets, obstacle map, goal vectors
+├── control/
+│   └── fuzzy_planner.py     # regras fuzzy → MotionCommand (vx, vy, omega)
+├── motion/
+│   └── base_controller.py   # aplica MotionCommand respeitando limites
+├── manipulation/
+│   └── arm_service.py       # sequência de lift/grip com timers
+├── mission/
+│   └── pipeline.py          # MissionPipeline: state machine SCAN_GRID→PICK→DELIVER→RETURN
+└── tools/
+    └── run_dataset_capture.py  # script para gerar dataset sintético
 ```
-*Cada módulo interage apenas via objetos de domínio (ex.: `CubeHypothesis`, `MotionCommand`), evitando importações cruzadas diretas.*
+*Cada módulo interage apenas via objetos de domínio (ex.: `CubeHypothesis`, `MotionCommand`, `LidarSnapshot`), evitando importações cruzadas diretas.*
 
 ## 5. Stack de Controle (ANN + Fuzzy)
 ### 5.1 Variáveis Linguísticas (baseadas em métricas reais)
@@ -135,20 +167,43 @@ IA_20252/controllers/youbot_fuzzy/
 4. IF `front_distance` = `Longo` AND `goal_priority` = `Vermelho` → `planejar` trajetória longa (ANN define referência) + `fuzzy` refina micro-ajustes.
 - **Defuzzificação:** usar método do centroide para `vx`, `vy`, `ω`; comandos discretos do braço podem usar winner-take-all.
 
-### 5.4 Neural Networks
-- MLP/CNN autorizada para estimar mapa ou detectar cubos a partir da câmera; manter interface `perception/cube_detector.predict(frame)` retornando bounding boxes + confiança.
-- Treinar/validar com dataset sintético do simulador; registrar pesos e pré-processamento.
+### 5.4 YOLO (Detecção)
+- Modelo leve (YOLOv8n ou Darknet tiny) com pesos em `models/yolov8n-cubes.pt`.
+- Responsável por retornar `bbox`, confiança e rótulo (cor) via `perception/yolo_detector.py`.
+- Dataset sintético gerado no Webots (`tools/run_dataset_capture.py`) com domain randomization.
+
+### 5.5 AdaBoost + OpenCV
+- Classificador `AdaBoostColorClassifier` (`models/adaboost_color.pkl`) usando histogramas HSV + HOG (OpenCV).
+- Atua como fallback/enriquecimento da cor quando YOLO não atinge confiança mínima.
+- Integração direta no `ColorClassifier.classify_patch` para reutilizar pipeline.
+
+### 5.6 Navegação/Odometria
+- `MecanumOdometry` consome encoders `wheel*_sensor`; na ausência deles integra velocidades comandadas (`MotionCommand`).
+- `ICPCorrection` (Open3D) aplica ICP quando deslocamento acumulado ≥ 0.15 m; mistura com odometria via peso 0.6.
+- `GridMap` (0.1 m) mantém patches visitados, obstáculos e contagem de cubos detectados pelo `lidar_low`.
+- Máquina de estados da missão (`MissionState.phase`): `SCAN_GRID → PICK → DELIVER → RETURN`.
 
 ## 6. Sensores e Calibração
-### 6.1 LIDAR
-- Configurar `numberOfLayers = 3` (sugestão) para captar planos a diferentes alturas (base das caixas vs. tampo).
-- `samplingPeriod`: múltiplo do `time_step` (16 ms) — e.g., 32 ou 64 ms.
-- Ativar `enablePointCloud()` somente se necessário para reconstrução 3D; caso contrário usar `getRangeImage()` por desempenho.
-- Mapear `minRange` vs. raio do robô (~0.4 m) para evitar cegueira em objetos colados.
+### 6.1 LIDAR (Dual-LIDAR Strategy)
+- **`lidar_high` (25 cm altura):**
+  - 2 camadas, `horizontalResolution = 360`, `fieldOfView = 2π (360°)`, `range = [0.1, 7.0]`
+  - Tipo: `rotating`, frequência 10 Hz
+  - Setores definidos em `config.py`: front (150-210), left (210-270), right (90-150)
+  - Uso: navegação, desvio de obstáculos, densidade frontal, ICP scan matching
+- **`lidar_low` (5 cm altura, frontal):**
+  - 1 camada, `horizontalResolution = 180`, `fieldOfView = π (180° frontal)`, `range = [0.03, 2.5]`
+  - Tipo: `fixed`, `tiltAngle = -0.05 rad` (inclinado para baixo)
+  - Uso: detectar objetos baixos (cubos de 3 cm) invisíveis ao LIDAR alto
+- **Fusão de dados (`LidarAdapter.cube_candidates`):**
+  - Compara leituras `lidar_low` com `lidar_high` no mesmo ângulo
+  - Se `dist_high - dist_low > CUBE_HEIGHT_DIFFERENCE_THRESHOLD (0.2m)` → provável cubo
+  - Filtra por `CUBE_DETECTION_MIN_DISTANCE (0.05m)` e `MAX_DISTANCE (1.5m)`
+- `samplingPeriod`: 32 ms (múltiplo do `basicTimeStep` 16 ms)
+- Point cloud habilitado apenas no `lidar_high` para ICP
 
 ### 6.2 Câmera
 - Resolução default 128×128; manter `camera.enable(time_step)` já presente.
-- Pipeline HSV (thresholds do `draft.md`) com morfologia para blobs; fallback para CNN caso iluminação varie.
+- Pipeline: YOLO (detecção) → AdaBoost (cor) → heurística HSV (fallback) via `CubeDetector`.
 - Registrar `recognitionColors` do supervisor para comparar com média de pixels.
 
 ### 6.3 Outros Sensores
@@ -184,11 +239,14 @@ IA_20252/controllers/youbot_fuzzy/
 4. **Entrega:** gravar vídeo, coletar logs, preparar relatório verbal.
 
 ## 11. Referências
-- `Final Project Requirements/Trabalhofinal.html`
-- `IA_20252/worlds/IA_20252.wbt`
-- `IA_20252/controllers/youbot/{base.py, arm.py, gripper.py, youbot.py}`
-- `IA_20252/controllers/supervisor/supervisor.py`
-- `draft.md`
-- DataCamp — *Fuzzy Logic in AI*
+- `Final Project Requirements/Trabalhofinal.html` — requisitos do professor
+- `IA_20252/worlds/IA_20252.wbt` — definição do mundo e sensores
+- `IA_20252/controllers/youbot/{base.py, arm.py, gripper.py}` — APIs do robô
+- `IA_20252/controllers/supervisor/supervisor.py` — spawn de cubos (não modificar)
+- `docs/main_plan.md` — plano de implementação passo a passo
+- `docs/TESTES.md` — roteiro de validação no Webots
+- DataCamp — *Fuzzy Logic in AI* (https://www.datacamp.com/pt/tutorial/fuzzy-logic-in-ai)
 - Cyberbotics Docs — Tutorials, Lidar, Solid, Object Factory
 - GitHub `cyberbotics/webots` (branch `released`)
+- Ultralytics YOLOv8 (https://docs.ultralytics.com/)
+- Open3D ICP (http://www.open3d.org/)

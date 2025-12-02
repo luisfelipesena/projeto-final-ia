@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 
 def clamp(value: float, min_value: float, max_value: float) -> float:
@@ -17,6 +17,20 @@ class LidarSnapshot:
     left_distance: float = 5.0
     right_distance: float = 5.0
     obstacle_density: float = 0.0
+
+
+@dataclass
+class LidarPoint:
+    x: float
+    y: float
+    distance: float
+
+
+@dataclass
+class Detection:
+    label: Optional[str]
+    confidence: float
+    bbox: Tuple[int, int, int, int]  # x1, y1, x2, y2
 
 
 @dataclass

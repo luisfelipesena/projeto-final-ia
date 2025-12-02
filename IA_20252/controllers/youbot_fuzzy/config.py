@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -46,16 +48,46 @@ TIME_STEP_MS = 32  # fallback; real value fetched from robot
 
 @dataclass(frozen=True)
 class LidarConfig:
-    name: str = "lidar"
-    sampling_period: int = 32  # milliseconds
-    horizontal_resolution: int = 512
-    number_of_layers: int = 3
-    front_sector: Tuple[int, int] = (220, 292)
-    left_sector: Tuple[int, int] = (292, 360)
-    right_sector: Tuple[int, int] = (160, 220)
+    name: str
+    sampling_period: int
+    horizontal_resolution: int
+    number_of_layers: int
+    field_of_view: float
+    min_range: float
+    max_range: float
+    near_range: float = 0.0
+    front_sector: Tuple[int, int] = (0, 0)
+    left_sector: Tuple[int, int] = (0, 0)
+    right_sector: Tuple[int, int] = (0, 0)
 
 
-LIDAR = LidarConfig()
+LIDAR_LOW_NAME = "lidar_low"
+LIDAR_HIGH_NAME = "lidar_high"
+
+LIDAR_HIGH = LidarConfig(
+    name=LIDAR_HIGH_NAME,
+    sampling_period=32,
+    horizontal_resolution=360,
+    number_of_layers=2,
+    field_of_view=math.tau,
+    min_range=0.1,
+    max_range=7.0,
+    near_range=0.05,
+    front_sector=(150, 210),
+    left_sector=(210, 270),
+    right_sector=(90, 150),
+)
+
+LIDAR_LOW = LidarConfig(
+    name=LIDAR_LOW_NAME,
+    sampling_period=32,
+    horizontal_resolution=180,
+    number_of_layers=1,
+    field_of_view=math.pi,
+    min_range=0.03,
+    max_range=2.5,
+    near_range=0.02,
+)
 CAMERA_ALIGNMENT_SCALE = 0.5  # meters of lateral offset at image edges
 
 HSV_RANGES = {
@@ -72,3 +104,20 @@ MAX_CUBES = 15
 GOAL_SEQUENCE = ("GREEN", "BLUE", "RED")
 ENABLE_LOGGING = True
 LOG_INTERVAL_STEPS = 10
+
+# --- Vision / ML configuration ----------------------------------------------
+
+MODELS_DIR = Path(__file__).resolve().parent / "models"
+ENABLE_YOLO = True
+YOLO_MODEL_PATH = MODELS_DIR / "yolov8n-cubes.pt"
+YOLO_CONFIDENCE_THRESHOLD = 0.35
+
+ENABLE_ADABOOST = True
+ADABOOST_MODEL_PATH = MODELS_DIR / "adaboost_color.pkl"
+
+# --- LIDAR detection thresholds ---------------------------------------------
+
+CUBE_DETECTION_MIN_DISTANCE = 0.05
+CUBE_DETECTION_MAX_DISTANCE = 1.5
+CUBE_HEIGHT_DIFFERENCE_THRESHOLD = 0.2
+DANGER_ZONE = 0.25
