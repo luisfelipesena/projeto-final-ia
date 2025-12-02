@@ -62,11 +62,13 @@ ARM_SEGMENT_LENGTHS = (0.253, 0.155, 0.135, 0.081, 0.105)
 class GripperConfig:
     """Gripper configuration."""
     MIN_POS: float = 0.0            # Fully closed position
-    MAX_POS: float = 0.025          # Fully open position
+    MAX_POS: float = 0.025          # Fully open position (25mm)
     OFFSET_WHEN_LOCKED: float = 0.021
     VELOCITY: float = 0.03          # Gripper motor velocity
-    GRIP_THRESHOLD: float = 0.006   # Threshold for object detection
+    GRIP_THRESHOLD: float = 0.002   # Threshold for object detection (validated)
     CUBE_SIZE: float = 0.03         # Cube size (3cm)
+    # Sensor name: finger::leftsensor (NOT finger::left:sensor)
+    SENSOR_NAME: str = "finger::leftsensor"
 
 
 # =============================================================================
@@ -142,11 +144,14 @@ class NavigationConfig:
 
 @dataclass(frozen=True)
 class GraspConfig:
-    """Grasp sequence parameters."""
+    """Grasp sequence parameters (validated through testing)."""
     APPROACH_DISTANCE: float = 0.15     # Distance before grasp
-    FINAL_APPROACH: float = 0.05        # Final forward movement
-    WAIT_STEPS_ARM: int = 60            # Steps to wait for arm movement
-    WAIT_STEPS_GRIPPER: int = 30        # Steps to wait for gripper
+    FINAL_APPROACH: float = 0.10        # Final forward movement (10cm validated)
+    FINAL_APPROACH_SPEED: float = 0.05  # Slow speed for precision (5cm/s)
+    FINAL_APPROACH_TIME: float = 2.0    # Time for final approach (seconds)
+    WAIT_STEPS_ARM: int = 156           # 2.5s at 16ms timestep
+    WAIT_STEPS_GRIPPER: int = 94        # 1.5s at 16ms timestep
+    WAIT_STEPS_LIFT: int = 125          # 2.0s at 16ms timestep
     MAX_ALIGN_ATTEMPTS: int = 50        # Max alignment iterations
 
 

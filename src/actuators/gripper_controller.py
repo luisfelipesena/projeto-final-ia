@@ -27,32 +27,43 @@ class GripperController:
         self.robot = robot
         self.time_step = int(robot.getBasicTimeStep())
 
-        # Get finger motor (controls both fingers symmetrically)
-        self.finger_motor = robot.getDevice("finger::left")
-        if not self.finger_motor:
+        # Get BOTH finger motors (YouBot has independent left/right fingers)
+        self.finger_left = robot.getDevice("finger::left")
+        self.finger_right = robot.getDevice("finger::right")
+
+        if not self.finger_left:
             raise RuntimeError("Could not find gripper motor 'finger::left'")
+        if not self.finger_right:
+            print("[GRIPPER] Warning: No right finger motor, using single finger mode")
 
         # CRITICAL: Get position sensor for object detection
-        self.finger_sensor = robot.getDevice("finger::left:sensor")
+        # Correct sensor name from config
+        self.finger_sensor = robot.getDevice(GRIPPER.SENSOR_NAME)
         if self.finger_sensor:
             self.finger_sensor.enable(self.time_step)
         else:
             print("[GRIPPER] Warning: No position sensor, object detection disabled")
 
-        # Set velocity for controlled movement
-        self.finger_motor.setVelocity(GRIPPER.VELOCITY)
+        # Set velocity for controlled movement on both fingers
+        self.finger_left.setVelocity(GRIPPER.VELOCITY)
+        if self.finger_right:
+            self.finger_right.setVelocity(GRIPPER.VELOCITY)
 
         # Track commanded state (not actual state)
         self._commanded_closed = False
 
     def grip(self) -> None:
-        """Command gripper to close."""
-        self.finger_motor.setPosition(GRIPPER.MIN_POS)
+        """Command gripper to close (both fingers)."""
+        self.finger_left.setPosition(GRIPPER.MIN_POS)
+        if self.finger_right:
+            self.finger_right.setPosition(GRIPPER.MIN_POS)
         self._commanded_closed = True
 
     def release(self) -> None:
-        """Command gripper to open."""
-        self.finger_motor.setPosition(GRIPPER.MAX_POS)
+        """Command gripper to open (both fingers)."""
+        self.finger_left.setPosition(GRIPPER.MAX_POS)
+        if self.finger_right:
+            self.finger_right.setPosition(GRIPPER.MAX_POS)
         self._commanded_closed = False
 
     def set_gap(self, gap: float) -> None:
@@ -65,7 +76,9 @@ class GripperController:
         position = 0.5 * (gap - GRIPPER.OFFSET_WHEN_LOCKED)
         position = max(GRIPPER.MIN_POS, min(GRIPPER.MAX_POS, position))
 
-        self.finger_motor.setPosition(position)
+        self.finger_left.setPosition(position)
+        if self.finger_right:
+            self.finger_right.setPosition(position)
         self._commanded_closed = position < GRIPPER.MAX_POS / 2
 
     def get_finger_position(self) -> Optional[float]:

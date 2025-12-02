@@ -1,82 +1,17 @@
 {
-  "version": "2025-12-01-V3",
-  "last_update": 1764642797.3543072,
-  "current_state": "SEARCHING",
-  "autonomous_mode": true,
-  "base_velocity": {
-    "vx": 0,
-    "vy": 0,
-    "omega": 0.4
-  },
-  "arm_height": "RESET",
-  "arm_orientation": "FRONT",
+  "version": "GRASP_TEST_V1",
+  "last_update": 1764646111.691846,
+  "current_state": "SUCCESS",
+  "arm_height": "FRONT_PLATE",
   "gripper_state": "closed",
-  "gripper_has_object": false,
-  "cubes_collected": 0,
-  "cube_detections": [
-    {
-      "color": "red",
-      "confidence": 0.15606794086795953,
-      "distance": 0.16857142857142857,
-      "angle": 1.3359375,
-      "center": [
-        67,
-        60
-      ],
-      "size": [
-        21,
-        12
-      ]
-    }
-  ],
-  "current_target": null,
-  "min_obstacle_distance": 0.7244167327880859,
-  "obstacle_sectors": {
-    "far_left": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    },
-    "left": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    },
-    "front_left": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    },
-    "front": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    },
-    "front_right": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    },
-    "right": {
-      "min": 0.7244167327880859,
-      "avg": 0.7435150076361263,
-      "obstacle": false
-    },
-    "far_right": {
-      "min": 0.7301260232925415,
-      "avg": 0.7422838125910077,
-      "obstacle": false
-    },
-    "back_right": {
-      "min": 0.7589772939682007,
-      "avg": 0.7755108699202538,
-      "obstacle": false
-    },
-    "back_left": {
-      "min": Infinity,
-      "avg": Infinity,
-      "obstacle": false
-    }
+  "finger_position": 0.0031274967637872604,
+  "gripper_has_object": true,
+  "grasp_result": {
+    "success": true,
+    "finger_before": 0.02500000011937037,
+    "finger_after": 0.001956676742679162,
+    "finger_final": 0.0031274967637872604,
+    "has_object": true
   },
-  "lidar_enabled": true
+  "auto_test_done": true
 }

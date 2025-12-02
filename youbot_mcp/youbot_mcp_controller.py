@@ -766,39 +766,47 @@ class YouBotMCPController:
                 self._save_grasp_screenshot("before")
 
                 try:
-                    # Step 1: Short forward approach (8cm instead of 25cm)
-                    # Robot is already at ~25cm, need to get to ~17cm for arm reach
-                    forward_move = 0.08
-                    log(f"[MCP] GRASPING: Step 1 - Forward approach ({forward_move*100:.0f}cm)")
-                    self.movement.forward(distance_m=forward_move, speed=0.02)
-
-                    # Wait for robot to settle
-                    for _ in range(20):
-                        self._step()
-
-                    self._save_grasp_screenshot("after_forward")
-
-                    # Step 2: Open gripper
-                    log("[MCP] GRASPING: Step 2 - Opening gripper")
+                    # VALIDATED GRASP SEQUENCE (see docs/GRASP_TEST.md)
+                    # Step 1: Open gripper FIRST
+                    log("[MCP] GRASPING: Step 1 - Opening gripper")
                     self.gripper.release()
-                    for _ in range(30):
+                    for _ in range(62):  # 1.0s at 16ms
                         self._step()
 
-                    # Step 3: Lower arm to FRONT_FLOOR preset (no IK)
+                    # Step 2: Reset arm
+                    log("[MCP] GRASPING: Step 2 - Reset arm position")
+                    self.arm.reset()
+                    for _ in range(94):  # 1.5s at 16ms
+                        self._step()
+
+                    # Step 3: Ensure gripper open, lower arm to FRONT_FLOOR
                     log("[MCP] GRASPING: Step 3 - Lowering arm to FRONT_FLOOR")
+                    self.gripper.release()  # Ensure open
                     self.arm.set_height(ArmHeight.FRONT_FLOOR)
-                    for _ in range(60):
+                    for _ in range(156):  # 2.5s at 16ms
                         self._step()
 
                     self._save_grasp_screenshot("arm_lowered")
 
-                    # Step 4: Close gripper
-                    log("[MCP] GRASPING: Step 4 - Closing gripper")
-                    self.gripper.grip()
-                    for _ in range(40):
+                    # Step 4: Forward approach (10cm at 5cm/s = 2.0s) - VALIDATED
+                    forward_move = 0.10
+                    log(f"[MCP] GRASPING: Step 4 - Forward approach ({forward_move*100:.0f}cm)")
+                    self.base.move(0.05, 0, 0)  # 5cm/s, no lateral, no rotation
+                    for _ in range(125):  # 2.0s at 16ms
+                        self._step()
+                    self.base.stop()
+                    for _ in range(31):  # 0.5s settle
                         self._step()
 
-                    # Step 5: Check if object was grasped
+                    self._save_grasp_screenshot("after_forward")
+
+                    # Step 5: Close gripper
+                    log("[MCP] GRASPING: Step 5 - Closing gripper")
+                    self.gripper.grip()
+                    for _ in range(94):  # 1.5s at 16ms
+                        self._step()
+
+                    # Step 6: Check if object was grasped (threshold 0.002)
                     has_object = self.gripper.has_object()
                     finger_pos = self.gripper.get_finger_position()
                     log(f"[MCP] GRASPING: Gripper check - has_object={has_object}, finger_pos={finger_pos}")
@@ -806,10 +814,10 @@ class YouBotMCPController:
                     self._save_grasp_screenshot("after_grip")
 
                     if has_object:
-                        # Step 6: Lift the cube
-                        log("[MCP] GRASPING: Step 6 - Lifting cube")
+                        # Step 7: Lift the cube
+                        log("[MCP] GRASPING: Step 7 - Lifting cube")
                         self.arm.set_height(ArmHeight.FRONT_PLATE)
-                        for _ in range(60):
+                        for _ in range(125):  # 2.0s at 16ms
                             self._step()
 
                         self.cubes_collected += 1
