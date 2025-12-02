@@ -1,17 +1,10 @@
 {
-  "version": "GRASP_TEST_V1",
-  "last_update": 1764646111.691846,
-  "current_state": "SUCCESS",
-  "arm_height": "FRONT_PLATE",
-  "gripper_state": "closed",
-  "finger_position": 0.0031274967637872604,
-  "gripper_has_object": true,
-  "grasp_result": {
-    "success": true,
-    "finger_before": 0.02500000011937037,
-    "finger_after": 0.001956676742679162,
-    "finger_final": 0.0031274967637872604,
-    "has_object": true
-  },
-  "auto_test_done": true
+  "version": "GRASP_TEST_V2",
+  "state": "SUCCESS",
+  "target_color": "green",
+  "target_distance": 0.1416,
+  "target_angle": 0.0,
+  "finger_position": 0.004522572388781268,
+  "has_object": true,
+  "timestamp": 1764647165.4360352
 }

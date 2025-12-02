@@ -111,7 +111,7 @@ Youbot {
   hidden rotation_14 0 -1 0 0.9489978114058787
   translation -1.5 0.0 0.102
   rotation 0 0 1 0
-  controller "youbot_grasp_test"
+  controller "youbot_grasp_test_v2"
   controllerArgs [
     ""
   ]
@@ -169,7 +169,7 @@ WoodenBox {
 }
 Solid {
   translation -1.0 0.0 0.016
-  name "test_cube"
+  name "test_cube_green"
   children [
     Shape {
       appearance PBRAppearance {
