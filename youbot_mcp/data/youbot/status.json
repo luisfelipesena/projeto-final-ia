@@ -1,10 +1,10 @@
 {
-  "version": "GRASP_TEST_V2",
-  "state": "SUCCESS",
+  "version": "GRASP_TEST_V3",
+  "state": "FAILED",
   "target_color": "green",
-  "target_distance": 0.1416,
-  "target_angle": 0.0,
-  "finger_position": 0.004522572388781268,
-  "has_object": true,
-  "timestamp": 1764647165.4360352
+  "target_distance": 0.22125,
+  "target_angle": -1.3359375,
+  "finger_position": 1.3937352712258658e-11,
+  "has_object": false,
+  "timestamp": 1764693042.459841
 }

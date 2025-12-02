@@ -41,6 +41,9 @@ class CubeDetection:
 class CubeDetector:
     """Detects colored cubes using HSV color segmentation."""
 
+    # Build marker to verify code is loaded
+    _BUILD_ID = "2024-12-02-v12-aspect1.6-ts1211"
+
     def __init__(self, camera_width: int = None, camera_height: int = None):
         """Initialize detector.
 
@@ -48,6 +51,7 @@ class CubeDetector:
             camera_width: Image width (default from config)
             camera_height: Image height (default from config)
         """
+        print(f"[CubeDetector] Initialized (BUILD: {self._BUILD_ID}, MAX_CUBE_PIXELS=35, aspect<1.6)")
         self.width = camera_width or CAMERA.WIDTH
         self.height = camera_height or CAMERA.HEIGHT
         self.center_x = self.width // 2
@@ -155,24 +159,28 @@ class CubeDetector:
 
             # Check aspect ratio (cubes should be SQUARE, aspect ratio ~1.0)
             aspect_ratio = max(w, h) / (min(w, h) + 0.001)
-            if aspect_ratio > 2.2:  # Must be close to square (stricter than before)
+            if aspect_ratio > 1.6:  # Stricter: cubes are square, boxes are not
+                print(f"[CubeDetector] REJECT {color}: aspect={aspect_ratio:.2f} > 1.6, size={max(w,h)}px")
                 continue
 
             # Filter out detections that are too large (likely deposit boxes)
-            # A 3cm cube: at 10cm = 35px, at 15cm = 24px, at 20cm = 18px
-            # Use strict filter: max 30px to avoid deposit boxes
-            MAX_CUBE_PIXELS = 100
+            MAX_CUBE_PIXELS = 35  # Tighter: cube at 0.3m is ~35px max
             if max(w, h) > MAX_CUBE_PIXELS:
-                continue  # Too large - probably a deposit box, not a cube
+                continue  # Too large
+
+            # Filter: area should be close to bounding box (regular shape)
+            expected_area = w * h
+            if area > expected_area * 1.3:  # Irregular shape = not a cube
+                continue
 
             # Center point
             center_x = x + w // 2
             center_y = y + h // 2
 
-            # Filter: cubes on ground appear in lower portion of image (y > 40%)
-            # Deposit boxes/walls appear higher in image
-            if center_y < self.height * 0.40:
-                continue  # Too high in image - likely deposit box or wall
+            # Filter: cubes on ground appear in lower portion of image (y > 35%)
+            # Relaxed to allow detection during scan
+            if center_y < self.height * 0.35:
+                continue  # Too high in image
 
             # Distance estimation using larger dimension
             apparent_size = max(w, h)

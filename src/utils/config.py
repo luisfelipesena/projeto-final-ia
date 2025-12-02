@@ -113,8 +113,8 @@ HSV_RANGES = {
 }
 
 # Minimum contour area to consider as cube (pixels^2)
-# Reduced to detect distant cubes (10x10=100 is borderline)
-MIN_CUBE_AREA = 50
+# Cube at 0.6m = ~6px = ~36px², so need lower threshold
+MIN_CUBE_AREA = 20
 
 # Distance estimation constants (for monocular camera)
 CUBE_REAL_SIZE = 0.03  # 3cm cube

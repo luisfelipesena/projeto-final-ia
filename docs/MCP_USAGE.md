@@ -10,6 +10,36 @@ Claude/LLM  <-->  Arquivos JSON  <-->  Webots Controller
                grasp_*.jpg
 ```
 
+## CRITICAL: Reiniciar Webots para Novos Controllers
+
+Webots **cacheia** Python controllers. `Cmd+Shift+R` NÃO recarrega código Python!
+
+### Para recarregar controller:
+```bash
+# Opção 1: Kill e reabrir (RECOMENDADO)
+osascript -e 'tell application "Webots" to quit'
+sleep 2
+open -a Webots "/path/to/world.wbt"
+
+# Opção 2: Via Claude Code
+osascript << 'EOF'
+tell application "Webots"
+    quit
+end tell
+EOF
+sleep 2
+open -a Webots "/path/to/world.wbt" &
+sleep 40  # Aguardar teste completar
+cat youbot_mcp/data/youbot/status.json
+```
+
+### Verificar se código foi recarregado:
+- Checar timestamp dos screenshots:
+  ```bash
+  ls -la youbot_mcp/data/youbot/v3_*.jpg | head -3
+  ```
+- Se timestamps antigos, controller NÃO foi recarregado
+
 ## Arquivos de Comunicação
 
 ```

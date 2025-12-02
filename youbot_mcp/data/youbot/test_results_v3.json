@@ -1,0 +1,60 @@
+{
+  "version": "GRASP_TEST_V3",
+  "total_tests": 5,
+  "completed": 5,
+  "passed": 1,
+  "failed": 4,
+  "tests": [
+    {
+      "test_index": 1,
+      "angle": "0\u00b0",
+      "cube_position": {
+        "x": -1.0,
+        "y": 0.0
+      },
+      "success": true,
+      "duration": 11.747828960418701
+    },
+    {
+      "test_index": 2,
+      "angle": "+30\u00b0",
+      "cube_position": {
+        "x": -1.0,
+        "y": 0.29
+      },
+      "success": false,
+      "duration": 1.2692890167236328
+    },
+    {
+      "test_index": 3,
+      "angle": "-30\u00b0",
+      "cube_position": {
+        "x": -1.0,
+        "y": -0.29
+      },
+      "success": false,
+      "duration": 0.07527494430541992
+    },
+    {
+      "test_index": 4,
+      "angle": "+60\u00b0",
+      "cube_position": {
+        "x": -1.0,
+        "y": 0.87
+      },
+      "success": false,
+      "duration": 1.1555960178375244
+    },
+    {
+      "test_index": 5,
+      "angle": "-60\u00b0",
+      "cube_position": {
+        "x": -1.0,
+        "y": -0.87
+      },
+      "success": false,
+      "duration": 0.1528160572052002
+    }
+  ],
+  "timestamp": 1764648087.5940402
+}

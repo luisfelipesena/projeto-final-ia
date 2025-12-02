@@ -9,11 +9,10 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 
 WorldInfo {
   info [
-    "Simulation of the KUKA youBot robot."
-    "This model includes an accurate and fast simulation of the Meccanum wheels."
-    "The robot can be equiped with various sensors (including the Microsoft Kinect) and configured with zero, one or two arms."
+    "GRASP TEST V3 - Multi-Angle Validation"
+    "Tests grasp at 0°, ±30°, ±60° angles"
   ]
-  title "KUKA youBot"
+  title "YouBot Grasp Test V3"
   basicTimeStep 16
   contactProperties [
     ContactProperties {
@@ -107,25 +106,10 @@ DEF YOUBOT Youbot {
     }
   ]
 }
-Solid {
-  translation -1.0 0.0 0.016
-  name "test_cube_front"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0 1 0
-        roughness 0.8
-        metalness 0
-      }
-      geometry Box { size 0.03 0.03 0.03 }
-    }
-  ]
-  boundingObject Box { size 0.03 0.03 0.03 }
-  physics Physics {
-    density -1
-    mass 0.03
-  }
-  recognitionColors [ 0 1 0 ]
+Robot {
+  name "SupervisorV3"
+  controller "supervisor_test_v3"
+  supervisor TRUE
 }
 WoodenBox {
   translation 0.6 0 0.15
