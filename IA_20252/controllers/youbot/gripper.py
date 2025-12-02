@@ -107,5 +107,5 @@ class Gripper:
         # Increased threshold to 0.006 to reduce false positives
         threshold = 0.006
         has_obj = self.is_gripping and pos > (MIN_POS + threshold)
-        print(f"[GRIPPER] has_object: pos={pos:.4f}, threshold={MIN_POS + threshold:.4f}, result={has_obj}")
+        # print(f"[GRIPPER] has_object: pos={pos:.4f}, threshold={MIN_POS + threshold:.4f}, result={has_obj}")
         return has_obj

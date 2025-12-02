@@ -24,17 +24,26 @@ from pathlib import Path
 from enum import Enum, auto
 from typing import Optional, List, Dict, Any
 
-# Add paths
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Add paths - find project root by looking for src/ directory
+_file_path = Path(__file__).resolve()
+# When running from youbot_mcp/ -> parent is project root
+# When running from IA_20252/controllers/youbot_mcp_controller/ -> need to go up 3 levels
+if (_file_path.parent / 'src').exists():
+    PROJECT_ROOT = _file_path.parent
+elif (_file_path.parent.parent.parent.parent / 'src').exists():
+    PROJECT_ROOT = _file_path.parent.parent.parent.parent
+else:
+    PROJECT_ROOT = _file_path.parent.parent  # fallback
 sys.path.insert(0, str(PROJECT_ROOT / 'src'))
 sys.path.insert(0, str(PROJECT_ROOT / 'IA_20252' / 'controllers' / 'youbot'))
 
 from controller import Robot
 
 # Import Webots controllers
-from base import Base
-from arm import Arm, ArmHeight, ArmOrientation
-from gripper import Gripper
+# Import Webots controllers
+from actuators.base_controller import BaseController
+from actuators.arm_controller import ArmController, ArmHeight, ArmOrientation
+from actuators.gripper_controller import GripperController
 
 # Import services
 from services.movement_service import MovementService
@@ -46,10 +55,10 @@ from services.navigation_service import NavigationService
 from perception.cube_detector import CubeDetector
 
 # Import Fuzzy Controller (MATA64 requirement)
-from control.fuzzy_controller import FuzzyController, FuzzyInputs
+from control.fuzzy_navigator import FuzzyNavigator, NavigationOutput
 
 # Import RNA model for LIDAR (MATA64 requirement)
-from perception.models.simple_lidar_mlp import SimpleLIDARMLP
+from perception.lidar_mlp import LidarMLP
 
 # MCP communication paths
 MCP_DIR = PROJECT_ROOT / "youbot_mcp"
@@ -89,7 +98,7 @@ class YouBotMCPController:
     """
 
     # Class-level version for cache detection
-    VERSION = "2025-12-01-V3"
+    VERSION = "2025-12-01-V5"
 
     def __init__(self):
         print(f"[MCP Controller] Initializing... VERSION: {self.VERSION}")
@@ -99,9 +108,10 @@ class YouBotMCPController:
         self.time_step = int(self.robot.getBasicTimeStep())
 
         # Hardware controllers
-        self.base = Base(self.robot)
-        self.arm = Arm(self.robot)
-        self.gripper = Gripper(self.robot)
+        # Hardware controllers
+        self.base = BaseController(self.robot)
+        self.arm = ArmController(self.robot)
+        self.gripper = GripperController(self.robot)
 
         # Camera
         self.camera = self.robot.getDevice("camera")
@@ -127,12 +137,8 @@ class YouBotMCPController:
         )
 
         # Initialize Fuzzy Controller (MATA64 requirement)
-        self.fuzzy = FuzzyController(config={'logging': True})
-        try:
-            self.fuzzy.initialize()
-            print("[MCP Controller] Fuzzy controller initialized")
-        except Exception as e:
-            print(f"[MCP Controller] WARNING: Fuzzy init failed: {e}")
+        self.fuzzy = FuzzyNavigator()
+        print("[MCP Controller] Fuzzy controller initialized")
 
         # State
         self.state = MCPState.IDLE
@@ -166,16 +172,13 @@ class YouBotMCPController:
                  "FRONT_RIGHT", "RIGHT", "BACK_RIGHT"]
         return names[orientation] if 0 <= orientation < len(names) else "UNKNOWN"
 
-    def _load_lidar_model(self) -> Optional[SimpleLIDARMLP]:
+    def _load_lidar_model(self) -> Optional[LidarMLP]:
         """Load RNA model for LIDAR obstacle detection (MATA64 requirement)."""
         try:
-            model = SimpleLIDARMLP(input_size=512, num_sectors=9)
+            model = LidarMLP(input_size=512, num_sectors=9)
             model_path = PROJECT_ROOT / "models" / "lidar_mlp.pth"
 
-            if model_path.exists():
-                model.load_state_dict(torch.load(model_path, weights_only=True))
-                model.eval()
-                print(f"[RNA] Modelo LIDAR carregado: {model_path}")
+            if model.load(str(model_path)):
                 return model
             else:
                 print(f"[RNA] AVISO: Modelo nao encontrado em {model_path}, usando heuristico")
@@ -190,10 +193,9 @@ class YouBotMCPController:
             return self._heuristic_obstacle_detection(ranges)
 
         try:
-            input_tensor = SimpleLIDARMLP.preprocess_lidar(ranges, max_range=5.0, target_size=512)
-            with torch.no_grad():
-                obstacles = self.lidar_model(input_tensor)
-            return obstacles.squeeze().tolist()
+            # LidarMLP handles normalization internally
+            obstacles = self.lidar_model.predict(np.array(ranges))
+            return obstacles.tolist()
         except Exception as e:
             print(f"[RNA] Erro na inferencia: {e}")
             return self._heuristic_obstacle_detection(ranges)
@@ -217,68 +219,7 @@ class YouBotMCPController:
 
         return obstacles
 
-    def _compute_fuzzy_inputs(self) -> FuzzyInputs:
-        """Convert sensor data to FuzzyInputs for controller."""
-        # Get LIDAR data
-        lidar_data = self._get_lidar_data()
-        sectors = lidar_data.get("sectors", {})
 
-        # Calculate obstacle distance and angle
-        obstacle_dist = lidar_data.get("min_distance", 5.0)
-        if obstacle_dist == float('inf'):
-            obstacle_dist = 5.0
-
-        # Compute obstacle angle from sectors
-        left_blocked = sectors.get('left', {}).get('obstacle', False) or sectors.get('front_left', {}).get('obstacle', False)
-        right_blocked = sectors.get('right', {}).get('obstacle', False) or sectors.get('front_right', {}).get('obstacle', False)
-        front_blocked_flag = sectors.get('front', {}).get('obstacle', False)
-
-        if left_blocked and not right_blocked:
-            obstacle_angle = -45.0
-        elif right_blocked and not left_blocked:
-            obstacle_angle = 45.0
-        elif front_blocked_flag:
-            obstacle_angle = 0.0
-        else:
-            obstacle_angle = 0.0
-
-        # Get cube data from vision
-        target = self.current_target
-        if target:
-            cube_dist = target.distance
-            cube_angle = target.angle
-            cube_detected = True
-        else:
-            cube_dist = 3.0
-            cube_angle = 0.0
-            cube_detected = False
-
-        # Holding state
-        holding = self.state == MCPState.DEPOSITING
-
-        # Calculate blocked scores
-        front_dist = sectors.get('front', {}).get('min', float('inf'))
-        left_dist = min(sectors.get('left', {}).get('min', float('inf')),
-                       sectors.get('front_left', {}).get('min', float('inf')))
-        right_dist = min(sectors.get('right', {}).get('min', float('inf')),
-                        sectors.get('front_right', {}).get('min', float('inf')))
-
-        front_blocked_score = max(0.0, min(1.0, (0.35 - front_dist) / 0.35)) if front_dist < 0.35 else 0.0
-        lateral_blocked_score = max(
-            max(0.0, min(1.0, (0.30 - left_dist) / 0.30)) if left_dist < 0.30 else 0.0,
-            max(0.0, min(1.0, (0.30 - right_dist) / 0.30)) if right_dist < 0.30 else 0.0
-        )
-
-        return FuzzyInputs(
-            distance_to_obstacle=min(obstacle_dist, 5.0),
-            angle_to_obstacle=max(-135, min(135, obstacle_angle)),
-            distance_to_cube=min(cube_dist, 3.0),
-            angle_to_cube=max(-135, min(135, cube_angle)),
-            cube_detected=cube_detected,
-            holding_cube=holding,
-            front_blocked=front_blocked_score,
-            lateral_blocked=lateral_blocked_score
-        )
 
     def _step(self) -> bool:
         """Execute one simulation step."""
@@ -406,9 +347,9 @@ class YouBotMCPController:
                 "current_state": self.state.name,
                 "autonomous_mode": self.autonomous_mode,
                 "base_velocity": {
-                    "vx": self.base.vx,
-                    "vy": self.base.vy,
-                    "omega": self.base.omega
+                    "vx": self.base.velocity[0],
+                    "vy": self.base.velocity[1],
+                    "omega": self.base.velocity[2]
                 },
                 "arm_height": self._height_to_string(self.arm.current_height),
                 "arm_orientation": self._orientation_to_string(self.arm.current_orientation),
@@ -442,7 +383,7 @@ class YouBotMCPController:
             self.base.move(vx, vy, omega)
 
         elif action == "stop_base":
-            self.base.reset()
+            self.base.stop()
 
         elif action == "move_forward":
             distance = params.get("distance_m", 0.1)
@@ -539,7 +480,7 @@ class YouBotMCPController:
         elif action == "stop_autonomous":
             self.autonomous_mode = False
             self.state = MCPState.IDLE
-            self.base.reset()
+            self.base.stop()
 
         else:
             print(f"[MCP] Unknown action: {action}")
@@ -625,27 +566,21 @@ class YouBotMCPController:
         if self.state == MCPState.SEARCHING:
             target = self.vision.get_target()
 
-            # During search, accept targets with 2+ frames (rotation makes 3 frames difficult)
-            # Also check confidence >= 0.60 for reliability
-            if target and target.frames_tracked >= 2 and target.confidence >= 0.60:
+            # Accept targets with confidence >= 0.07 (matches cube_detector defaults)
+            # Lower threshold allows acquiring distant cubes
+            if target and target.confidence >= 0.07:
                 # CRITICAL: Stop rotation IMMEDIATELY before state change
-                self.base.reset()
+                self.base.stop()
                 self.target_cube_color = target.color
-                self._target_side = 'right' if target.angle > 0 else 'left'  # Remember which side
                 self.vision.lock_color(target.color)
                 # Reset search state for next time
                 self._search_angle_covered = 0.0
                 self._search_phase = 'scan'
                 self.state = MCPState.APPROACHING
-                print(f"[MCP Search] Target acquired: {target.color} at {target.distance:.2f}m, {target.angle:.1f}° (frames={target.frames_tracked}) → APPROACHING")
+                print(f"[MCP Search] Target acquired: {target.color} at {target.distance:.2f}m, {target.angle:.1f}° → APPROACHING")
                 return  # Don't do anything else this frame
-            elif target and target.frames_tracked == 1 and target.confidence >= 0.60:
-                # NEW: Promising detection found - PAUSE rotation to let tracking stabilize
-                # This gives VisionService one more frame to confirm (reach frames_tracked=2)
-                self.base.reset()
-                return  # Wait one frame for tracking to confirm
             else:
-                # Get LIDAR data - only consider FRONT sectors for obstacle avoidance
+                # Get LIDAR data for obstacle avoidance
                 lidar_data = self._get_lidar_data()
                 sectors = lidar_data.get("sectors", {})
                 front_dist = min(
@@ -653,56 +588,78 @@ class YouBotMCPController:
                     sectors.get("front_left", {}).get("min", float('inf')),
                     sectors.get("front_right", {}).get("min", float('inf'))
                 )
+                left_dist = min(
+                    sectors.get("left", {}).get("min", float('inf')),
+                    sectors.get("front_left", {}).get("min", float('inf'))
+                )
+                right_dist = min(
+                    sectors.get("right", {}).get("min", float('inf')),
+                    sectors.get("front_right", {}).get("min", float('inf'))
+                )
 
                 # Use fuzzy controller for obstacle-aware navigation (MATA64 requirement)
-                inputs = self._compute_fuzzy_inputs()
+                sector_names = ['far_left', 'left', 'front_left', 'front', 'front_right', 'right', 'far_right', 'back_right', 'back_left']
+                sector_mins = [sectors.get(name, {}).get("min", float('inf')) for name in sector_names]
+
                 try:
-                    outputs = self.fuzzy.infer(inputs)
+                    outputs = self.fuzzy.compute_from_sectors(sector_mins, target_angle=0.0)
                 except Exception:
                     outputs = None
 
-                # Controlled search pattern: scan ~270° then move forward
+                # Controlled search pattern: scan ~360° then move forward
                 if self._search_phase == 'scan':
-                    # Rotate to scan (alternating direction)
-                    omega = 0.4 if self._search_direction else -0.4
+                    # PURE ROTATION during scan - no forward movement
+                    omega = 0.35 if self._search_direction else -0.35
                     self._search_angle_covered += abs(omega) * self.time_step / 1000.0
 
-                    # After ~270° (4.7 rad), switch to move phase
-                    if self._search_angle_covered > 4.7:
+                    # After ~360° (6.28 rad), switch to move phase
+                    if self._search_angle_covered > 6.28:
                         self._search_phase = 'move'
                         self._search_move_time = 0.0
                         self._search_direction = not self._search_direction
-                        print("[MCP Search] Scan complete, moving forward")
+                        print("[MCP Search] Full scan complete, moving forward")
 
+                    # Pure rotation - no forward drift
                     self.base.move(0, 0, omega)
                 else:
-                    # Check FRONT obstacles before moving forward
-                    if front_dist < 0.35:
-                        # Front obstacle - switch to scan phase and change direction
-                        self.base.reset()
+                    # Check obstacles before moving forward
+                    if front_dist < 0.40:
+                        # Front obstacle - switch to scan phase
+                        self.base.stop()
                         self._search_phase = 'scan'
                         self._search_angle_covered = 0.0
                         self._search_direction = not self._search_direction
                         print(f"[MCP Search] Front obstacle at {front_dist:.2f}m, scanning")
                         return
 
-                    # Move forward for ~2 seconds
+                    # Check side obstacles
+                    if left_dist < 0.30:
+                        # Veer right
+                        self.base.move(0.05, 0, -0.3)
+                        return
+                    elif right_dist < 0.30:
+                        # Veer left
+                        self.base.move(0.05, 0, 0.3)
+                        return
+
+                    # Move forward for ~1.5 seconds (shorter bursts)
                     self._search_move_time += self.time_step / 1000.0
-                    if self._search_move_time > 2.0:
+                    if self._search_move_time > 1.5:
                         self._search_phase = 'scan'
                         self._search_angle_covered = 0.0
                         print("[MCP Search] Move complete, scanning again")
 
-                    # Use fuzzy output for velocity if available (MATA64 requirement)
-                    vx = 0.12
-                    if outputs and outputs.linear_velocity > 0.05:
-                        vx = min(outputs.linear_velocity, 0.15)
+                    # Slower forward speed during search
+                    vx = 0.08
+                    if outputs and outputs.linear_velocity > 0:
+                        vx = min(outputs.linear_velocity, 0.10)
                     self.base.move(vx, 0, 0)
 
         elif self.state == MCPState.APPROACHING:
             # Non-blocking approach: one step per iteration
             import math
             target = self.vision.get_target()
+
             if not target:
                 # Don't immediately give up - wait for re-acquisition
                 if not hasattr(self, '_approach_lost_frames'):
@@ -710,40 +667,27 @@ class YouBotMCPController:
                     self._last_known_angle = 0.0
                 self._approach_lost_frames += 1
 
-                # Keep rotating in direction of last known target
-                if self._approach_lost_frames < 90:  # ~3s persistence (was 60)
+                # REDUCED persistence: 45 frames (~1.5s) instead of 90
+                if self._approach_lost_frames < 45:
                     # Search in direction of last known position
-                    # Negative last_angle (cube was LEFT) → positive omega (turn LEFT)
-                    search_omega = 0.25 if self._last_known_angle < 0 else -0.25
-                    self.base.move(0.02, 0, search_omega)  # Slight forward + rotate
-                    if self._approach_lost_frames % 30 == 0:
-                        print(f"[MCP] Approach: target lost, searching... ({self._approach_lost_frames}/90)")
+                    search_omega = 0.30 if self._last_known_angle < 0 else -0.30
+                    self.base.move(0, 0, search_omega)  # Pure rotation to find target
+                    if self._approach_lost_frames % 15 == 0:
+                        print(f"[MCP] Approach: searching for target... ({self._approach_lost_frames}/45)")
                     return
 
-                # Truly lost - go back to SEARCHING but KEEP color lock
-                # This forces the robot to find the SAME color again
-                print(f"[MCP] Approach: target lost 90 frames, re-searching for {self.target_cube_color}")
+                # Lost - go back to SEARCHING
+                print(f"[MCP] Approach: target lost, re-searching")
                 self._approach_lost_frames = 0
-                # DON'T unlock color - keep looking for same color
+                self.vision.unlock()
+                self.target_cube_color = None
                 self.state = MCPState.SEARCHING
-                self.base.reset()
+                self.base.stop()
                 return
 
             # Reset lost frame counter and remember angle
             self._approach_lost_frames = 0
             self._last_known_angle = target.angle
-
-            # Check if target is on the expected side - if not, IGNORE and keep rotating
-            target_side = getattr(self, '_target_side', None)
-            if target_side:
-                current_side = 'right' if target.angle > 0 else 'left'
-                if current_side != target_side and abs(target.angle) > 5:  # Allow small drift
-                    # Wrong side detection - IGNORE it and keep rotating toward expected side
-                    # Right side (+angle) → turn right → negative omega
-                    # Left side (-angle) → turn left → positive omega
-                    omega = -0.20 if target_side == 'right' else 0.20
-                    self.base.move(0, 0, omega)  # Pure rotation toward expected side
-                    return  # Skip the rest of this frame
 
             # Check for front obstacles during approach
             lidar_data = self._get_lidar_data()
@@ -754,9 +698,9 @@ class YouBotMCPController:
                 sectors.get("front_right", {}).get("min", float('inf'))
             )
 
-            # Obstacle too close - stop and return to search
-            if front_dist < 0.25 and target.distance > 0.30:
-                self.base.reset()
+            # Obstacle too close (but not the cube) - stop and return to search
+            if front_dist < 0.25 and target.distance > 0.35:
+                self.base.stop()
                 print(f"[MCP] Approach: obstacle at {front_dist:.2f}m, returning to search")
                 self.vision.unlock()
                 self.target_cube_color = None
@@ -764,11 +708,9 @@ class YouBotMCPController:
                 return
 
             # Check if close enough to grasp
-            # MUST be well-aligned frontally (angle < 12°) to ensure accurate grasp
-            # Lateral correction during grasp is imprecise at larger angles
-            if target.distance <= 0.32 and abs(target.angle) < 12:
-                self.base.reset()
-                # SAVE target parameters BEFORE transitioning (VisionService may lose tracking)
+            # Distance <= 0.25m and angle < 10° for reliable grasp
+            if target.distance <= 0.25 and abs(target.angle) < 10:
+                self.base.stop()
                 self._grasp_target_distance = target.distance
                 self._grasp_target_angle = target.angle
                 print(f"[MCP] Approach complete at {target.distance:.2f}m, {target.angle:.1f}° → GRASPING")
@@ -776,43 +718,37 @@ class YouBotMCPController:
                 return
 
             # Use fuzzy controller for approach decisions (MATA64 requirement)
-            inputs = self._compute_fuzzy_inputs()
+            sector_names = ['far_left', 'left', 'front_left', 'front', 'front_right', 'right', 'far_right', 'back_right', 'back_left']
+            sector_mins = [sectors.get(name, {}).get("min", float('inf')) for name in sector_names]
+
             try:
-                fuzzy_out = self.fuzzy.infer(inputs)
+                fuzzy_out = self.fuzzy.compute_from_sectors(sector_mins, target_angle=target.angle)
                 fuzzy_vx = fuzzy_out.linear_velocity
             except Exception:
-                fuzzy_vx = 0.1
+                fuzzy_vx = 0.08
 
             # Proportional control for alignment and approach
-            # OMEGA SIGN: positive angle (cube RIGHT) → turn RIGHT → negative omega
-            # Negative angle (cube LEFT) → turn LEFT → positive omega
             angle_rad = math.radians(target.angle)
 
-            if abs(target.angle) > 15:
-                # Large angle: ROTATE IN PLACE first (no forward motion)
-                # This prevents oscillation between two same-color cubes
-                omega = -angle_rad * 0.5  # Gentle rotation
-                omega = max(-0.25, min(0.25, omega))
-                self.base.move(0, 0, omega)  # Pure rotation, no forward
+            if abs(target.angle) > 20:
+                # Large angle: PURE ROTATION to align
+                omega = -0.30 if target.angle > 0 else 0.30
+                self.base.move(0, 0, omega)
                 return
-            elif abs(target.angle) > 8:
-                # Medium angle: rotate with slow forward motion
-                omega = -angle_rad * 0.6
-                omega = max(-0.30, min(0.30, omega))
-                vx = 0.05
-                action = "ALIGN"
-                self.base.move(vx, 0, omega)
+            elif abs(target.angle) > 10:
+                # Medium angle: slow forward + rotation
+                omega = -angle_rad * 0.8
+                omega = max(-0.35, min(0.35, omega))
+                self.base.move(0.03, 0, omega)
                 return
             else:
                 # Aligned - move forward with minor correction
-                omega = -angle_rad * 0.8  # Gentle correction while moving
-                # Speed proportional to distance (slow down as we get close)
-                vx = min(0.15, max(0.06, target.distance * 0.5))
-                if fuzzy_vx > 0.05:
+                omega = -angle_rad * 0.6
+                # Slower approach for better tracking
+                vx = min(0.08, max(0.04, target.distance * 0.3))
+                if fuzzy_vx > 0.03:
                     vx = min(vx, fuzzy_vx)
-                action = "FORWARD"
 
-            # Apply movement
             self.base.move(vx, 0, omega)
 
         elif self.state == MCPState.GRASPING:
@@ -827,88 +763,65 @@ class YouBotMCPController:
                         f.write(f"{time.time()}: {msg}\n")
 
                 log(f"[MCP] GRASPING: Attempting grasp of {self.target_cube_color} cube")
-                log(f"[MCP] GRASPING: Current arm height = {self._height_to_string(self.arm.current_height)}")
                 self._save_grasp_screenshot("before")
 
                 try:
-                    import math
-
-                    # VERIFY cube is actually visible before grasp
-                    self._update_vision()
-                    current_target = self.vision.get_target()
-                    if not current_target:
-                        log("[MCP] GRASPING: ABORT - No cube visible!")
-                        self._save_grasp_screenshot("abort_no_cube")
-                        self.vision.unlock()
-                        self.state = MCPState.SEARCHING
-                        self.grasp_started = False
-                        return
-
-                    # Use CURRENT target parameters (not saved)
-                    target_distance = current_target.distance
-                    target_angle = current_target.angle
-                    log(f"[MCP] GRASPING: Current target at {target_distance:.3f}m, {target_angle:.1f}° (color={current_target.color})")
-
-                    # Step 0: PRE-ALIGNMENT - rotate to center cube in view
-                    # Cube at negative angle (left) -> turn by same angle (CW/right) to center
-                    # Cube at positive angle (right) -> turn by same angle (CCW/left) to center
-                    if abs(target_angle) > 5:
-                        turn_angle = target_angle  # Same sign as target angle
-                        log(f"[MCP] GRASPING: Step 0 - Pre-alignment (turning {turn_angle:.1f}° to center cube at {target_angle:.1f}°)")
-                        self.movement.turn(angle_deg=turn_angle, speed=0.3)
-                        # Wait for robot to settle after rotation (30 steps ~ 0.5s)
-                        for _ in range(30):
-                            self._step()
-                        self._update_vision()
-                        current_target = self.vision.get_target()
-                        if current_target:
-                            target_angle = current_target.angle
-                            target_distance = current_target.distance
-                            log(f"[MCP] GRASPING: After alignment: {target_distance:.3f}m, {target_angle:.1f}°")
-                        self._save_grasp_screenshot("after_align")
-
-                    # With FRONT_FLOOR preset, gripper position is fixed.
-                    # Need to drive robot VERY close so cube is directly under gripper.
-                    # Forward move should put the cube at the gripper's reach position.
-                    # For target at ~0.30m, need to close ~25cm to reach FRONT_FLOOR position.
-                    forward_move = 0.25
+                    # Step 1: Short forward approach (8cm instead of 25cm)
+                    # Robot is already at ~25cm, need to get to ~17cm for arm reach
+                    forward_move = 0.08
                     log(f"[MCP] GRASPING: Step 1 - Forward approach ({forward_move*100:.0f}cm)")
-                    self.movement.forward(distance_m=forward_move, speed=0.03)
+                    self.movement.forward(distance_m=forward_move, speed=0.02)
+
+                    # Wait for robot to settle
+                    for _ in range(20):
+                        self._step()
+
                     self._save_grasp_screenshot("after_forward")
 
-                    # 2. Prepare grasp (opens gripper, moves arm to FRONT_PLATE)
-                    log("[MCP] GRASPING: Step 2 - Prepare grasp")
-                    prep_result = self.arm_svc.prepare_grasp()
-                    log(f"[MCP] GRASPING: Prepare result = {prep_result}, arm = {self._height_to_string(self.arm.current_height)}")
+                    # Step 2: Open gripper
+                    log("[MCP] GRASPING: Step 2 - Opening gripper")
+                    self.gripper.release()
+                    for _ in range(30):
+                        self._step()
 
-                    if not prep_result:
-                        log("[MCP] GRASPING: Prepare failed → SEARCHING")
-                        self.vision.unlock()
-                        self.state = MCPState.SEARCHING
-                        self.grasp_started = False
-                        return
-                    log("[MCP] GRASPING: Prepare complete")
+                    # Step 3: Lower arm to FRONT_FLOOR preset (no IK)
+                    log("[MCP] GRASPING: Step 3 - Lowering arm to FRONT_FLOOR")
+                    self.arm.set_height(ArmHeight.FRONT_FLOOR)
+                    for _ in range(60):
+                        self._step()
 
-                    # Use IK for precise positioning to 3cm cube
-                    # After forward_move, remaining distance from camera = target_distance - forward_move
-                    # forward_reach = remaining_distance + CAMERA_ARM_OFFSET
-                    CAMERA_ARM_OFFSET = 0.15
-                    remaining_dist = max(0.03, target_distance - forward_move)
-                    forward_reach = remaining_dist + CAMERA_ARM_OFFSET
-                    forward_reach = max(0.18, min(0.32, forward_reach))
-                    log(f"[MCP] GRASPING: Step 3 - Execute grasp with IK (reach={forward_reach:.3f}m)")
-                    result = self.arm_svc.execute_grasp(use_ik=True, forward_reach=forward_reach)
-                    self._save_grasp_screenshot("after_grasp")
-                    log(f"[MCP] GRASPING: Execute complete - success={result.success}, has_object={result.has_object}, error={result.error}")
-                    log(f"[MCP] GRASPING: Arm after execute = {self._height_to_string(self.arm.current_height)}")
+                    self._save_grasp_screenshot("arm_lowered")
 
-                    if result.success:
+                    # Step 4: Close gripper
+                    log("[MCP] GRASPING: Step 4 - Closing gripper")
+                    self.gripper.grip()
+                    for _ in range(40):
+                        self._step()
+
+                    # Step 5: Check if object was grasped
+                    has_object = self.gripper.has_object()
+                    finger_pos = self.gripper.get_finger_position()
+                    log(f"[MCP] GRASPING: Gripper check - has_object={has_object}, finger_pos={finger_pos}")
+
+                    self._save_grasp_screenshot("after_grip")
+
+                    if has_object:
+                        # Step 6: Lift the cube
+                        log("[MCP] GRASPING: Step 6 - Lifting cube")
+                        self.arm.set_height(ArmHeight.FRONT_PLATE)
+                        for _ in range(60):
+                            self._step()
+
                         self.cubes_collected += 1
                         log(f"[MCP] GRASPING: SUCCESS! Total: {self.cubes_collected}")
                         self.state = MCPState.DEPOSITING
                     else:
-                        log(f"[MCP] GRASPING: FAILED: {result.error}")
-                        self.arm_svc.reset()
+                        log("[MCP] GRASPING: FAILED - No object detected")
+                        # Release and reset
+                        self.gripper.release()
+                        for _ in range(20):
+                            self._step()
+                        self.arm.reset()
                         self.vision.unlock()
                         self.state = MCPState.SEARCHING
 
@@ -916,7 +829,7 @@ class YouBotMCPController:
                     log(f"[MCP] GRASPING: EXCEPTION: {e}")
                     import traceback
                     traceback.print_exc()
-                    self.arm_svc.reset()
+                    self.arm.reset()
                     self.vision.unlock()
                     self.state = MCPState.SEARCHING
 
@@ -952,6 +865,26 @@ class YouBotMCPController:
         while self._step():
             # Update vision
             self._update_vision()
+
+            # EMERGENCY OBSTACLE AVOIDANCE - Check BEFORE any state processing
+            lidar_data = self._get_lidar_data()
+            front_dist = lidar_data.get("min_distance", float('inf'))
+            sectors = lidar_data.get("sectors", {})
+
+            # Get front sector distances
+            front_sector = min(
+                sectors.get("front", {}).get("min", float('inf')),
+                sectors.get("front_left", {}).get("min", float('inf')),
+                sectors.get("front_right", {}).get("min", float('inf'))
+            )
+
+            # Emergency stop if too close to obstacle
+            if front_sector < 0.20 and self.state != MCPState.GRASPING:
+                self.base.stop()
+                # Back up slowly
+                self.base.move(-0.05, 0, 0)
+                self._write_status()
+                continue  # Skip state machine this frame
 
             # Process MCP commands
             cmd = self._read_command()

@@ -18408,3 +18408,31 @@
 1764639416.5620658: [MCP] GRASPING: Arm after execute = FRONT_FLOOR
 1764639416.562159: [MCP] GRASPING: FAILED: No object detected
 1764639416.56227: [MCP] GRASPING: Complete, new state = SEARCHING
+1764641445.714936: [MCP] GRASPING: Attempting grasp of blue cube
+1764641445.715094: [MCP] GRASPING: Current arm height = RESET
+1764641445.71605: [MCP] GRASPING: Current target at 0.161m, -4.9° (color=blue)
+1764641445.7161138: [MCP] GRASPING: Step 0 - Pre-alignment (turning -4.9° to center cube at -4.9°)
+1764641446.502583: [MCP] GRASPING: After alignment: 0.161m, -16.0°
+1764641446.504184: [MCP] GRASPING: Step 1 - Forward approach (12cm) [target was 16cm]
+1764641450.784317: [MCP] GRASPING: Step 2 - Prepare grasp
+1764641451.770092: [MCP] GRASPING: Prepare result = True, arm = FRONT_FLOOR
+1764641451.77053: [MCP] GRASPING: Prepare complete
+1764641451.770754: [MCP] GRASPING: Step 3 - Execute grasp with IK (reach=0.220m, lateral=0.063m)
+1764641453.7505438: [MCP] GRASPING: Execute complete - success=False, has_object=False, error=No object detected
+1764641453.750885: [MCP] GRASPING: Arm after execute = FRONT_FLOOR
+1764641453.751141: [MCP] GRASPING: FAILED: No object detected
+1764641453.751338: [MCP] GRASPING: Complete, new state = SEARCHING
+1764642725.077638: [MCP] GRASPING: Attempting grasp of blue cube
+1764642725.07774: [MCP] GRASPING: Current arm height = RESET
+1764642725.078476: [MCP] GRASPING: Current target at 0.161m, -4.9° (color=blue)
+1764642725.07851: [MCP] GRASPING: Step 0 - Pre-alignment (turning -4.9° to center cube at -4.9°)
+1764642725.1172779: [MCP] GRASPING: After alignment: 0.161m, -16.0°
+1764642725.1177442: [MCP] GRASPING: Step 1 - Forward approach (12cm) [target was 16cm]
+1764642725.3167338: [MCP] GRASPING: Step 2 - Prepare grasp
+1764642725.36616: [MCP] GRASPING: Prepare result = True, arm = FRONT_FLOOR
+1764642725.366276: [MCP] GRASPING: Prepare complete
+1764642725.3663292: [MCP] GRASPING: Step 3 - Execute grasp with IK (reach=0.220m, lateral=0.063m)
+1764642725.464076: [MCP] GRASPING: Execute complete - success=False, has_object=False, error=No object detected
+1764642725.464139: [MCP] GRASPING: Arm after execute = FRONT_FLOOR
+1764642725.464179: [MCP] GRASPING: FAILED: No object detected
+1764642725.464231: [MCP] GRASPING: Complete, new state = SEARCHING

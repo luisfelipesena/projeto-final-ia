@@ -155,13 +155,13 @@ class CubeDetector:
 
             # Check aspect ratio (cubes should be SQUARE, aspect ratio ~1.0)
             aspect_ratio = max(w, h) / (min(w, h) + 0.001)
-            if aspect_ratio > 1.8:  # Must be close to square (stricter than before)
+            if aspect_ratio > 2.2:  # Must be close to square (stricter than before)
                 continue
 
             # Filter out detections that are too large (likely deposit boxes)
             # A 3cm cube: at 10cm = 35px, at 15cm = 24px, at 20cm = 18px
             # Use strict filter: max 30px to avoid deposit boxes
-            MAX_CUBE_PIXELS = 30
+            MAX_CUBE_PIXELS = 100
             if max(w, h) > MAX_CUBE_PIXELS:
                 continue  # Too large - probably a deposit box, not a cube
 

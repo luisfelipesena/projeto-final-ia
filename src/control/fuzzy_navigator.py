@@ -244,45 +244,57 @@ class FuzzyNavigator:
         obstacle_right: float,
         target_angle: float,
     ) -> NavigationOutput:
-        """Simple rule-based fallback when fuzzy not available."""
-        linear = 0.15
+        """Simple rule-based fallback when fuzzy not available.
+
+        Uses more conservative thresholds for reliable obstacle avoidance.
+        Based on Saffiotti (1997) fuzzy navigation principles.
+        """
+        linear = 0.10  # Default slower speed
         angular = 0.0
         action = "forward"
 
-        # Obstacle avoidance (priority)
-        if obstacle_front < 0.3:
-            linear = -0.05
-            angular = 0.0
-            action = "backup"
-        elif obstacle_front < 0.5:
+        # CRITICAL: Obstacle avoidance has HIGHEST priority
+        # Use more conservative thresholds (0.35m instead of 0.3m)
+        if obstacle_front < 0.25:
+            # Emergency: very close - back up
+            linear = -0.08
+            angular = 0.6 if obstacle_left > obstacle_right else -0.6
+            action = "backup_emergency"
+        elif obstacle_front < 0.40:
+            # Close obstacle - stop and turn
             linear = 0.0
             if obstacle_left < obstacle_right:
-                angular = -0.5  # Turn right
+                angular = -0.5  # Turn right (away from left obstacle)
                 action = "avoid_left"
             else:
-                angular = 0.5   # Turn left
+                angular = 0.5   # Turn left (away from right obstacle)
                 action = "avoid_right"
-        elif obstacle_left < 0.3:
-            angular = -0.3
-            linear = 0.1
+        elif obstacle_left < 0.30:
+            # Side obstacle left - veer right
+            angular = -0.35
+            linear = min(linear, 0.06)
             action = "veer_right"
-        elif obstacle_right < 0.3:
-            angular = 0.3
-            linear = 0.1
+        elif obstacle_right < 0.30:
+            # Side obstacle right - veer left
+            angular = 0.35
+            linear = min(linear, 0.06)
             action = "veer_left"
         else:
-            # Target following
-            if abs(target_angle) > 30:
-                angular = 0.5 * np.sign(-target_angle)
-                linear = 0.08
+            # Path is clear - follow target
+            if abs(target_angle) > 25:
+                # Large angle: rotate in place
+                angular = 0.4 * np.sign(-target_angle)
+                linear = 0.02
                 action = "turn_to_target"
             elif abs(target_angle) > 10:
-                angular = 0.25 * np.sign(-target_angle)
-                linear = 0.12
+                # Medium angle: slow forward + rotation
+                angular = 0.3 * np.sign(-target_angle)
+                linear = 0.08
                 action = "adjust_to_target"
             else:
-                linear = 0.2
-                angular = 0.0
+                # Aligned: approach target
+                linear = 0.12
+                angular = 0.1 * np.sign(-target_angle) if abs(target_angle) > 3 else 0.0
                 action = "approach_target"
 
         return NavigationOutput(

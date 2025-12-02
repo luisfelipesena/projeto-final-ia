@@ -10,6 +10,7 @@ torch>=2.0.0
 
 # Fuzzy Logic (MATA64 Fuzzy requirement)
 scikit-fuzzy>=0.4.2
+scipy>=1.10.0  # Required by scikit-fuzzy
 
 # MCP Server
 mcp>=1.0.0

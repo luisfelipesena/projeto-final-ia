@@ -65,7 +65,7 @@ class GripperConfig:
     MAX_POS: float = 0.025          # Fully open position
     OFFSET_WHEN_LOCKED: float = 0.021
     VELOCITY: float = 0.03          # Gripper motor velocity
-    GRIP_THRESHOLD: float = 0.003   # Threshold for object detection
+    GRIP_THRESHOLD: float = 0.006   # Threshold for object detection
     CUBE_SIZE: float = 0.03         # Cube size (3cm)
 
 

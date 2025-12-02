@@ -92,16 +92,23 @@ class GripperController:
             # Fallback to commanded state if no sensor
             return self._commanded_closed
 
-        if not self._commanded_closed:
-            return False
-
+        # Check actual position regardless of commanded state
+        # This handles cases where state might be desynchronized
         position = self.finger_sensor.getValue()
-
-        # If commanded closed but position is above threshold,
-        # the fingers are blocked by an object
-        has_obj = position > GRIPPER.GRIP_THRESHOLD
-
-        return has_obj
+        
+        # If position is significantly larger than closed position, object is present
+        # But we must be careful not to detect "open" as "has object"
+        # So we check if it's smaller than open position but larger than closed threshold
+        
+        is_not_fully_open = position < (GRIPPER.MAX_POS - 0.002)
+        is_not_fully_closed = position > GRIPPER.GRIP_THRESHOLD
+        
+        # If we commanded close, and it stopped before closing -> object
+        if self._commanded_closed and is_not_fully_closed:
+            return True
+            
+        # If we didn't command close, but it's holding something? Unlikely but possible if manual
+        return False
 
     def is_fully_closed(self) -> bool:
         """Check if gripper is completely closed (no object).
