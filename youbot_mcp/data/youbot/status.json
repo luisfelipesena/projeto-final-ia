@@ -1,6 +1,6 @@
 {
   "version": "2025-12-01-V3",
-  "last_update": 1764627010.3500218,
+  "last_update": 1764639580.9452229,
   "current_state": "SEARCHING",
   "autonomous_mode": true,
   "base_velocity": {
@@ -10,10 +10,39 @@
   },
   "arm_height": "RESET",
   "arm_orientation": "FRONT",
-  "gripper_state": "closed",
+  "gripper_state": "open",
   "gripper_has_object": false,
   "cubes_collected": 0,
-  "cube_detections": [],
+  "cube_detections": [
+    {
+      "color": "red",
+      "confidence": 0.09385344596554035,
+      "distance": 0.354,
+      "angle": 15.140625,
+      "center": [
+        98,
+        61
+      ],
+      "size": [
+        10,
+        10
+      ]
+    },
+    {
+      "color": "red",
+      "confidence": 0.09522856971430287,
+      "distance": 0.354,
+      "angle": 6.234375,
+      "center": [
+        78,
+        61
+      ],
+      "size": [
+        10,
+        10
+      ]
+    }
+  ],
   "current_target": null,
   "min_obstacle_distance": Infinity,
   "obstacle_sectors": {

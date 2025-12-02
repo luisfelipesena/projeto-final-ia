@@ -1,2 +1,2 @@
 """Models submodule."""
-from .simple_lidar_mlp import SimpleLIDARMLP
+# Exports available via direct import from perception.models.simple_lidar_mlp

@@ -6,7 +6,7 @@ Implements proper kinematics for 4-wheel omnidirectional movement.
 
 from controller import Robot
 from typing import Tuple
-from ..utils.config import BASE
+from utils.config import BASE
 
 
 class BaseController:

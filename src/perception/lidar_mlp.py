@@ -22,7 +22,7 @@ except ImportError:
     TORCH_AVAILABLE = False
     print("[LIDAR_MLP] Warning: PyTorch not available, using numpy fallback")
 
-from ..utils.config import LIDAR_MLP
+from utils.config import LIDAR_MLP
 
 
 class LidarMLP(nn.Module if TORCH_AVAILABLE else object):

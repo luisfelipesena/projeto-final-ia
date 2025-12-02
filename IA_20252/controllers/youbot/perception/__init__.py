@@ -1,2 +1,2 @@
 """Perception module - bridges to src/perception."""
-from .cube_detector import CubeDetector
+# Exports available via direct import from perception.cube_detector

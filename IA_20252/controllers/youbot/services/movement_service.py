@@ -20,9 +20,17 @@ class MovementService:
         """Stop base movement."""
         self.base.reset()
 
-    def forward(self, speed: float = 0.2) -> None:
-        """Move forward."""
-        self.base.move(speed, 0, 0)
+    def forward(self, speed: float = 0.2, distance_m: float = None) -> bool:
+        """Move forward/backward. If distance_m provided, move that distance and stop.
+        Negative distance_m moves backward."""
+        if distance_m is not None:
+            dt = self.time_step / 1000.0
+            actual_speed = speed if distance_m >= 0 else -speed
+            duration_steps = max(1, int((abs(distance_m) / speed) / dt))
+            return self.move_for_steps(actual_speed, 0, 0, duration_steps)
+        else:
+            self.base.move(speed, 0, 0)
+            return True
 
     def backward(self, speed: float = 0.2) -> None:
         """Move backward."""
@@ -44,3 +52,21 @@ class MovementService:
                 return False
         self.stop()
         return True
+
+    def turn(self, angle_deg: float, speed: float = 0.5) -> bool:
+        """Turn in place by specified angle in degrees."""
+        import math
+        angle_rad = math.radians(abs(angle_deg))
+        # time = angle / angular_speed, steps = time / dt
+        dt = self.time_step / 1000.0
+        duration_steps = max(1, int((angle_rad / speed) / dt))
+        # Note: Sign may be inverted due to coordinate system
+        # Positive angle_deg = turn toward positive camera angle direction
+        omega = -speed if angle_deg > 0 else speed
+        return self.move_for_steps(0, 0, omega, duration_steps)
+
+    def forward_distance(self, distance_m: float, speed: float = 0.1) -> bool:
+        """Move forward by specified distance in meters."""
+        dt = self.time_step / 1000.0
+        duration_steps = max(1, int((distance_m / speed) / dt))
+        return self.move_for_steps(speed, 0, 0, duration_steps)

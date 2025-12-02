@@ -12,7 +12,7 @@ to detect actual grasping success/failure.
 from controller import Robot
 from typing import Optional
 
-from ..utils.config import GRIPPER
+from utils.config import GRIPPER
 
 
 class GripperController:

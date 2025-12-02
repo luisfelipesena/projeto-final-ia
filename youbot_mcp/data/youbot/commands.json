@@ -1,5 +1,1 @@
-{
-  "id": 1764632099596,
-  "action": "start_autonomous",
-  "params": {}
-}
+{"action": "start_autonomous", "params": {}, "timestamp": 1764636083.4855208, "id": 1764636083467}

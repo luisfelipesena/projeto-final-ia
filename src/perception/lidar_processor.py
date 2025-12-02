@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import numpy as np
 
-from ..utils.config import LIDAR
+from utils.config import LIDAR
 
 
 @dataclass

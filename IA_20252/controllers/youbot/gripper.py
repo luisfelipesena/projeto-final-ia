@@ -30,22 +30,26 @@ class Gripper:
     
     def __init__(self, robot):
         """Initialize gripper motors
-        
+
         Args:
             robot: Webots Robot instance
         """
         self.robot = robot
         self.time_step = int(robot.getBasicTimeStep())
-        
+
         # Get gripper finger motor (single motor controls both fingers)
         self.finger = robot.getDevice("finger::left")
-        
-        # Set velocity for position control
+
+        # Get position sensor from motor
+        self.finger_sensor = None
         if self.finger:
+            self.finger_sensor = self.finger.getPositionSensor()
+            if self.finger_sensor:
+                self.finger_sensor.enable(self.time_step)
             self.finger.setVelocity(0.03)
         else:
             print("Warning: Could not find gripper motor 'finger::left'")
-        
+
         # Current state
         self.is_gripping = False
     
@@ -77,8 +81,31 @@ class Gripper:
     
     def is_closed(self):
         """Check if gripper is in closed/gripping state
-        
+
         Returns:
             bool: True if gripper is gripping
         """
         return self.is_gripping
+
+    def has_object(self):
+        """Check if gripper has grasped an object.
+
+        Object detected if fingers didn't fully close (stopped by object).
+
+        Returns:
+            bool: True if object detected between fingers
+        """
+        if not self.finger_sensor:
+            # CRITICAL: Without sensor, cannot detect object reliably
+            # Return False to prevent false positives (grasping thin air)
+            print("[GRIPPER] WARNING: No sensor - cannot detect object")
+            return False
+
+        pos = self.finger_sensor.getValue()
+        # If gripping but position > MIN_POS + threshold, object is present
+        # 3cm cube would stop fingers at ~0.008-0.015
+        # Increased threshold to 0.006 to reduce false positives
+        threshold = 0.006
+        has_obj = self.is_gripping and pos > (MIN_POS + threshold)
+        print(f"[GRIPPER] has_object: pos={pos:.4f}, threshold={MIN_POS + threshold:.4f}, result={has_obj}")
+        return has_obj

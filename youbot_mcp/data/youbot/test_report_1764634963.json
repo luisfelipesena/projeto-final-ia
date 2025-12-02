@@ -1,0 +1,16 @@
+{
+  "result": "TIMEOUT",
+  "cubes_collected": 0,
+  "duration_seconds": 600.2818460464478,
+  "grasp_attempts": 0,
+  "grasp_successes": 0,
+  "grasp_failures": 0,
+  "finger_positions": [],
+  "state_history": [
+    [
+      1.0031139850616455,
+      "SEARCHING",
+      0
+    ]
+  ]
+}

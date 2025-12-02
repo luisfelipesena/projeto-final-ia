@@ -24,10 +24,14 @@ from pathlib import Path
 from enum import Enum, auto
 from typing import Optional, List, Dict, Any
 
-# Add paths
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Add paths - controller is in IA_20252/controllers/youbot_mcp_controller/
+CONTROLLER_DIR = Path(__file__).resolve().parent
+CONTROLLERS_DIR = CONTROLLER_DIR.parent
+IA_20252_DIR = CONTROLLERS_DIR.parent
+PROJECT_ROOT = IA_20252_DIR.parent
+
 sys.path.insert(0, str(PROJECT_ROOT / 'src'))
-sys.path.insert(0, str(PROJECT_ROOT / 'IA_20252' / 'controllers' / 'youbot'))
+sys.path.insert(0, str(CONTROLLERS_DIR / 'youbot'))
 
 from controller import Robot
 
@@ -42,14 +46,28 @@ from services.arm_service import ArmService
 from services.vision_service import VisionService
 from services.navigation_service import NavigationService
 
-# Import perception
-from perception.cube_detector import CubeDetector
+# Import modules using importlib to avoid path conflicts between youbot/ and src/
+import importlib.util
+
+def _load_module(name: str, path: Path):
+    """Load a module directly from file path."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Import perception (from youbot/perception which bridges to src/perception)
+_cube_detector = _load_module("cube_detector", CONTROLLERS_DIR / 'youbot' / 'perception' / 'cube_detector.py')
+CubeDetector = _cube_detector.CubeDetector
 
 # Import Fuzzy Controller (MATA64 requirement)
-from control.fuzzy_controller import FuzzyController, FuzzyInputs
+_fuzzy_module = _load_module("fuzzy_controller", CONTROLLERS_DIR / 'youbot' / 'control' / 'fuzzy_controller.py')
+FuzzyController = _fuzzy_module.FuzzyController
+FuzzyInputs = _fuzzy_module.FuzzyInputs
 
 # Import RNA model for LIDAR (MATA64 requirement)
-from perception.models.simple_lidar_mlp import SimpleLIDARMLP
+_lidar_mlp = _load_module("simple_lidar_mlp", CONTROLLERS_DIR / 'youbot' / 'perception' / 'models' / 'simple_lidar_mlp.py')
+SimpleLIDARMLP = _lidar_mlp.SimpleLIDARMLP
 
 # MCP communication paths
 MCP_DIR = PROJECT_ROOT / "youbot_mcp"
@@ -315,15 +333,7 @@ class YouBotMCPController:
             self.last_detections = self.detector.detect(image)
             self.current_target = self.vision.get_target()
 
-            # Debug: log raw detections during approach
-            if self.state == MCPState.APPROACHING and self.last_detections:
-                from pathlib import Path
-                with open(Path(__file__).parent / "data" / "youbot" / "nav_debug.log", 'a') as f:
-                    det = self.last_detections[0] if self.last_detections else None
-                    if det:
-                        f.write(f"RAW_DET: {det.color} angle={det.angle:.1f} dist={det.distance:.2f}\n")
-                    else:
-                        f.write("RAW_DET: NONE angle=0.0 dist=0.00\n")
+            # Debug logging removed - was causing path issues
 
     def _get_lidar_data(self) -> Dict[str, Any]:
         """Get processed LIDAR data."""
@@ -389,7 +399,8 @@ class YouBotMCPController:
                     "confidence": det.confidence,
                     "distance": det.distance,
                     "angle": det.angle,
-                    "bbox": det.bbox
+                    "center": (det.center_x, det.center_y),
+                    "size": (det.width, det.height)
                 })
 
             target_info = None
@@ -577,11 +588,12 @@ class YouBotMCPController:
             return
 
         # Calculate forward reach for IK
-        # Camera is ~15cm ahead of arm base, so arm needs to reach FURTHER
-        CAMERA_ARM_OFFSET = 0.15
+        # Camera is ~18cm ahead of arm base on YouBot
+        # Arm max reach ~0.28m (arm2=0.155 + arm3=0.135, minus geometry)
+        CAMERA_ARM_OFFSET = 0.18
         camera_dist = target_distance - forward_move
         forward_reach = camera_dist + CAMERA_ARM_OFFSET
-        forward_reach = max(0.18, min(0.32, forward_reach))
+        forward_reach = max(0.20, min(0.28, forward_reach))
         print(f"[MCP] Step 2: Executing grasp with IK (camera_dist={camera_dist:.2f}m + offset={CAMERA_ARM_OFFSET:.2f}m = reach={forward_reach:.2f}m)")
         result = self.arm_svc.execute_grasp(use_ik=True, forward_reach=forward_reach)
 
@@ -597,53 +609,35 @@ class YouBotMCPController:
             self.arm_svc.reset()
 
     def _execute_deposit(self, color: str) -> None:
-        """Execute deposit sequence for given color."""
-        print(f"[MCP] Depositing to {color} box")
+        """Execute deposit sequence - for now just release in place."""
+        print(f"[MCP] Depositing {color} cube - releasing in place")
 
-        box_pos = DEPOSIT_BOXES.get(color)
-        if not box_pos:
-            print(f"[MCP] Unknown box color: {color}")
-            return
-
-        # Simple timed deposit (could be improved with navigation)
-        # Turn 180 degrees
-        self.movement.turn(angle_deg=180, speed=0.8)
-
-        # Drive forward
-        self.movement.forward(distance_m=0.5, speed=0.15)
-
-        # Execute deposit
+        # Simple deposit: just release where we are (no movement)
+        # TODO: Navigate to actual deposit box later
         self.arm_svc.prepare_deposit()
         self.arm_svc.execute_deposit()
         self.arm_svc.return_to_rest()
 
         self.target_cube_color = None
-        print("[MCP] Deposit complete")
+        print(f"[MCP] Deposit complete - {color} cube released")
 
     def _run_autonomous_step(self) -> None:
         """Run one step of autonomous cube collection."""
         if self.state == MCPState.SEARCHING:
             target = self.vision.get_target()
 
-            # During search, accept targets with 2+ frames (rotation makes 3 frames difficult)
-            # Also check confidence >= 0.60 for reliability
-            if target and target.frames_tracked >= 2 and target.confidence >= 0.60:
+            # Accept targets with good confidence
+            if target and target.confidence >= 0.20:
                 # CRITICAL: Stop rotation IMMEDIATELY before state change
                 self.base.reset()
                 self.target_cube_color = target.color
-                self._target_side = 'right' if target.angle > 0 else 'left'  # Remember which side
+                self._target_side = 'right' if target.angle > 0 else 'left'
                 self.vision.lock_color(target.color)
-                # Reset search state for next time
                 self._search_angle_covered = 0.0
                 self._search_phase = 'scan'
                 self.state = MCPState.APPROACHING
-                print(f"[MCP Search] Target acquired: {target.color} at {target.distance:.2f}m, {target.angle:.1f}° (frames={target.frames_tracked}) → APPROACHING")
-                return  # Don't do anything else this frame
-            elif target and target.frames_tracked == 1 and target.confidence >= 0.60:
-                # NEW: Promising detection found - PAUSE rotation to let tracking stabilize
-                # This gives VisionService one more frame to confirm (reach frames_tracked=2)
-                self.base.reset()
-                return  # Wait one frame for tracking to confirm
+                print(f"[MCP Search] Target acquired: {target.color} at {target.distance:.2f}m, {target.angle:.1f}° → APPROACHING")
+                return
             else:
                 # Get LIDAR data - only consider FRONT sectors for obstacle avoidance
                 lidar_data = self._get_lidar_data()
@@ -710,14 +704,31 @@ class YouBotMCPController:
                     self._last_known_angle = 0.0
                 self._approach_lost_frames += 1
 
+                # Check obstacles BEFORE moving blind
+                lidar_data = self._get_lidar_data()
+                sectors = lidar_data.get("sectors", {})
+                front_dist = min(
+                    sectors.get("front", {}).get("min", float('inf')),
+                    sectors.get("front_left", {}).get("min", float('inf')),
+                    sectors.get("front_right", {}).get("min", float('inf'))
+                )
+                if front_dist < 0.30:
+                    # Obstacle while searching - abort approach
+                    self.base.reset()
+                    print(f"[MCP] Approach: obstacle at {front_dist:.2f}m while searching, aborting")
+                    self.vision.unlock()
+                    self.target_cube_color = None
+                    self.state = MCPState.SEARCHING
+                    self._approach_lost_frames = 0
+                    return
+
                 # Keep rotating in direction of last known target
-                if self._approach_lost_frames < 90:  # ~3s persistence (was 60)
-                    # Search in direction of last known position
-                    # Negative last_angle (cube was LEFT) → positive omega (turn LEFT)
+                if self._approach_lost_frames < 90:  # ~3s persistence
+                    # ONLY ROTATE, no forward movement (avoid hitting walls)
                     search_omega = 0.25 if self._last_known_angle < 0 else -0.25
-                    self.base.move(0.02, 0, search_omega)  # Slight forward + rotate
+                    self.base.move(0, 0, search_omega)  # Pure rotation only
                     if self._approach_lost_frames % 30 == 0:
-                        print(f"[MCP] Approach: target lost, searching... ({self._approach_lost_frames}/90)")
+                        print(f"[MCP] Approach: target lost, rotating to search... ({self._approach_lost_frames}/90)")
                     return
 
                 # Truly lost - go back to SEARCHING but KEEP color lock
@@ -763,15 +774,18 @@ class YouBotMCPController:
                 self.state = MCPState.SEARCHING
                 return
 
-            # Check if close enough to grasp
-            # MUST be well-aligned frontally (angle < 12°) to ensure accurate grasp
-            # Lateral correction during grasp is imprecise at larger angles
-            if target.distance <= 0.32 and abs(target.angle) < 12:
+            # Check if close enough to grasp using VISUAL SERVOING
+            # Instead of trusting distance estimate, use apparent size of cube
+            # A 3cm cube at 15cm appears ~24px, at 20cm appears ~18px
+            # Grasp when cube appears large enough (>= 22px) and aligned
+            apparent_size = max(target.width, target.height)
+            MIN_GRASP_SIZE = 22  # pixels - cube must appear this large to grasp
+
+            if apparent_size >= MIN_GRASP_SIZE and abs(target.angle) < 12:
                 self.base.reset()
-                # SAVE target parameters BEFORE transitioning (VisionService may lose tracking)
                 self._grasp_target_distance = target.distance
                 self._grasp_target_angle = target.angle
-                print(f"[MCP] Approach complete at {target.distance:.2f}m, {target.angle:.1f}° → GRASPING")
+                print(f"[MCP] Approach complete: size={apparent_size}px, angle={target.angle:.1f}° → GRASPING")
                 self.state = MCPState.GRASPING
                 return
 
@@ -850,10 +864,9 @@ class YouBotMCPController:
                     log(f"[MCP] GRASPING: Current target at {target_distance:.3f}m, {target_angle:.1f}° (color={current_target.color})")
 
                     # Step 0: PRE-ALIGNMENT - rotate to center cube in view
-                    # Cube at negative angle (left) -> turn by same angle (CW/right) to center
-                    # Cube at positive angle (right) -> turn by same angle (CCW/left) to center
-                    if abs(target_angle) > 5:
-                        turn_angle = target_angle  # Same sign as target angle
+                    # ALWAYS align if angle > 2° for precision grasping
+                    if abs(target_angle) > 2:
+                        turn_angle = target_angle  # Same sign - turn toward the target
                         log(f"[MCP] GRASPING: Step 0 - Pre-alignment (turning {turn_angle:.1f}° to center cube at {target_angle:.1f}°)")
                         self.movement.turn(angle_deg=turn_angle, speed=0.3)
                         # Wait for robot to settle after rotation (30 steps ~ 0.5s)
@@ -867,13 +880,17 @@ class YouBotMCPController:
                             log(f"[MCP] GRASPING: After alignment: {target_distance:.3f}m, {target_angle:.1f}°")
                         self._save_grasp_screenshot("after_align")
 
-                    # With FRONT_FLOOR preset, gripper position is fixed.
-                    # Need to drive robot VERY close so cube is directly under gripper.
-                    # Forward move should put the cube at the gripper's reach position.
-                    # For target at ~0.30m, need to close ~25cm to reach FRONT_FLOOR position.
-                    forward_move = 0.25
-                    log(f"[MCP] GRASPING: Step 1 - Forward approach ({forward_move*100:.0f}cm)")
+                    # With FRONT_FLOOR preset, gripper reaches about 10-12cm forward from base.
+                    # Get VERY close - robot must be within arm reach distance
+                    GRASP_STANDOFF = 0.04  # Stop 4cm from cube (arm reaches ~10-12cm)
+                    forward_move = max(0.08, target_distance - GRASP_STANDOFF)  # Move at least 8cm
+                    forward_move = min(forward_move, 0.40)  # Safety cap at 40cm
+                    log(f"[MCP] GRASPING: Step 1 - Forward approach ({forward_move*100:.0f}cm) [target was {target_distance*100:.0f}cm]")
                     self.movement.forward(distance_m=forward_move, speed=0.03)
+                    # CRITICAL: Stop base completely before arm movement
+                    self.base.reset()
+                    for _ in range(10):
+                        self._step()
                     self._save_grasp_screenshot("after_forward")
 
                     # 2. Prepare grasp (opens gripper, moves arm to FRONT_PLATE)
@@ -890,14 +907,20 @@ class YouBotMCPController:
                     log("[MCP] GRASPING: Prepare complete")
 
                     # Use IK for precise positioning to 3cm cube
-                    # After forward_move, remaining distance from camera = target_distance - forward_move
-                    # forward_reach = remaining_distance + CAMERA_ARM_OFFSET
-                    CAMERA_ARM_OFFSET = 0.15
-                    remaining_dist = max(0.03, target_distance - forward_move)
+                    # Camera is ~18cm ahead of arm base on YouBot
+                    # Arm max reach ~0.28m (arm2=0.155 + arm3=0.135, minus geometry)
+                    CAMERA_ARM_OFFSET = 0.18
+                    remaining_dist = max(0.02, target_distance - forward_move)
                     forward_reach = remaining_dist + CAMERA_ARM_OFFSET
-                    forward_reach = max(0.18, min(0.32, forward_reach))
-                    log(f"[MCP] GRASPING: Step 3 - Execute grasp with IK (reach={forward_reach:.3f}m)")
-                    result = self.arm_svc.execute_grasp(use_ik=True, forward_reach=forward_reach)
+                    forward_reach = max(0.20, min(0.28, forward_reach))  # Arm limit ~0.28m
+
+                    # Calculate lateral offset from target angle
+                    # Negative angle = left, need positive x offset in IK
+                    lateral_offset = forward_reach * math.tan(math.radians(-target_angle))
+                    lateral_offset = max(-0.08, min(0.08, lateral_offset))  # Limit to ±8cm
+
+                    log(f"[MCP] GRASPING: Step 3 - Execute grasp with IK (reach={forward_reach:.3f}m, lateral={lateral_offset:.3f}m)")
+                    result = self.arm_svc.execute_grasp(use_ik=True, forward_reach=forward_reach, lateral_offset=lateral_offset)
                     self._save_grasp_screenshot("after_grasp")
                     log(f"[MCP] GRASPING: Execute complete - success={result.success}, has_object={result.has_object}, error={result.error}")
                     log(f"[MCP] GRASPING: Arm after execute = {self._height_to_string(self.arm.current_height)}")

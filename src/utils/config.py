@@ -111,11 +111,13 @@ HSV_RANGES = {
 }
 
 # Minimum contour area to consider as cube (pixels^2)
-MIN_CUBE_AREA = 100
+# Reduced to detect distant cubes (10x10=100 is borderline)
+MIN_CUBE_AREA = 50
 
 # Distance estimation constants (for monocular camera)
 CUBE_REAL_SIZE = 0.03  # 3cm cube
-FOCAL_LENGTH_PIXELS = 110  # Approximate focal length in pixels
+# Focal length: f = (width/2) / tan(FOV/2) = 64 / tan(28.5°) = 118
+FOCAL_LENGTH_PIXELS = 118  # Calculated for 128px width, 57° FOV
 
 
 # =============================================================================

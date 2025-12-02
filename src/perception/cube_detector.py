@@ -15,7 +15,7 @@ except ImportError:
     cv2 = None
     print("[PERCEPTION] Warning: OpenCV not available, cube detection disabled")
 
-from ..utils.config import (
+from utils.config import (
     HSV_RANGES,
     MIN_CUBE_AREA,
     CUBE_REAL_SIZE,
@@ -97,6 +97,12 @@ class CubeDetector:
             return float('inf')
 
         distance = (CUBE_REAL_SIZE * self.focal_length) / apparent_size
+
+        # Sanity check: robot can't grasp closer than ~7cm (arm reach limit)
+        # Cubes appearing at <5cm are likely detection errors
+        if distance < 0.05:
+            return float('inf')
+
         return distance
 
     def _estimate_angle(self, center_x: int) -> float:
@@ -147,14 +153,26 @@ class CubeDetector:
             # Bounding rectangle
             x, y, w, h = cv2.boundingRect(contour)
 
-            # Check aspect ratio (cubes should be roughly square)
+            # Check aspect ratio (cubes should be SQUARE, aspect ratio ~1.0)
             aspect_ratio = max(w, h) / (min(w, h) + 0.001)
-            if aspect_ratio > 2.5:  # Too elongated, not a cube
+            if aspect_ratio > 1.8:  # Must be close to square (stricter than before)
                 continue
+
+            # Filter out detections that are too large (likely deposit boxes)
+            # A 3cm cube: at 10cm = 35px, at 15cm = 24px, at 20cm = 18px
+            # Use strict filter: max 30px to avoid deposit boxes
+            MAX_CUBE_PIXELS = 30
+            if max(w, h) > MAX_CUBE_PIXELS:
+                continue  # Too large - probably a deposit box, not a cube
 
             # Center point
             center_x = x + w // 2
             center_y = y + h // 2
+
+            # Filter: cubes on ground appear in lower portion of image (y > 40%)
+            # Deposit boxes/walls appear higher in image
+            if center_y < self.height * 0.40:
+                continue  # Too high in image - likely deposit box or wall
 
             # Distance estimation using larger dimension
             apparent_size = max(w, h)

@@ -10,7 +10,7 @@ from enum import IntEnum
 from typing import Tuple, Optional, List
 import math
 
-from ..utils.config import ARM_JOINT_LIMITS, ARM_SEGMENT_LENGTHS
+from utils.config import ARM_JOINT_LIMITS, ARM_SEGMENT_LENGTHS
 
 
 class ArmHeight(IntEnum):
