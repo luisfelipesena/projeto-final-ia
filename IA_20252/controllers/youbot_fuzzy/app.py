@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from controller import Robot
+from controller import Robot  # type: ignore[import-not-found]
 
 from youbot.arm import Arm
 from youbot.base import Base

@@ -1,0 +1,9 @@
+{
+  "reportMissingImports": "warning",
+  "extraPaths": [],
+  "ignore": [
+    "IA_20252/controllers/youbot_fuzzy/**"
+  ],
+  "typeCheckingMode": "basic"
+}
+

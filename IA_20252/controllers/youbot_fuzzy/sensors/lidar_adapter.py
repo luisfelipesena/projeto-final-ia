@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import List, Optional
 
-from controller import Lidar
+from controller import Lidar  # type: ignore[import-not-found]
 
 from .. import config
 from ..types import LidarPoint, LidarSnapshot

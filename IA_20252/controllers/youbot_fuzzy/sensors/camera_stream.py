@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from controller import Camera
+from controller import Camera  # type: ignore[import-not-found]
 
 from .. import config
 
