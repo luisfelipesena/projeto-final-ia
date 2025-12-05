@@ -33,7 +33,17 @@ class FuzzyPlanner:
         self._approach_gain = 0.12
         self._turn_gain = 0.6
 
-    def plan(self, obstacles: LidarSnapshot, cube: CubeHypothesis, load_state: bool) -> MotionCommand:
+    def plan(
+        self,
+        obstacles: LidarSnapshot,
+        cube: CubeHypothesis,
+        load_state: bool,
+        patch_vector: tuple[float, float] = (0.0, 0.0),
+        goal_vector: tuple[float, float] = (0.0, 0.0),
+        cube_candidates: int = 0,
+    ) -> MotionCommand:
+        import math
+
         front_terms = self._front_membership(obstacles.front_distance)
         left_terms = self._clearance_membership(obstacles.left_distance)
         right_terms = self._clearance_membership(obstacles.right_distance)
@@ -66,12 +76,34 @@ class FuzzyPlanner:
                 gripper_request = "GRIP"
 
         # --- Rule group 3: Carrying cube -> head towards drop zone -------------------------
-        if load_state:
-            vx = max(vx, 0.06)
-            omega *= 0.5
-            if front_terms["very_close"] > 0.6:
+        elif load_state:
+            gx, gy = goal_vector
+            goal_dist = math.sqrt(gx * gx + gy * gy)
+            if goal_dist > 0.1:
+                # Navigate towards goal box
+                goal_heading = math.atan2(gy, gx)
+                omega += goal_heading * 0.5
+                vx += min(0.1, goal_dist * 0.1)
+            if front_terms["very_close"] > 0.6 and goal_dist < 0.5:
                 lift_request = "PLATE"
                 gripper_request = "RELEASE"
+
+        # --- Rule group 4: Explore patches when no cube detected ---------------------------
+        elif cube_conf < 0.01 and not load_state:
+            px, py = patch_vector
+            patch_dist = math.sqrt(px * px + py * py)
+            if patch_dist > 0.1:
+                patch_heading = math.atan2(py, px)
+                omega += patch_heading * 0.3
+                vx += min(0.08, patch_dist * 0.05)
+            else:
+                # No patch to explore, wander
+                vx += 0.05 * front_terms["far"]
+                omega += 0.1 * (right_terms["clear"] - left_terms["clear"])
+
+        # --- Rule group 5: Slow down if uncertain cubes nearby -----------------------------
+        if cube_candidates > 0 and cube_conf < 0.3:
+            vx *= 0.5  # Slow down to get better detection
 
         return MotionCommand(vx=vx, vy=vy, omega=omega, lift_request=lift_request, gripper_request=gripper_request)
 

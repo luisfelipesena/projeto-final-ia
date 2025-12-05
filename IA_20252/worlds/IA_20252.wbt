@@ -113,6 +113,7 @@ Youbot {
   hidden rotation_14 0 -0.9999999999999999 0 0.9489978103973521
   translation -3.999741667806089 9.611435210452064e-06 0.10193777037854702
   rotation -0.02594384633268995 0.9992896693161437 0.027332647795228482 0.0015898582485581196
+  controller "youbot_fuzzy"
   controllerArgs [
     ""
   ]
@@ -154,7 +155,7 @@ Youbot {
 }
 Robot {
   name "Supervisor"
-  controller "youbot_fuzzy"
+  controller "supervisor"
   supervisor TRUE
 }
 WoodenBox {

@@ -31,6 +31,7 @@ class Detection:
     label: Optional[str]
     confidence: float
     bbox: Tuple[int, int, int, int]  # x1, y1, x2, y2
+    center: Optional[Tuple[float, float]] = None  # center (cx, cy)
 
 
 @dataclass
