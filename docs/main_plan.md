@@ -25,7 +25,7 @@ Este documento descreve o plano completo para implementar o controlador intelige
 ```
 
 ## 2. Fases de Implementação
-
+ 
 ### Fase 1: Sensores e Mundo (✅ Concluído)
 
 **Objetivo:** Configurar os sensores LIDAR duplo e câmera no mundo Webots.
