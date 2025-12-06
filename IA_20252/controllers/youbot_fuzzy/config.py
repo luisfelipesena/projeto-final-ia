@@ -73,11 +73,11 @@ LIDAR_HIGH = LidarConfig(
     min_range=0.1,
     max_range=7.0,
     near_range=0.05,
-    # Webots LIDAR convention (empirically verified):
-    # Index 0=left, 90=front, 180=right, 270=back
-    front_sector=(75, 105),   # Around index 90 (±15°)
-    left_sector=(345, 375),   # Around index 0/360 (±15°, wraps)
-    right_sector=(165, 195),  # Around index 180 (±15°)
+    # After rotating LIDAR 90° in world file:
+    # Index 0=front, 90=left, 180=back, 270=right
+    front_sector=(345, 375),  # Around index 0/360 (±15°, wraps)
+    left_sector=(75, 105),    # Around index 90 (±15°)
+    right_sector=(255, 285),  # Around index 270 (±15°)
 )
 
 LIDAR_LOW = LidarConfig(
