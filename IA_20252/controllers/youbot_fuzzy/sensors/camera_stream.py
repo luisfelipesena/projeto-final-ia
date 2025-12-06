@@ -7,7 +7,7 @@ from typing import Optional
 
 from controller import Camera  # type: ignore[import-not-found]
 
-from .. import config
+import config
 
 
 @dataclass
@@ -28,7 +28,7 @@ class CameraStream:
         except AttributeError:
             self._camera = None
         if self._camera:
-            self._camera.enable(robot.getBasicTimeStep())
+            self._camera.enable(int(robot.getBasicTimeStep()))
 
     def has_sensor(self) -> bool:
         return self._camera is not None

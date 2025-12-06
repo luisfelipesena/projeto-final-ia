@@ -182,6 +182,16 @@ Este documento descreve o plano completo para implementar o controlador intelige
 | `lidar_low` | (0.15, 0.05, 0) | 180° | 0.03-2.5m | Detectar cubos |
 | `lidar_high` | (0, 0.25, 0) | 360° | 0.1-7.0m | Navegação |
 
+**Configuração de Setores (config.py):**
+```python
+# Convenção Webots: 0=frente, 90=esquerda, 180=atrás, 270=direita
+front_sector=(330, 390)  # -30° a +30° (wrap-around em 360)
+left_sector=(60, 120)    # 60° a 120°
+right_sector=(240, 300)  # 240° a 300°
+```
+
+**Debug LIDAR:** Console mostra `LIDAR_RAW: 0:X.XX | 45:X.XX | ...` para calibração.
+
 ## 4. Dependências de Software
 
 ### 4.1 Python Packages (opcionais para ML)
@@ -192,33 +202,43 @@ pip install numpy opencv-python ultralytics open3d joblib scikit-learn
 
 ### 4.2 Modelos Pré-treinados
 
-| Arquivo | Localização | Descrição |
-|---------|-------------|-----------|
-| `yolov8n-cubes.pt` | `models/` | Detector YOLO treinado |
-| `adaboost_color.pkl` | `models/` | Classificador AdaBoost |
+| Arquivo | Localização | Status | Descrição |
+|---------|-------------|--------|-----------|
+| `yolov8n-cubes.pt` | `models/` | ⚠️ PLACEHOLDER | Modelo COCO base - precisa treinar |
+| `adaboost_color.pkl` | `models/` | ❌ FALTANDO | Precisa criar via train_adaboost.py |
+
+**IMPORTANTE:** O modelo YOLO atual é apenas o YOLOv8n padrão (COCO). Não detecta cubos coloridos!
+Sistema atualmente usa fallback HSV heuristic para classificação de cores.
 
 ## 5. Próximos Passos (Pendentes)
 
 ### 5.1 Treinamento de Modelos
 
-1. **Gerar Dataset Sintético:**
+1. **Gerar Dataset Sintético (dentro do Webots):**
    ```bash
-   # No Webots, carregar o mundo com supervisor modificado
-   # Executar tools/run_dataset_capture.py
-   python -m tools.run_dataset_capture --output datasets/cubes --count 1000
+   cd IA_20252/controllers/youbot_fuzzy
+   export YOUBOT_DATASET_DIR=datasets/cubes/train
+   # Usar como controlador temporário no Webots
+   python tools/run_dataset_capture.py
    ```
 
-2. **Treinar YOLOv8:**
+2. **Treinar AdaBoost (RECOMENDADO - mais simples):**
    ```bash
-   yolo train model=yolov8n.pt data=datasets/cubes/data.yaml epochs=100
+   cd IA_20252/controllers/youbot_fuzzy
+   python tools/train_adaboost.py \
+       --dataset datasets/cubes/train \
+       --output models/adaboost_color.pkl
    ```
 
-3. **Treinar AdaBoost:**
-   ```python
-   from sklearn.ensemble import AdaBoostClassifier
-   # Extrair features HSV+HOG dos patches
-   # Treinar e salvar com joblib
+3. **Treinar YOLOv8 (OPCIONAL - mais complexo):**
+   ```bash
+   # Requer dataset YOLO format (images/ + labels/)
+   cd IA_20252/controllers/youbot_fuzzy
+   yolo train model=yolov8n.pt data=datasets/cubes/data.yaml epochs=50 imgsz=128
+   cp runs/detect/train/weights/best.pt models/yolov8n-cubes.pt
    ```
+
+**NOTA:** O sistema funciona SEM ML usando fallback HSV heuristic. ML melhora precisão.
 
 ### 5.2 Calibração e Ajustes
 
@@ -249,7 +269,7 @@ IA_20252/controllers/youbot_fuzzy/
 ├── youbot_fuzzy.py          # Entrypoint Webots
 ├── app.py                   # Wiring principal
 ├── config.py                # Constantes
-├── types.py                 # Dataclasses
+├── data_types.py            # Dataclasses
 ├── logger.py                # Logging
 ├── sensors/
 │   ├── lidar_adapter.py     # Dual-LIDAR
@@ -275,11 +295,12 @@ IA_20252/controllers/youbot_fuzzy/
 │   └── arm_service.py
 ├── mission/
 │   └── pipeline.py
-├── models/                   # Pesos ML (criar)
-│   ├── yolov8n-cubes.pt
-│   └── adaboost_color.pkl
+├── models/                   # Pesos ML
+│   ├── yolov8n-cubes.pt      # ⚠️ Placeholder (precisa treinar)
+│   └── adaboost_color.pkl    # ❌ Criar via train_adaboost.py
 └── tools/
-    └── run_dataset_capture.py
+    ├── run_dataset_capture.py  # Gera imagens no Webots
+    └── train_adaboost.py       # Treina classificador de cor
 ```
 
 ## 7. Checklist de Entrega

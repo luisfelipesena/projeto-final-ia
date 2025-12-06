@@ -15,8 +15,8 @@ try:  # pragma: no cover
 except Exception:  # pragma: no cover
     UltralyticsYOLO = None  # type: ignore
 
-from .. import config
-from ..types import Detection
+import config
+from data_types import Detection
 
 
 class YoloDetector:

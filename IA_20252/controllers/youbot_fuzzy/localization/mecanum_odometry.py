@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import List, Optional
 
-from ..types import MotionCommand
+from data_types import MotionCommand
 
 
 class MecanumOdometry:

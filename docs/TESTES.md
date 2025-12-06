@@ -33,6 +33,32 @@ IA_20252/controllers/youbot_fuzzy/models/
 └── adaboost_color.pkl    # Classificador AdaBoost
 ```
 
+### 1.4 Treinamento de Modelos ML
+
+**Passo 1: Gerar dataset de imagens (dentro do Webots)**
+```bash
+cd IA_20252/controllers/youbot_fuzzy
+# Definir diretório de saída
+export YOUBOT_DATASET_DIR=datasets/cubes/train
+# Executar no Webots como controlador supervisor temporário
+python tools/run_dataset_capture.py
+```
+
+**Passo 2: Treinar classificador AdaBoost**
+```bash
+cd IA_20252/controllers/youbot_fuzzy
+python tools/train_adaboost.py --dataset datasets/cubes/train --output models/adaboost_color.pkl
+```
+
+**Passo 3: Treinar YOLO (opcional)**
+```bash
+# Requer ultralytics instalado
+cd IA_20252/controllers/youbot_fuzzy
+yolo train model=yolov8n.pt data=datasets/cubes/data.yaml epochs=50 imgsz=128
+# Copiar melhor modelo para:
+cp runs/detect/train/weights/best.pt models/yolov8n-cubes.pt
+```
+
 ## 2. Preparação do Ambiente
 
 ### 2.1 Abrir o Webots
@@ -123,12 +149,37 @@ lidar_low enabled
 1. Menu: `View > Optional Rendering > Lidar Rays`
 2. Deve mostrar raios do `lidar_high` (360°) e `lidar_low` (180° frontal)
 
-**Teste 3: Valores de distância**
+**Teste 3: Calibração dos Setores LIDAR (Debug)**
+```
+# Nos logs, output de debug mostra distâncias em índices-chave:
+LIDAR_RAW: 0:X.XX | 45:X.XX | 90:X.XX | 135:X.XX | 180:X.XX | 225:X.XX | 270:X.XX | 315:X.XX
+```
+
+**Convenção Webots para LIDAR 360°:**
+- Índice 0 = frente do robô (0°)
+- Índice 90 = esquerda (90°)
+- Índice 180 = atrás (180°)
+- Índice 270 = direita (270°)
+
+**Como verificar mapeamento:**
+1. Posicionar robô de frente para parede
+2. Observar qual índice mostra menor distância
+3. Se índice 0 mostra menor distância → setores corretos
+4. Se outro índice mostra menor → ajustar `front_sector` em config.py
+
+**Configuração atual (config.py):**
+```python
+front_sector=(330, 390)  # -30° a +30° (wraps around)
+left_sector=(60, 120)    # 60° a 120°
+right_sector=(240, 300)  # 240° a 300°
+```
+
+**Teste 4: Valores de distância**
 ```
 # Nos logs, verificar:
 front=X.XX, left=X.XX, right=X.XX, density=X.XX
 ```
-- `front` deve diminuir ao aproximar de obstáculo
+- `front` deve diminuir ao aproximar de obstáculo na frente
 - `density` deve aumentar perto de paredes
 
 ### 4.2 Câmera e Percepção
@@ -324,6 +375,74 @@ python youbot_fuzzy.py > logs/execution.log 2>&1
 - [ ] Sem mostrar código no vídeo
 - [ ] Código funciona sem GPS
 - [ ] Supervisor não foi modificado
+
+## 8. Debug Mode e Output Esperado
+
+### 8.1 Ativar Debug Logging
+
+Em `config.py`:
+```python
+ENABLE_LOGGING = True
+LOG_INTERVAL_STEPS = 10  # Log a cada 10 steps (reduzir para mais detalhes)
+```
+
+### 8.2 Output Esperado (Comportamento Correto)
+
+**Inicialização:**
+```
+INFO: youbot: Starting controller: /usr/bin/python3 -u youbot_fuzzy.py
+```
+
+**Durante exploração (SCAN_GRID):**
+```
+LIDAR_RAW: 0:3.50 | 45:2.10 | 90:1.80 | 135:2.50 | 180:0.45 | 225:2.80 | 270:1.90 | 315:3.20
+CAMERA_DEBUG: mean_BGR=(45.2,48.3,52.1)
+phase=SCAN_GRID load=False cube=- conf=0.00
+front=3.50 left=1.95 right=1.95 density=0.02
+vx=0.10 vy=0.00 omega=0.05
+```
+
+**Quando detecta cubo:**
+```
+CAMERA_DEBUG: mean_BGR=(35.2,180.3,42.1)
+phase=PICK load=False cube=GREEN conf=0.65 bear=-0.12 align=0.03
+front=0.85 left=2.10 right=1.80 density=0.01
+vx=0.08 vy=-0.02 omega=0.18
+```
+
+**Durante coleta:**
+```
+phase=PICK load=False lift=FLOOR gripper=GRIP
+```
+
+**Carregando cubo:**
+```
+phase=DELIVER load=True cube=GREEN goal=(0.48, 1.58)
+vx=0.10 vy=0.00 omega=0.25
+```
+
+### 8.3 Sinais de Problema
+
+**LIDAR com setores incorretos (robô gira sem parar):**
+```
+# front mostra distância curta quando não há obstáculo na frente
+front=0.17 left=3.20 right=0.10
+vx=-0.15 vy=0.10 omega=0.60  # Escape mode constante
+```
+
+**Câmera não detecta cores:**
+```
+CAMERA_DEBUG: mean_BGR=(128.0,128.0,128.0)  # Cinza = sem cor dominante
+cube=- conf=0.00
+```
+
+**Robô preso em escape loop:**
+```
+# Mesmos valores repetindo, escape_counter aumentando
+vx=-0.15 vy=0.10 omega=0.80
+vx=-0.15 vy=-0.10 omega=-0.80
+# Alternando indefinidamente
+```
 
 ---
 

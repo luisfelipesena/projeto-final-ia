@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from .. import config
-from ..types import CubeHypothesis, LidarSnapshot, MotionCommand
+import math
+import config
+from data_types import CubeHypothesis, LidarSnapshot, MotionCommand
 
 
 def triangular(x: float, a: float, b: float, c: float) -> float:
@@ -31,7 +32,8 @@ class FuzzyPlanner:
 
     def __init__(self):
         self._approach_gain = 0.12
-        self._turn_gain = 0.6
+        self._turn_gain = 0.8
+        self._escape_counter = 0  # Track stuck state
 
     def plan(
         self,
@@ -42,8 +44,6 @@ class FuzzyPlanner:
         goal_vector: tuple[float, float] = (0.0, 0.0),
         cube_candidates: int = 0,
     ) -> MotionCommand:
-        import math
-
         front_terms = self._front_membership(obstacles.front_distance)
         left_terms = self._clearance_membership(obstacles.left_distance)
         right_terms = self._clearance_membership(obstacles.right_distance)
@@ -55,21 +55,55 @@ class FuzzyPlanner:
         lift_request = None
         gripper_request = None
 
-        # --- Rule group 1: Avoid obstacles -------------------------------------------------
-        avoidance = max(front_terms["very_close"], obstacles.obstacle_density)
-        if avoidance > 0:
-            vx -= avoidance * 0.08
-            # steer towards the side with greater clearance
-            omega += self._turn_gain * ((right_terms["clear"] - left_terms["clear"]) * avoidance)
+        # Danger zone detection
+        in_danger = obstacles.front_distance < config.DANGER_ZONE
+        left_blocked = obstacles.left_distance < 0.3
+        right_blocked = obstacles.right_distance < 0.3
+
+        # --- Rule group 1: ESCAPE when in danger (HIGHEST PRIORITY) ----------------------
+        if in_danger:
+            self._escape_counter += 1
+
+            # Strong backward movement
+            vx = -0.15
+
+            # Determine escape direction
+            if left_blocked and right_blocked:
+                # Both sides blocked - rotate more aggressively
+                omega = 0.8 if self._escape_counter % 2 == 0 else -0.8
+            elif left_blocked:
+                omega = -0.6  # Turn right (away from left wall)
+            elif right_blocked:
+                omega = 0.6   # Turn left (away from right wall)
+            else:
+                # Front blocked, sides clear - pick clearer side
+                if obstacles.left_distance > obstacles.right_distance:
+                    omega = 0.5  # Turn left
+                else:
+                    omega = -0.5  # Turn right
+
+            # Add lateral escape if possible
+            if obstacles.left_distance > obstacles.right_distance + 0.2:
+                vy = 0.1  # Strafe left
+            elif obstacles.right_distance > obstacles.left_distance + 0.2:
+                vy = -0.1  # Strafe right
+
+            return MotionCommand(vx=vx, vy=vy, omega=omega)
+
+        # Reset escape counter when safe
+        self._escape_counter = 0
 
         # --- Rule group 2: Approach cube when safe -----------------------------------------
         if not load_state and cube_conf > 0.01:
             alignment = cube.alignment or 0.0
             bearing = cube.bearing or 0.0
-            approach = min(front_terms["far"], cube_conf)
-            vx += approach * self._approach_gain
-            omega -= bearing * approach
-            vy = -alignment * 0.5
+            approach = min(front_terms["far"], front_terms["medium"], cube_conf)
+
+            # Only approach if path is clear
+            if front_terms["very_close"] < 0.3:
+                vx += approach * self._approach_gain
+                omega -= bearing * approach * 1.5
+                vy = -alignment * 0.5
 
             if front_terms["close"] > 0.5 and abs(alignment) < 0.05:
                 lift_request = "FLOOR"
@@ -80,10 +114,11 @@ class FuzzyPlanner:
             gx, gy = goal_vector
             goal_dist = math.sqrt(gx * gx + gy * gy)
             if goal_dist > 0.1:
-                # Navigate towards goal box
                 goal_heading = math.atan2(gy, gx)
                 omega += goal_heading * 0.5
-                vx += min(0.1, goal_dist * 0.1)
+                # Only move forward if path clear
+                if front_terms["very_close"] < 0.3:
+                    vx += min(0.1, goal_dist * 0.1)
             if front_terms["very_close"] > 0.6 and goal_dist < 0.5:
                 lift_request = "PLATE"
                 gripper_request = "RELEASE"
@@ -92,34 +127,52 @@ class FuzzyPlanner:
         elif cube_conf < 0.01 and not load_state:
             px, py = patch_vector
             patch_dist = math.sqrt(px * px + py * py)
-            if patch_dist > 0.1:
-                patch_heading = math.atan2(py, px)
-                omega += patch_heading * 0.3
-                vx += min(0.08, patch_dist * 0.05)
-            else:
-                # No patch to explore, wander
-                vx += 0.05 * front_terms["far"]
-                omega += 0.1 * (right_terms["clear"] - left_terms["clear"])
 
-        # --- Rule group 5: Slow down if uncertain cubes nearby -----------------------------
+            # Explore even if front partially blocked (threshold increased)
+            if front_terms["very_close"] < 0.5:
+                if patch_dist > 0.1:
+                    patch_heading = math.atan2(py, px)
+                    omega += patch_heading * 0.6  # Increased turn gain
+                    vx += min(0.12, patch_dist * 0.1)  # Increased forward speed
+                else:
+                    # At patch location - explore forward with gentle wander
+                    vx += 0.10  # Constant forward exploration
+                    omega += 0.1 * (obstacles.left_distance - obstacles.right_distance)
+            else:
+                # Front blocked - rotate to find clear path
+                if obstacles.left_distance > obstacles.right_distance:
+                    omega = 0.5   # Turn left
+                else:
+                    omega = -0.5  # Turn right
+
+        # --- Rule group 5: Slow down near obstacles ----------------------------------------
+        slow_factor = 1.0 - front_terms["close"] * 0.5
+        vx *= slow_factor
+
+        # --- Rule group 6: Slow down if uncertain cubes nearby -----------------------------
         if cube_candidates > 0 and cube_conf < 0.3:
-            vx *= 0.5  # Slow down to get better detection
+            vx *= 0.5
+
+        # Clamp velocities
+        vx = max(-0.2, min(0.15, vx))
+        vy = max(-0.1, min(0.1, vy))
+        omega = max(-1.0, min(1.0, omega))
 
         return MotionCommand(vx=vx, vy=vy, omega=omega, lift_request=lift_request, gripper_request=gripper_request)
 
     @staticmethod
     def _front_membership(distance: float) -> dict[str, float]:
         return {
-            "very_close": triangular(distance, 0.0, 0.15, 0.35),
-            "close": triangular(distance, 0.2, 0.5, 0.85),
-            "medium": triangular(distance, 0.7, 1.2, 1.8),
-            "far": trapezoidal(distance, 1.5, 1.8, config.DEFAULT_DISTANCE, config.DEFAULT_DISTANCE),
+            "very_close": triangular(distance, 0.0, 0.15, 0.40),
+            "close": triangular(distance, 0.25, 0.55, 0.90),
+            "medium": triangular(distance, 0.70, 1.20, 1.80),
+            "far": trapezoidal(distance, 1.50, 1.80, config.DEFAULT_DISTANCE, config.DEFAULT_DISTANCE),
         }
 
     @staticmethod
     def _clearance_membership(distance: float) -> dict[str, float]:
         return {
-            "blocked": trapezoidal(distance, 0.0, 0.0, 0.4, 0.8),
-            "partial": triangular(distance, 0.5, 1.0, 1.5),
-            "clear": trapezoidal(distance, 1.2, 1.5, config.DEFAULT_DISTANCE, config.DEFAULT_DISTANCE),
+            "blocked": trapezoidal(distance, 0.0, 0.0, 0.3, 0.6),
+            "partial": triangular(distance, 0.4, 0.8, 1.3),
+            "clear": trapezoidal(distance, 1.0, 1.4, config.DEFAULT_DISTANCE, config.DEFAULT_DISTANCE),
         }

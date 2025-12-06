@@ -9,7 +9,7 @@ try:
 except Exception:  # pragma: no cover - numpy might be missing in some setups
     np = None  # type: ignore
 
-from ..sensors.camera_stream import CameraFrame
+from sensors.camera_stream import CameraFrame
 
 
 def frame_to_bgr(frame: Optional[CameraFrame]):

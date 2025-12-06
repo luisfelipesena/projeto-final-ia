@@ -7,7 +7,7 @@ from typing import Optional
 from youbot.arm import Arm, ArmHeight
 from youbot.gripper import Gripper
 
-from .. import config
+import config
 
 
 HEIGHT_PRESETS = {

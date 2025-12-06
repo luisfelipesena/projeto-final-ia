@@ -7,8 +7,8 @@ from typing import List, Optional
 
 from controller import Lidar  # type: ignore[import-not-found]
 
-from .. import config
-from ..types import LidarPoint, LidarSnapshot
+import config
+from data_types import LidarPoint, LidarSnapshot
 
 
 class LidarAdapter:
@@ -82,6 +82,13 @@ class LidarAdapter:
         if not self._high:
             return LidarSnapshot()
         distances = self._min_distances(self._high, config.LIDAR_HIGH)
+
+        # DEBUG: Print distance at key indices to empirically find front direction
+        if config.ENABLE_LOGGING and len(distances) >= 360:
+            debug_indices = [0, 45, 90, 135, 180, 225, 270, 315]
+            debug_vals = [f"{i}:{distances[i]:.2f}" for i in debug_indices if i < len(distances)]
+            print(f"LIDAR_RAW: {' | '.join(debug_vals)}")
+
         front = self._segment_average(distances, config.LIDAR_HIGH.front_sector)
         left = self._segment_average(distances, config.LIDAR_HIGH.left_sector)
         right = self._segment_average(distances, config.LIDAR_HIGH.right_sector)
@@ -124,12 +131,17 @@ class LidarAdapter:
         length = len(distances)
         if length == 0:
             return config.DEFAULT_DISTANCE
-        start = max(0, min(length - 1, start))
-        end = max(start + 1, min(length, end))
+
+        # Handle wrap-around for sectors crossing 0° (e.g., front_sector=(330, 390))
+        if end > length:
+            indices = list(range(start, length)) + list(range(0, end - length))
+        else:
+            indices = list(range(max(0, start), min(length, end)))
+
         slice_values = [
-            d
-            for d in distances[start:end]
-            if d > 0.0 and not math.isinf(d)
+            distances[i]
+            for i in indices
+            if 0 <= i < length and distances[i] > 0.0 and not math.isinf(distances[i])
         ]
         if not slice_values:
             return config.DEFAULT_DISTANCE

@@ -10,8 +10,8 @@ try:
 except Exception:  # pragma: no cover
     np = None  # type: ignore
 
-from .. import config
-from ..types import LidarPoint
+import config
+from data_types import LidarPoint
 
 STATE_UNKNOWN = 0
 STATE_FREE = 1

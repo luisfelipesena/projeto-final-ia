@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from youbot.base import Base
 
-from .. import config
-from ..types import MotionCommand, clamp
+import config
+from data_types import MotionCommand, clamp
 
 
 class BaseController:

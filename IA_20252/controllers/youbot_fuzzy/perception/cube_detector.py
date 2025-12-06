@@ -10,13 +10,13 @@ try:
 except Exception:  # pragma: no cover
     np = None  # type: ignore
 
-from .. import config
-from ..sensors.camera_stream import CameraFrame
-from ..types import CubeHypothesis, Detection
-from .adaboost_classifier import AdaBoostColorClassifier
-from .color_classifier import ColorClassifier, ColorDetection
-from .utils import frame_to_bgr
-from .yolo_detector import YoloDetector
+import config
+from sensors.camera_stream import CameraFrame
+from data_types import CubeHypothesis, Detection
+from perception.adaboost_classifier import AdaBoostColorClassifier
+from perception.color_classifier import ColorClassifier, ColorDetection
+from perception.utils import frame_to_bgr
+from perception.yolo_detector import YoloDetector
 
 
 class CubeDetector:

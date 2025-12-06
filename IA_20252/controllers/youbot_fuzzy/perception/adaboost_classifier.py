@@ -20,7 +20,7 @@ try:
 except Exception:  # pragma: no cover
     np = None  # type: ignore
 
-from .. import config
+import config
 
 
 class AdaBoostColorClassifier:

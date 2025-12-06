@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Tuple
 
-from .. import config
-from ..mapping.grid_map import GridMap
-from ..types import CubeHypothesis, LidarPoint, LidarSnapshot
+import config
+from mapping.grid_map import GridMap
+from data_types import CubeHypothesis, LidarPoint, LidarSnapshot
 
 
 @dataclass

@@ -14,7 +14,7 @@ try:  # pragma: no cover - dependency may not exist
 except Exception:  # pragma: no cover
     o3d = None  # type: ignore
 
-from ..types import LidarPoint
+from data_types import LidarPoint
 
 
 class ICPCorrection:

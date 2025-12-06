@@ -73,9 +73,10 @@ LIDAR_HIGH = LidarConfig(
     min_range=0.1,
     max_range=7.0,
     near_range=0.05,
-    front_sector=(150, 210),
-    left_sector=(210, 270),
-    right_sector=(90, 150),
+    # Webots LIDAR convention: 0=front, 90=left, 180=back, 270=right
+    front_sector=(330, 390),  # -30° to +30° (wraps around 360)
+    left_sector=(60, 120),    # 60° to 120°
+    right_sector=(240, 300),  # 240° to 300°
 )
 
 LIDAR_LOW = LidarConfig(
@@ -90,11 +91,13 @@ LIDAR_LOW = LidarConfig(
 )
 CAMERA_ALIGNMENT_SCALE = 0.5  # meters of lateral offset at image edges
 
+# Webots cube colors are pure RGB - adjusted for rendering variations
 HSV_RANGES = {
-    "red": [((0, 100, 100), (10, 255, 255)), ((170, 100, 100), (180, 255, 255))],
-    "green": [((35, 100, 100), (85, 255, 255))],
-    "blue": [((100, 100, 100), (130, 255, 255))],
+    "red": [((0, 80, 80), (15, 255, 255)), ((165, 80, 80), (180, 255, 255))],
+    "green": [((40, 80, 80), (80, 255, 255))],
+    "blue": [((100, 80, 80), (135, 255, 255))],
 }
+HSV_COVERAGE_THRESHOLD = 0.001  # 0.1% of frame (cubes are small at distance)
 
 CAMERA_NAME = "camera"
 

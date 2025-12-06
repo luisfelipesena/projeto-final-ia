@@ -10,10 +10,10 @@ try:
 except Exception:  # pragma: no cover
     np = None  # type: ignore
 
-from .. import config
-from ..sensors.camera_stream import CameraFrame
-from .adaboost_classifier import AdaBoostColorClassifier
-from .utils import frame_to_bgr
+import config
+from sensors.camera_stream import CameraFrame
+from perception.adaboost_classifier import AdaBoostColorClassifier
+from perception.utils import frame_to_bgr
 
 
 @dataclass
@@ -35,6 +35,12 @@ class ColorClassifier:
         bgr = frame_to_bgr(frame)
         if bgr is None:
             return ColorDetection(None)
+
+        # DEBUG: Log raw pixel analysis
+        if config.ENABLE_LOGGING and np is not None:
+            mean_bgr = bgr.reshape(-1, 3).mean(axis=0)
+            print(f"CAMERA_DEBUG: mean_BGR=({mean_bgr[0]:.1f},{mean_bgr[1]:.1f},{mean_bgr[2]:.1f})")
+
         label = self.classify_patch(bgr)
         if label is None:
             return ColorDetection(None)

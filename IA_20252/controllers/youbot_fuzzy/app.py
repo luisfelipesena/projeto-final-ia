@@ -8,21 +8,21 @@ from youbot.arm import Arm
 from youbot.base import Base
 from youbot.gripper import Gripper
 
-from . import config
-from .control.fuzzy_planner import FuzzyPlanner
-from .logger import get_logger
-from .manipulation.arm_service import ArmService
-from .mission.pipeline import MissionPipeline
-from .motion.base_controller import BaseController
-from .perception.adaboost_classifier import AdaBoostColorClassifier
-from .perception.color_classifier import ColorClassifier
-from .perception.cube_detector import CubeDetector
-from .perception.yolo_detector import YoloDetector
-from .localization.mecanum_odometry import MecanumOdometry
-from .localization.icp_correction import ICPCorrection
-from .sensors.camera_stream import CameraStream
-from .sensors.lidar_adapter import LidarAdapter
-from .world.model import WorldModel
+import config
+from control.fuzzy_planner import FuzzyPlanner
+from logger import get_logger
+from manipulation.arm_service import ArmService
+from mission.pipeline import MissionPipeline
+from motion.base_controller import BaseController
+from perception.adaboost_classifier import AdaBoostColorClassifier
+from perception.color_classifier import ColorClassifier
+from perception.cube_detector import CubeDetector
+from perception.yolo_detector import YoloDetector
+from localization.mecanum_odometry import MecanumOdometry
+from localization.icp_correction import ICPCorrection
+from sensors.camera_stream import CameraStream
+from sensors.lidar_adapter import LidarAdapter
+from world.model import WorldModel
 
 
 class YouBotFuzzyApp:
