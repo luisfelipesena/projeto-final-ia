@@ -15,5 +15,6 @@ class BaseController:
     def apply(self, command: MotionCommand) -> None:
         vx = clamp(command.vx, -config.BASE_MAX_SPEED, config.BASE_MAX_SPEED)
         vy = clamp(command.vy, -config.BASE_MAX_SPEED, config.BASE_MAX_SPEED)
-        omega = clamp(command.omega, -config.BASE_MAX_SPEED, config.BASE_MAX_SPEED)
+        # Allow higher omega for faster rotation (1.0 rad/s max)
+        omega = clamp(command.omega, -1.0, 1.0)
         self._base.move(vx, vy, omega)

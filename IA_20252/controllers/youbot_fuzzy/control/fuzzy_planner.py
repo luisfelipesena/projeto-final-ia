@@ -64,17 +64,17 @@ class FuzzyPlanner:
         if in_danger:
             self._escape_counter += 1
 
-            # IMPORTANT: Prefer ROTATION over REVERSE to find clear path
-            # Only reverse if truly cornered (all sides blocked)
-            all_blocked = left_blocked and right_blocked and obstacles.front_distance < 0.1
-
-            if all_blocked:
-                # Truly cornered - reverse briefly then rotate
-                vx = -0.08
-                omega = 0.8 if self._escape_counter % 2 == 0 else -0.8
+            # If VERY close (< 0.12m), must reverse a bit to create space
+            if obstacles.front_distance < 0.12:
+                vx = -0.10  # Small reverse to create space
+                # Also rotate to find exit while reversing
+                if obstacles.left_distance > obstacles.right_distance:
+                    omega = 0.5
+                else:
+                    omega = -0.5
             else:
-                # Front blocked but sides have space - ROTATE to find exit
-                vx = 0.0  # Stop, don't reverse!
+                # Close but not touching - rotate to find exit
+                vx = 0.02  # Tiny forward to avoid getting stuck
 
                 # Pick direction with more clearance
                 if obstacles.left_distance > obstacles.right_distance + 0.1:
@@ -84,8 +84,8 @@ class FuzzyPlanner:
                     omega = -0.7  # Turn right towards open space
                     vy = -0.08   # Strafe right
                 else:
-                    # Similar clearance both sides - default turn
-                    omega = 0.6 if self._escape_counter % 10 < 5 else -0.6
+                    # Similar clearance - alternate rotation direction
+                    omega = 0.6 if self._escape_counter % 20 < 10 else -0.6
 
             return MotionCommand(vx=vx, vy=vy, omega=omega)
 
