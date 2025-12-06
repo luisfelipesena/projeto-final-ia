@@ -31,7 +31,9 @@ class MecanumOdometry:
         self._prev_positions = [sensor.getValue() if sensor else 0.0 for sensor in self._encoders]
         self._wheel_radius = wheel_radius
         self._L = lx + ly
-        self._pose = [0.0, 0.0, 0.0]
+        # Initial pose from world file: YouBot starts at (-3.9997, 0, 0.102)
+        # Using arena-relative coordinates (world Z maps to arena Y)
+        self._pose = [-3.9997, 0.0, 0.0]
         self._distance_accumulator = 0.0
 
     def _acquire_encoders(self) -> List[Optional[object]]:

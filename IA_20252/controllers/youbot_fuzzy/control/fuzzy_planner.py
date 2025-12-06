@@ -64,29 +64,28 @@ class FuzzyPlanner:
         if in_danger:
             self._escape_counter += 1
 
-            # Strong backward movement
-            vx = -0.15
+            # IMPORTANT: Prefer ROTATION over REVERSE to find clear path
+            # Only reverse if truly cornered (all sides blocked)
+            all_blocked = left_blocked and right_blocked and obstacles.front_distance < 0.1
 
-            # Determine escape direction
-            if left_blocked and right_blocked:
-                # Both sides blocked - rotate more aggressively
+            if all_blocked:
+                # Truly cornered - reverse briefly then rotate
+                vx = -0.08
                 omega = 0.8 if self._escape_counter % 2 == 0 else -0.8
-            elif left_blocked:
-                omega = -0.6  # Turn right (away from left wall)
-            elif right_blocked:
-                omega = 0.6   # Turn left (away from right wall)
             else:
-                # Front blocked, sides clear - pick clearer side
-                if obstacles.left_distance > obstacles.right_distance:
-                    omega = 0.5  # Turn left
-                else:
-                    omega = -0.5  # Turn right
+                # Front blocked but sides have space - ROTATE to find exit
+                vx = 0.0  # Stop, don't reverse!
 
-            # Add lateral escape if possible
-            if obstacles.left_distance > obstacles.right_distance + 0.2:
-                vy = 0.1  # Strafe left
-            elif obstacles.right_distance > obstacles.left_distance + 0.2:
-                vy = -0.1  # Strafe right
+                # Pick direction with more clearance
+                if obstacles.left_distance > obstacles.right_distance + 0.1:
+                    omega = 0.7   # Turn left towards open space
+                    vy = 0.08    # Strafe left
+                elif obstacles.right_distance > obstacles.left_distance + 0.1:
+                    omega = -0.7  # Turn right towards open space
+                    vy = -0.08   # Strafe right
+                else:
+                    # Similar clearance both sides - default turn
+                    omega = 0.6 if self._escape_counter % 10 < 5 else -0.6
 
             return MotionCommand(vx=vx, vy=vy, omega=omega)
 

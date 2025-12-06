@@ -73,10 +73,11 @@ LIDAR_HIGH = LidarConfig(
     min_range=0.1,
     max_range=7.0,
     near_range=0.05,
-    # Webots LIDAR convention: 0=front, 90=left, 180=back, 270=right
-    front_sector=(330, 390),  # -30° to +30° (wraps around 360)
-    left_sector=(60, 120),    # 60° to 120°
-    right_sector=(240, 300),  # 240° to 300°
+    # Webots LIDAR convention (empirically verified):
+    # Index 0=left, 90=front, 180=right, 270=back
+    front_sector=(75, 105),   # Around index 90 (±15°)
+    left_sector=(345, 375),   # Around index 0/360 (±15°, wraps)
+    right_sector=(165, 195),  # Around index 180 (±15°)
 )
 
 LIDAR_LOW = LidarConfig(
@@ -123,4 +124,4 @@ ADABOOST_MODEL_PATH = MODELS_DIR / "adaboost_color.pkl"
 CUBE_DETECTION_MIN_DISTANCE = 0.05
 CUBE_DETECTION_MAX_DISTANCE = 1.5
 CUBE_HEIGHT_DIFFERENCE_THRESHOLD = 0.2
-DANGER_ZONE = 0.25
+DANGER_ZONE = 0.15  # Reduced - robot should explore more before escaping
