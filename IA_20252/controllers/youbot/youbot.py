@@ -4,6 +4,7 @@ from controller import Robot
 from base import Base
 from arm import Arm
 from gripper import Gripper
+from color_classifier import ColorClassifier
 
 CUBE_SIZE = 0.03
 ARENA_CENTER = (-0.79, 0.0)
@@ -290,7 +291,7 @@ class FuzzyNavigator:
                 obs_front, obs_left, obs_right, pose=None):
         """Calcula comandos de velocidade usando lógica fuzzy."""
         if not has_target:
-            return 0.0, 0.0, 0.3
+            return 0.0, 0.0, 0.25
 
         if pose is not None:
             known_front, known_left, known_right = self.check_known_obstacles(pose)
@@ -310,40 +311,51 @@ class FuzzyNavigator:
         mu_angle_medium = self._mu_medium_angle(target_angle)
         mu_angle_big = self._mu_big_angle(target_angle)
 
-        # Regra 1: Obstáculo muito perto -> PARAR e girar
+        # Regra 1: Obstáculo muito perto -> PARAR e recuar/strafe
         if mu_front_very_close > 0.5:
-            vx = -0.05
-            vy = 0.1 * (1 if obs_left < obs_right else -1)
-            omega = 0.5 * (1 if obs_left > obs_right else -1)
+            vx = -0.06
+            vy = 0.08 * (1 if obs_left < obs_right else -1)
+            omega = 0.3 * (1 if obs_left > obs_right else -1)
             return vx, vy, omega
 
         # Regra 2: Obstáculo perto -> reduzir velocidade
-        speed_reduction = 1.0 - (0.8 * mu_front_close)
+        speed_reduction = 1.0 - (0.7 * mu_front_close)
 
-        # Regra 3: Velocidade frontal
-        vx = 0.15 * mu_target_far * speed_reduction * (1.0 - 0.5 * mu_angle_big)
+        # Regra 3: Velocidade frontal - PRIORIZAR MOVIMENTO PARA FRENTE
+        # Aumentado de 0.15 para 0.20, reduzido penalidade por ângulo
+        vx = 0.20 * max(0.4, mu_target_far) * speed_reduction * (1.0 - 0.25 * mu_angle_big)
 
-        # Regra 4: Perto do alvo e alinhado
+        # Regra 4: Perto do alvo e alinhado -> aproximação final
         if mu_target_close > 0.3 and mu_angle_small > 0.5:
-            vx = 0.08 * speed_reduction
+            vx = 0.10 * speed_reduction
 
-        # Regra 5: Strafe para desvio
-        vy = 0.12 * (mu_right_close - mu_left_close)
+        # Regra 4b: Quando alinhado (ângulo pequeno), garantir movimento frontal
+        if mu_angle_small > 0.6:
+            vx = max(vx, 0.12 * speed_reduction)
 
-        # Regra 6: Rotação para alinhar
-        angle_sign = 1 if target_angle > 0 else -1
-        omega = (
-            0.8 * mu_angle_big * angle_sign +
-            0.4 * mu_angle_medium * angle_sign +
-            0.1 * (1.0 - mu_angle_small) * angle_sign
+        # Regra 5: Strafe para desvio de obstáculos
+        vy = 0.10 * (mu_right_close - mu_left_close)
+
+        # Regra 6: Rotação para alinhar - CONTROLE PROPORCIONAL
+        # Usar ângulo normalizado ao invés de sinal binário para evitar overshooting
+        angle_norm = target_angle / math.radians(90)  # normalizado entre -1 e 1
+        angle_norm = max(-1.0, min(1.0, angle_norm))  # clamp
+
+        # Ganhos reduzidos: 0.35, 0.18, 0.05 (antes: 0.8, 0.4, 0.1)
+        omega_fuzzy = (
+            0.35 * mu_angle_big +
+            0.18 * mu_angle_medium +
+            0.05 * (1.0 - mu_angle_small)
         )
+        omega = omega_fuzzy * angle_norm
 
-        # Regra 7: Ajuste por obstáculos laterais
-        omega += 0.3 * (mu_right_close - mu_left_close)
+        # Regra 7: Ajuste por obstáculos laterais (reduzido)
+        omega += 0.2 * (mu_right_close - mu_left_close)
 
+        # Limitar velocidades
         vx = max(-self.max_speed, min(self.max_speed, vx))
         vy = max(-self.max_speed * 0.8, min(self.max_speed * 0.8, vy))
-        omega = max(-1.0, min(1.0, omega))
+        omega = max(-0.6, min(0.6, omega))  # Reduzido de 1.0 para 0.6
 
         return vx, vy, omega
 
@@ -377,6 +389,9 @@ class YouBotController:
 
         self.navigator = FuzzyNavigator()
 
+        # Classificador de cores (RNA)
+        self.color_classifier = ColorClassifier("model/color_model.onnx")
+
         self.pose = self._initial_pose()
         self.current_target = None
         self.current_color = None
@@ -390,6 +405,12 @@ class YouBotController:
         self.search_state = "forward"
         self.search_direction = 1
         self.turn_progress = 0.0
+
+        # Timeout para cubo perdido durante approach
+        self.lost_cube_timer = 0.0
+
+        # Lock no cubo específico (ângulo inicial em radianos)
+        self.locked_cube_angle = None
 
         self.box_positions = BOX_POSITIONS
 
@@ -476,6 +497,12 @@ class YouBotController:
                 safe.append(max(-self._max_cmd, min(self._max_cmd, v)))
         self.base.move(safe[0], safe[1], safe[2])
 
+    def _clamp_cmds(self, vx, vy, omega):
+        omega = max(-0.5, min(0.5, omega))
+        vx = max(-0.18, min(0.18, vx))
+        vy = max(-0.14, min(0.14, vy))
+        return vx, vy, omega
+
     def _distance_to_point(self, point):
         dx = point[0] - self.pose[0]
         dy = point[1] - self.pose[1]
@@ -537,8 +564,13 @@ class YouBotController:
         self.pose[1] += dy_world * dt
         self.pose[2] = wrap_angle(self.pose[2] + omega * dt)
 
-    def _process_recognition(self):
-        """Usa Camera Recognition API para detectar cubos."""
+    def _process_recognition(self, lock_color=None, lock_angle=None):
+        """Usa Camera Recognition API para detectar cubos.
+
+        Args:
+            lock_color: Se definido, só retorna cubos dessa cor
+            lock_angle: Se definido (rad), prioriza cubo mais próximo desse ângulo
+        """
         if not self.camera or not self.camera.hasRecognition():
             return None
 
@@ -547,42 +579,55 @@ class YouBotController:
             return None
 
         best = None
-        best_dist = float('inf')
+        best_score = float('inf')
 
         for obj in objects:
-            # Posição relativa à câmera (x=frente, y=esquerda, z=cima)
-            pos = obj.getPosition()
+            pos = obj.getPosition()  # posição relativa à câmera
             colors = obj.getColors()
 
-            # Distância ao objeto
             dist = math.sqrt(pos[0]**2 + pos[1]**2)
+            angle = math.atan2(pos[1], pos[0]) if pos[0] != 0 else 0
 
             # Determinar cor
             color = None
+            confidence = 0.0
             if colors:
                 try:
                     r, g, b = colors[0], colors[1], colors[2]
-                    color = color_from_rgb(r, g, b)
+                    color, confidence = self.color_classifier.predict_from_rgb(r, g, b)
+                    if confidence < 0.5:
+                        color = color_from_rgb(r, g, b)
                 except Exception:
                     color = None
 
-            # Ângulo horizontal (y/x)
-            angle = math.atan2(pos[1], pos[0]) if pos[0] != 0 else 0
+            # Filtrar por cor
+            if lock_color and color != lock_color:
+                continue
 
-            if dist < best_dist and dist < 3.0:
-                best_dist = dist
+            # Score: prioriza MAIS PERTO (distância é o principal)
+            score = dist
+
+            # Se lock_angle ativo, forte preferência por cubo naquele ângulo
+            if lock_angle is not None:
+                angle_diff = abs(wrap_angle(angle - lock_angle))
+                if angle_diff < math.radians(10):  # mesmo cubo (tolerância 10°)
+                    score -= 10.0  # bônus forte
+                else:
+                    score += 5.0  # penalidade forte - ignora outros cubos
+
+            if score < best_score and dist < 2.5:  # max 2.5m
+                best_score = score
                 best = {
                     "color": color,
                     "distance": dist,
                     "angle": angle,
                     "position": pos,
-                    "model": obj.getModel(),
                 }
 
         if best:
             self._log_throttled(
                 "recognition",
-                f"[RECOG] {best['model']} cor={best['color']} dist={best['distance']:.2f} ang={math.degrees(best['angle']):.1f}°",
+                f"[RECOG] cor={best['color']} dist={best['distance']:.2f} ang={math.degrees(best['angle']):.1f}°",
                 interval=0.5,
             )
 
@@ -643,17 +688,38 @@ class YouBotController:
         return False
 
     def _search_navigation(self, lidar_info, dt):
-        """Navegação lawnmower."""
+        """Navegação lawnmower com proteção de parede."""
         front_dist = lidar_info["front"]
         left_dist = lidar_info["left"]
         right_dist = lidar_info["right"]
 
-        OBSTACLE_THRESHOLD = 0.55
-        TURN_SPEED = 0.5
-        FORWARD_SPEED = 0.12
-        TURN_DURATION = math.pi / 2 / TURN_SPEED
+        OBSTACLE_THRESHOLD = 0.40
+        WALL_PROXIMITY = 0.35
+        TURN_SPEED = 0.30  # Reduzido de 0.35 para mais controle
+        FORWARD_SPEED = 0.10
+        TURN_DURATION = math.pi / 2.5 / TURN_SPEED  # Turn ~72° ao invés de 90°
+
+        # Verificar proximidade de parede
+        left_wall, right_wall, bottom_wall, top_wall = self._wall_clearances()
+        near_wall = min(left_wall, right_wall, bottom_wall, top_wall) < WALL_PROXIMITY
+        very_near_wall = min(left_wall, right_wall, bottom_wall, top_wall) < 0.25
 
         obstacle_ahead = self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD)
+
+        # Se muito perto da parede, usar strafe ao invés de rotação
+        if very_near_wall:
+            # Determinar direção de escape
+            if left_wall < right_wall:
+                return 0.0, -0.08, 0.0  # Strafe para direita
+            elif right_wall < left_wall:
+                return 0.0, 0.08, 0.0   # Strafe para esquerda
+            elif bottom_wall < top_wall:
+                return 0.08, 0.0, 0.0   # Avançar
+            else:
+                return -0.08, 0.0, 0.0  # Recuar
+
+        # Velocidade de rotação reduzida perto de paredes
+        actual_turn_speed = TURN_SPEED * (0.6 if near_wall else 1.0)
 
         if self.search_state == "forward":
             if obstacle_ahead:
@@ -667,40 +733,53 @@ class YouBotController:
             else:
                 vy_correct = 0.0
                 omega_correct = 0.0
-                if left_dist < 0.35:
-                    vy_correct = -0.06
-                    omega_correct = -0.1
-                elif right_dist < 0.35:
-                    vy_correct = 0.06
-                    omega_correct = 0.1
+                # Correção lateral mais suave
+                if left_dist < 0.30:
+                    vy_correct = -0.05
+                    omega_correct = -0.08
+                elif right_dist < 0.30:
+                    vy_correct = 0.05
+                    omega_correct = 0.08
                 return FORWARD_SPEED, vy_correct, omega_correct
 
         elif self.search_state == "turn_start":
+            # Verificar se ainda é seguro girar
+            if very_near_wall:
+                self.search_state = "forward"
+                self.turn_progress = 0.0
+                return 0.0, 0.0, 0.0
+
             self.turn_progress += dt
             if self.turn_progress >= TURN_DURATION:
                 self.search_state = "turn_mid"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
-            return 0.0, 0.0, TURN_SPEED * self.search_direction
+            return 0.0, 0.0, actual_turn_speed * self.search_direction
 
         elif self.search_state == "turn_mid":
             self.turn_progress += dt
-            if self.turn_progress >= 0.8:
+            if self.turn_progress >= 0.6:  # Reduzido de 0.8
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
             if self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD):
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
-            return FORWARD_SPEED, 0.0, 0.0
+            return FORWARD_SPEED * 0.8, 0.0, 0.0  # Velocidade reduzida
 
         elif self.search_state == "turn_end":
+            # Verificar se ainda é seguro girar
+            if very_near_wall:
+                self.search_state = "forward"
+                self.turn_progress = 0.0
+                return 0.0, 0.0, 0.0
+
             self.turn_progress += dt
             if self.turn_progress >= TURN_DURATION:
                 self.search_state = "forward"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
-            return 0.0, 0.0, TURN_SPEED * self.search_direction
+            return 0.0, 0.0, actual_turn_speed * self.search_direction
 
         return 0.0, 0.0, 0.0
 
@@ -749,13 +828,23 @@ class YouBotController:
         elif self.stage == 4:
             self.arm.set_height(Arm.FRONT_PLATE)
             if self.stage_timer >= 2.0:
+                # Verificar se realmente pegou o cubo
+                if not self.gripper.has_object():
+                    print("[GRASP] Falha - cubo não capturado, voltando ao search")
+                    self.gripper.release()
+                    self.arm.set_height(Arm.RESET)
+                    self.mode = "search"
+                    self.current_color = None
+                    self.stage = 0
+                    self.stage_timer = 0.0
+                    return
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
 
         elif self.stage == 5:
             self.collected += 1
-            print(f"[GRASP] Cubo coletado! Total: {self.collected}/{self.max_cubes}")
+            print(f"[GRASP] Cubo capturado com sucesso! Total: {self.collected}/{self.max_cubes}")
             if self.active_goal:
                 cell = self.grid.world_to_cell(*self.active_goal)
                 if cell:
@@ -833,72 +922,86 @@ class YouBotController:
             # Sensores
             lidar_info = self._process_lidar()
             self._update_grid_from_lidar(lidar_info)
-            recognition = self._process_recognition()
+
+            # Lock na cor e ângulo durante approach
+            lock_color = self.current_color if self.mode == "approach" else None
+            lock_angle = self.locked_cube_angle if self.mode == "approach" else None
+            recognition = self._process_recognition(lock_color=lock_color, lock_angle=lock_angle)
 
             # ===== MODO SEARCH =====
             if self.mode == "search":
+                # Travar omega se perto de parede para evitar 360 batendo
+                left, right, bottom, top = self._wall_clearances()
+                near_wall = min(left, right, bottom, top) < 0.35
+
                 if recognition:
                     self.current_color = recognition["color"]
-                    pos = recognition["position"]
-                    yaw = self.pose[2]
-                    x_w = self.pose[0] + math.cos(yaw) * pos[0] - math.sin(yaw) * pos[1]
-                    y_w = self.pose[1] + math.sin(yaw) * pos[0] + math.cos(yaw) * pos[1]
-                    self._mark_cube_candidate(x_w, y_w)
-                    self._set_goal((x_w, y_w))
+                    self.locked_cube_angle = recognition["angle"]  # LOCK no ângulo
                     self.mode = "approach"
-                    print(f"[SEARCH] Cubo detectado (cor={self.current_color}), iniciando approach")
+                    self.lost_cube_timer = 0.0
+                    print(f"[SEARCH] Cubo detectado (cor={self.current_color}) dist={recognition['distance']:.2f}m, iniciando approach")
                     continue
 
                 # Navegação lawnmower
                 vx_cmd, vy_cmd, omega_cmd = self._search_navigation(lidar_info, dt)
+                vx_cmd, vy_cmd, omega_cmd = self._clamp_cmds(vx_cmd, vy_cmd, omega_cmd if not near_wall else 0.0)
                 vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                 self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                 continue
 
             # ===== MODO APPROACH =====
             if self.mode == "approach":
-                # Atualizar posição do cubo se ainda visível
                 if recognition:
-                    if recognition["color"]:
-                        self.current_color = recognition["color"]
-                    pos = recognition["position"]
-                    yaw = self.pose[2]
-                    x_w = self.pose[0] + math.cos(yaw) * pos[0] - math.sin(yaw) * pos[1]
-                    y_w = self.pose[1] + math.sin(yaw) * pos[0] + math.cos(yaw) * pos[1]
-                    self._mark_cube_candidate(x_w, y_w)
-                    self._set_goal((x_w, y_w))
+                    self.lost_cube_timer = 0.0
+                    # NÃO atualizar lock_angle - manter fixo no cubo inicial
 
-                    if recognition["distance"] < 0.20:
+                    cam_dist = recognition["distance"]
+                    cam_angle = recognition["angle"]
+
+                    # Chegou perto o suficiente -> grasp (0.22m para dar margem)
+                    if cam_dist < 0.22:
+                        self.locked_cube_angle = None
                         self._start_grasp()
                         continue
 
-                nav_point = self._next_nav_point()
-                distance, angle = self._distance_to_point(nav_point) if nav_point else (None, None)
+                    # CONTROLE DIRETO: avançar + corrigir ângulo
+                    # vx maior, omega menor para não overshooting
+                    vx_cmd = 0.12
+                    omega_cmd = cam_angle * 0.5  # Correção mais suave
+                    omega_cmd = max(-0.3, min(0.3, omega_cmd))
 
-                if nav_point and self._waypoints and distance is not None and distance < 0.15:
-                    self._waypoints.pop(0)
+                    # Se ângulo pequeno, priorizar avanço
+                    if abs(cam_angle) < math.radians(10):
+                        vx_cmd = 0.15
+                        omega_cmd *= 0.5
+
+                    # Se obstáculo na frente, desviar
+                    if lidar_info["front"] < 0.30:
+                        vx_cmd = 0.05
+                        omega_cmd += 0.15 * (1 if lidar_info["left"] > lidar_info["right"] else -1)
+
+                    self._safe_move(vx_cmd, 0.0, omega_cmd)
                     continue
+                else:
+                    self.lost_cube_timer += dt
 
-                if distance is not None and distance < 0.22:
-                    self._start_grasp()
+                    if self.lost_cube_timer > 4.0:  # Timeout maior
+                        print("[APPROACH] Timeout - voltando ao search")
+                        self.mode = "search"
+                        self.locked_cube_angle = None
+                        self.current_color = None
+                        self.lost_cube_timer = 0.0
+                        continue
+
+                    # Continuar movendo devagar na direção do último lock
+                    # Rotacionar levemente para reencontrar o cubo
+                    if self.locked_cube_angle is not None:
+                        omega_recovery = self.locked_cube_angle * 0.3
+                        omega_recovery = max(-0.2, min(0.2, omega_recovery))
+                    else:
+                        omega_recovery = 0.0
+                    self._safe_move(0.08, 0.0, omega_recovery)
                     continue
-
-                # Se perdeu o cubo de vista por muito tempo, voltar a buscar
-                if not recognition:
-                    self._log_throttled("lost_cube", "[APPROACH] Cubo perdido de vista", 2.0)
-
-                vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
-                    True,
-                    distance or 0.5,
-                    angle or 0.0,
-                    lidar_info["front"],
-                    lidar_info["left"],
-                    lidar_info["right"],
-                    pose=self.pose,
-                )
-                vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                self._safe_move(vx_cmd, vy_cmd, omega_cmd)
-                continue
 
             # ===== MODO GRASP =====
             if self.mode == "grasp":
@@ -924,6 +1027,7 @@ class YouBotController:
                     lidar_info["right"],
                     pose=self.pose,
                 )
+                vx_cmd, vy_cmd, omega_cmd = self._clamp_cmds(vx_cmd, vy_cmd, omega_cmd)
                 vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                 self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                 continue
