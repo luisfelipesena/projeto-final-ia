@@ -408,6 +408,13 @@ class YouBotController:
                 front_readings.append(r)
 
         min_front = min(front_readings) if front_readings else 2.0
+        if cube_candidates:
+            nearest = min(cube_candidates, key=lambda p: p[0])
+            self._log_throttled(
+                "lidar_low_candidates",
+                f"[LIDAR_LOW] candidatos={len(cube_candidates)} nearest r={nearest[0]:.2f} ang={nearest[1]:.2f}",
+                interval=1.0,
+            )
         return {"cubes": cube_candidates, "min_front": min_front}
 
     def _process_lidar(self):
@@ -492,7 +499,7 @@ class YouBotController:
                 continue
             contour = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(contour)
-            if area < 10:  # aceitar cubos pequenos distantes
+            if area < 6:  # aceitar cubos pequenos distantes
                 continue
             x, y, bw, bh = cv2.boundingRect(contour)
             cx = x + bw / 2.0
@@ -761,18 +768,17 @@ class YouBotController:
                 else:
                     # Tentar usar LiDAR baixo para encontrar cubo à frente
                     lidar_low_info = self._process_lidar_low()
-                    best = None
-                    for r, ang in lidar_low_info["cubes"]:
-                        if r < 1.2 and abs(ang) < math.radians(35):
-                            best = (r, ang)
-                            break
+                    candidates = [
+                        (r, ang) for r, ang in lidar_low_info["cubes"]
+                        if r < 1.2 and abs(ang) < math.radians(40)
+                    ]
+                    best = min(candidates, key=lambda p: p[0]) if candidates else None
                     if best:
-                        if lidar_info["front"] > best[0]:
-                            self._log_throttled(
-                                "lidar_low_detect",
-                                f"[LIDAR_LOW] alvo r={best[0]:.2f} ang={best[1]:.2f} (alto não marcou)",
-                                interval=1.0,
-                            )
+                        self._log_throttled(
+                            "lidar_low_detect",
+                            f"[LIDAR_LOW] alvo r={best[0]:.2f} ang={best[1]:.2f}",
+                            interval=1.0,
+                        )
                         self.current_color = None  # cor será determinada quando a câmera ver
                         self.current_target = self._project_lidar_point_world(best[0], best[1])
                         self.mode = "approach"
