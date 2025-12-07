@@ -64,6 +64,10 @@ class LidarConfig:
 LIDAR_LOW_NAME = "lidar_low"
 LIDAR_HIGH_NAME = "lidar_high"
 
+# LIDAR orientation after -90° rotation applied in world:
+# High lidar: index ~90 = FRONT, 180 = LEFT, 0/360 = RIGHT
+# Low lidar: 180° FOV centered forward, index ~45 = FRONT
+
 LIDAR_HIGH = LidarConfig(
     name=LIDAR_HIGH_NAME,
     sampling_period=32,
@@ -73,11 +77,10 @@ LIDAR_HIGH = LidarConfig(
     min_range=0.1,
     max_range=7.0,
     near_range=0.05,
-    # After rotating LIDAR 90° in world file:
-    # Index 0=front, 90=left, 180=back, 270=right
-    front_sector=(345, 375),  # Around index 0/360 (±15°, wraps)
-    left_sector=(75, 105),    # Around index 90 (±15°)
-    right_sector=(255, 285),  # Around index 270 (±15°)
+    # After rotation: center front at ~90; narrow sectors to avoid walls
+    front_sector=(70, 110),   # Forward cone
+    left_sector=(140, 200),   # Left side
+    right_sector=(320, 360),  # Right side (wrap handled)
 )
 
 LIDAR_LOW = LidarConfig(
@@ -89,16 +92,19 @@ LIDAR_LOW = LidarConfig(
     min_range=0.03,
     max_range=2.5,
     near_range=0.02,
+    # With rotation: center front at ~45
+    front_sector=(30, 60),
 )
 CAMERA_ALIGNMENT_SCALE = 0.5  # meters of lateral offset at image edges
 
 # Webots cube colors are pure RGB - adjusted for rendering variations
+# HSV ranges: H=0-180, S=0-100, V=0-100 (matching color_classifier._to_hsv output)
 HSV_RANGES = {
-    "red": [((0, 80, 80), (15, 255, 255)), ((165, 80, 80), (180, 255, 255))],
-    "green": [((40, 80, 80), (80, 255, 255))],
-    "blue": [((100, 80, 80), (135, 255, 255))],
+    "red": [((0, 50, 50), (15, 100, 100)), ((165, 50, 50), (180, 100, 100))],
+    "green": [((40, 50, 50), (80, 100, 100))],
+    "blue": [((100, 50, 50), (135, 100, 100))],
 }
-HSV_COVERAGE_THRESHOLD = 0.001  # 0.1% of frame (cubes are small at distance)
+HSV_COVERAGE_THRESHOLD = 0.001  # 0.1% of frame (~16 pixels in 128x128) - cubes are tiny at distance
 
 CAMERA_NAME = "camera"
 
@@ -121,7 +127,15 @@ ADABOOST_MODEL_PATH = MODELS_DIR / "adaboost_color.pkl"
 
 # --- LIDAR detection thresholds ---------------------------------------------
 
-CUBE_DETECTION_MIN_DISTANCE = 0.05
-CUBE_DETECTION_MAX_DISTANCE = 1.5
-CUBE_HEIGHT_DIFFERENCE_THRESHOLD = 0.2
-DANGER_ZONE = 0.15  # Reduced - robot should explore more before escaping
+# Dead zones with -90° Z rotation (Index 0=FRONT, 90=LEFT, 180=BACK, 270=RIGHT):
+# Robot body blocks rays going backward: ~150-210 (around 180° = back)
+# Arm may interfere near front when extended, but usually tucked
+# Left/right sectors (90/270) should now be clear of body
+# Dead zones: robot body blocks rays around index 90 (left side)
+# Verified from logs: index 90 reads 0.11m constantly
+LIDAR_DEAD_ZONES = [(60, 120)]  # Left side blocked by robot body - expanded margin
+
+CUBE_DETECTION_MIN_DISTANCE = 0.08  # Minimum distance to detect cube (avoid noise)
+CUBE_DETECTION_MAX_DISTANCE = 0.50  # Only detect cubes within 50cm (arm reach ~25cm + approach ~25cm)
+CUBE_HEIGHT_DIFFERENCE_THRESHOLD = 0.4  # High lidar must see 40cm+ farther than low (cube is only 3cm tall)
+DANGER_ZONE = 0.40  # Trigger escape earlier to prevent wall collision

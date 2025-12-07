@@ -68,11 +68,11 @@ Este documento descreve o plano completo para implementar o controlador intelige
    - [x] Método `detect(frame, lidar)` → `CubeHypothesis`
    - [x] Calcular bearing, alignment, distance, confidence
 
-5. **Treinar modelos (⏳ Pendente):**
-   - [ ] Executar `tools/run_dataset_capture.py` para gerar imagens
-   - [ ] Treinar YOLOv8n com dataset sintético
-   - [ ] Treinar AdaBoost com patches coloridos
-   - [ ] Colocar pesos em `models/`
+5. **Treinar modelos (✅ AdaBoost Pronto):**
+   - [x] Executar `tools/run_dataset_capture.py` para gerar imagens (300 imagens: 100/cor)
+   - [ ] Treinar YOLOv8n com dataset sintético (opcional - HSV fallback funciona)
+   - [x] Treinar AdaBoost com patches coloridos (`models/adaboost_color.pkl` - 4KB)
+   - [x] Colocar pesos em `models/`
 
 ### Fase 3: Localização e Mapeamento (✅ Estrutura Pronta)
 
@@ -182,15 +182,17 @@ Este documento descreve o plano completo para implementar o controlador intelige
 | `lidar_low` | (0.15, 0.05, 0) | 180° | 0.03-2.5m | Detectar cubos |
 | `lidar_high` | (0, 0.25, 0) | 360° | 0.1-7.0m | Navegação |
 
-**Configuração de Setores (config.py):**
+**Configuração de Setores (config.py) - Rotation 0 (sem rotação):**
 ```python
-# Convenção Webots: 0=frente, 90=esquerda, 180=atrás, 270=direita
-front_sector=(330, 390)  # -30° a +30° (wrap-around em 360)
-left_sector=(60, 120)    # 60° a 120°
-right_sector=(240, 300)  # 240° a 300°
+# Mapeamento com rotation 0: Índice 180=FRENTE, 90=ESQUERDA(bloqueado), 0=TRÁS, 270=DIREITA
+# Dead zones: (70-110) corpo bloqueia lado esquerdo (índice 90 sempre ~0.11m)
+front_sector=(170, 190)  # Em torno de 180 = frente
+left_sector=(120, 150)   # Front-left diagonal (evita índice 90 bloqueado)
+right_sector=(210, 240)  # Front-right diagonal
+LIDAR_DEAD_ZONES = [(70, 110)]
 ```
 
-**Debug LIDAR:** Console mostra `LIDAR_RAW: 0:X.XX | 45:X.XX | ...` para calibração.
+**Debug LIDAR:** Console mostra `LIDAR[F=180]: 180:X.XX | 90:X.XX | ...` para calibração.
 
 ## 4. Dependências de Software
 
@@ -204,56 +206,45 @@ pip install numpy opencv-python ultralytics open3d joblib scikit-learn
 
 | Arquivo | Localização | Status | Descrição |
 |---------|-------------|--------|-----------|
-| `yolov8n-cubes.pt` | `models/` | ⚠️ PLACEHOLDER | Modelo COCO base - precisa treinar |
-| `adaboost_color.pkl` | `models/` | ❌ FALTANDO | Precisa criar via train_adaboost.py |
+| `yolov8n-cubes.pt` | `models/` | ⚠️ BASE | Modelo YOLOv8n base (6.5MB) - fallback HSV ativo |
+| `adaboost_color.pkl` | `models/` | ✅ TREINADO | Classificador AdaBoost (4KB, 300 imgs) |
 
-**IMPORTANTE:** O modelo YOLO atual é apenas o YOLOv8n padrão (COCO). Não detecta cubos coloridos!
-Sistema atualmente usa fallback HSV heuristic para classificação de cores.
+**Dataset:** 300 imagens sintéticas em `datasets/cubes/train/` (100 por cor: red, green, blue).
+Sistema usa pipeline: YOLO → AdaBoost → HSV heuristic (fallback).
 
-## 5. Próximos Passos (Pendentes)
+## 5. Próximos Passos
 
-### 5.1 Treinamento de Modelos
+### 5.1 Treinamento de Modelos (✅ Concluído)
 
-1. **Gerar Dataset Sintético (dentro do Webots):**
-   ```bash
-   cd IA_20252/controllers/youbot_fuzzy
-   export YOUBOT_DATASET_DIR=datasets/cubes/train
-   # Usar como controlador temporário no Webots
-   python tools/run_dataset_capture.py
-   ```
+Dataset e AdaBoost já treinados:
+- **Dataset:** 300 imagens em `datasets/cubes/train/` (100 por cor)
+- **AdaBoost:** `models/adaboost_color.pkl` (4KB)
 
-2. **Treinar AdaBoost (RECOMENDADO - mais simples):**
-   ```bash
-   cd IA_20252/controllers/youbot_fuzzy
-   python tools/train_adaboost.py \
-       --dataset datasets/cubes/train \
-       --output models/adaboost_color.pkl
-   ```
+**YOLO (Opcional):** Se quiser treinar modelo específico:
+```bash
+cd IA_20252/controllers/youbot_fuzzy
+yolo train model=yolov8n.pt data=datasets/cubes/data.yaml epochs=50 imgsz=128
+cp runs/detect/train/weights/best.pt models/yolov8n-cubes.pt
+```
 
-3. **Treinar YOLOv8 (OPCIONAL - mais complexo):**
-   ```bash
-   # Requer dataset YOLO format (images/ + labels/)
-   cd IA_20252/controllers/youbot_fuzzy
-   yolo train model=yolov8n.pt data=datasets/cubes/data.yaml epochs=50 imgsz=128
-   cp runs/detect/train/weights/best.pt models/yolov8n-cubes.pt
-   ```
+**NOTA:** Sistema funciona com HSV heuristic como fallback. AdaBoost melhora precisão.
 
-**NOTA:** O sistema funciona SEM ML usando fallback HSV heuristic. ML melhora precisão.
+### 5.2 Calibração e Ajustes (✅ LIDAR + Grasp Calibrados)
 
-### 5.2 Calibração e Ajustes
+1. **LIDAR:** ✅ Concluído
+   - Rotação corrigida: -90° Z (índice 0=frente, alinhado com braço/câmera)
+   - Setores recalculados para nova orientação
+   - Dead zones: corpo traseiro + zona do braço
 
-1. **LIDAR:**
-   - Validar setores front/left/right com obstáculos conhecidos
-   - Ajustar `DANGER_ZONE` se necessário
-   - Verificar detecção de cubos via console logs
+2. **Fuzzy:** ✅ Concluído
+   - Approach rule usa média ponderada (mais responsivo)
+   - Reverse threshold ajustado para 0.18m (alinhado com arm reach)
+   - vx aumentado para 0.08-0.15 quando caminho livre
 
-2. **Fuzzy:**
-   - Ajustar membership functions se comportamento instável
-   - Refinar regras baseado em testes práticos
-
-3. **Manipulação:**
-   - Confirmar timings de braço/garra com cubos reais
-   - Ajustar `ARM_WAIT_SECONDS` se necessário
+3. **Manipulação:** ✅ Concluído
+   - Sequência completa: OPEN(1s) → RESET(1.5s) → FLOOR(2.5s) → APPROACH(2s) → GRIP(1.5s) → LIFT(2s)
+   - Tempo total: ~11 segundos
+   - load_state transição via arm_service.is_gripping (evita race condition)
 
 ### 5.3 Testes Finais
 
@@ -314,5 +305,18 @@ IA_20252/controllers/youbot_fuzzy/
 
 ---
 
-**Última atualização:** Dezembro 2024
+**Última atualização:** 06/12/2025
 **Referência:** `CLAUDE.md`, `docs/TESTES.md`
+
+### Changelog Recente:
+- ✅ **FIX CRÍTICO:** Rotação LIDAR corrigida no world file (rotation 0 - sem rotação)
+- ✅ **FIX CRÍTICO:** HSV hue scale corrigido (hue*30 para range 0-180)
+- ✅ Setores LIDAR recalculados: front=(170,190), left=(120,150), right=(210,240)
+- ✅ Dead zones atualizados: [(70,110)] - corpo bloqueia índice 90
+- ✅ Color detection: agora escaneia TODAS as cores via HSV masks
+- ✅ Sequência de grasp completa: OPEN → RESET → FLOOR → APPROACH → GRIP → LIFT
+- ✅ Fuzzy planner: approach rule usa média ponderada (não min)
+- ✅ Grid exploration: nearest-first patch selection
+- ✅ ICP validation: verifica nav_points > 10 antes de aplicar
+- ✅ AdaBoost treinado: 300 imagens, modelo de 4KB
+- ✅ Odometria: parâmetros corrigidos (wheel_radius=0.05, lx=0.228, ly=0.158)

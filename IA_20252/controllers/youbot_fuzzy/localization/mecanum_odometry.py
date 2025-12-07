@@ -14,9 +14,9 @@ class MecanumOdometry:
     def __init__(
         self,
         robot,
-        wheel_radius: float = 0.02375,
-        lx: float = 0.165,
-        ly: float = 0.115,
+        wheel_radius: float = 0.05,   # YouBot wheel radius (GRASP_TEST.md)
+        lx: float = 0.228,            # Longitudinal distance (GRASP_TEST.md)
+        ly: float = 0.158,            # Lateral distance (GRASP_TEST.md)
     ):
         self._robot = robot
         self._time_step = int(robot.getBasicTimeStep())

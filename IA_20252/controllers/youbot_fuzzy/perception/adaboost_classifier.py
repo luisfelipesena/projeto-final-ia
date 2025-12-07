@@ -38,6 +38,13 @@ class AdaBoostColorClassifier:
             except Exception:
                 self._model = None
                 self._hog = None
+                if config.ENABLE_LOGGING:
+                    print(f"[WARN] Failed to load AdaBoost model at {self._model_path}, disabling AdaBoost.")
+                self._enabled = False
+        elif self._enabled:
+            if config.ENABLE_LOGGING:
+                print(f"[WARN] AdaBoost model not found at {self._model_path}, using HSV fallback.")
+            self._enabled = False
 
     def available(self) -> bool:
         return self._model is not None

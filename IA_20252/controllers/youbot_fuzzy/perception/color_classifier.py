@@ -36,28 +36,47 @@ class ColorClassifier:
         if bgr is None:
             return ColorDetection(None)
 
-        # DEBUG: Log raw pixel analysis
-        if config.ENABLE_LOGGING and np is not None:
-            mean_bgr = bgr.reshape(-1, 3).mean(axis=0)
-            print(f"CAMERA_DEBUG: mean_BGR=({mean_bgr[0]:.1f},{mean_bgr[1]:.1f},{mean_bgr[2]:.1f})")
-
-        label = self.classify_patch(bgr)
-        if label is None:
-            return ColorDetection(None)
         height, width = bgr.shape[:2]
         if np is None:
-            return ColorDetection(color=label)
-        mask = self._mask_for_label(bgr, label)
-        if not isinstance(mask, np.ndarray):
-            return ColorDetection(color=label)
-        coverage = float(mask.sum()) / (255.0 * width * height)
-        if coverage <= 0.005:
-            return ColorDetection(None)
-        coordinates = np.column_stack(np.where(mask > 0))
-        if coordinates.size == 0:
-            return ColorDetection(label)
-        cy, cx = coordinates.mean(axis=0)
-        return ColorDetection(color=label, centroid_x=float(cx), centroid_y=float(cy), coverage=coverage)
+            # Fallback to simple heuristic
+            label = self.classify_patch(bgr)
+            return ColorDetection(color=label) if label else ColorDetection(None)
+
+        # Scan for ALL colors directly using HSV masks - find the one with highest coverage
+        best_color = None
+        best_coverage = 0.0
+        best_cx = 0.0
+        best_cy = 0.0
+
+        for color in ["red", "green", "blue"]:
+            mask = self._mask_for_label(bgr, color)
+            if not isinstance(mask, np.ndarray):
+                continue
+            coverage = float(np.count_nonzero(mask)) / (width * height)
+            if coverage > best_coverage and coverage > config.HSV_COVERAGE_THRESHOLD:
+                coordinates = np.column_stack(np.where(mask > 0))
+                if coordinates.size > 0:
+                    cy, cx = coordinates.mean(axis=0)
+                    best_color = color.upper()
+                    best_coverage = coverage
+                    best_cx = float(cx)
+                    best_cy = float(cy)
+
+        if best_color:
+            return ColorDetection(color=best_color, centroid_x=best_cx, centroid_y=best_cy, coverage=best_coverage)
+
+        # Debug: log coverage values when nothing detected (ALWAYS log to understand)
+        if config.ENABLE_LOGGING:
+            coverages = {}
+            for color in ["red", "green", "blue"]:
+                mask = self._mask_for_label(bgr, color)
+                if isinstance(mask, np.ndarray):
+                    coverages[color] = float(np.count_nonzero(mask)) / (width * height)
+            # Also log mean RGB values to understand camera output
+            mean_bgr = bgr.reshape(-1, 3).mean(axis=0)
+            print(f"CAM_DEBUG: mean_BGR=({mean_bgr[0]:.0f},{mean_bgr[1]:.0f},{mean_bgr[2]:.0f}) cov_r={coverages.get('red',0):.4f} cov_g={coverages.get('green',0):.4f} cov_b={coverages.get('blue',0):.4f} thr={config.HSV_COVERAGE_THRESHOLD}")
+
+        return ColorDetection(None)
 
     def classify_patch(self, patch) -> Optional[str]:
         if patch is None:
@@ -116,7 +135,7 @@ class ColorClassifier:
         hue[mask_r] = ((g - b)[mask_r] / delta[mask_r]) % 6
         hue[mask_g] = ((b - r)[mask_g] / delta[mask_g]) + 2
         hue[mask_b] = ((r - g)[mask_b] / delta[mask_b]) + 4
-        hue *= 60
+        hue *= 30  # Output H in 0-180 range (OpenCV convention) to match config.HSV_RANGES
 
         saturation = np.zeros_like(c_max)
         saturation[c_max != 0] = delta[c_max != 0] / c_max[c_max != 0]

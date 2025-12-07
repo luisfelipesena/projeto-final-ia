@@ -152,26 +152,28 @@ lidar_low enabled
 **Teste 3: Calibração dos Setores LIDAR (Debug)**
 ```
 # Nos logs, output de debug mostra distâncias em índices-chave:
-LIDAR_RAW: 0:X.XX | 45:X.XX | 90:X.XX | 135:X.XX | 180:X.XX | 225:X.XX | 270:X.XX | 315:X.XX
+LIDAR[F=0]: 0:X.XX | 10:X.XX | 90:X.XX | 180:X.XX | 270:X.XX | 350:X.XX
 ```
 
-**Convenção Webots para LIDAR 360°:**
-- Índice 0 = frente do robô (0°)
-- Índice 90 = esquerda (90°)
-- Índice 180 = atrás (180°)
-- Índice 270 = direita (270°)
+**Mapeamento LIDAR (rotation 0, sem rotação):**
+- Índice 0 = TRÁS do robô (~0.96m para arena aberta)
+- Índice 90 = ESQUERDA (BLOQUEADO pelo corpo! ~0.11m)
+- Índice 180 = FRENTE do robô (direção do braço/câmera, ~1.1m)
+- Índice 270 = DIREITA (~1.0m)
+- Dead zones: (70-110) lado esquerdo bloqueado pelo corpo
 
 **Como verificar mapeamento:**
-1. Posicionar robô de frente para parede
-2. Observar qual índice mostra menor distância
-3. Se índice 0 mostra menor distância → setores corretos
-4. Se outro índice mostra menor → ajustar `front_sector` em config.py
+1. No console, observar linha `LIDAR[F=180]: 180:X.XX | 90:X.XX | ...`
+2. Índice 180 deve mostrar distância maior quando frente está livre
+3. Índice 90 sempre mostra ~0.11m (corpo bloqueia)
+4. Raios no Webots devem apontar para fora do robô
 
 **Configuração atual (config.py):**
 ```python
-front_sector=(330, 390)  # -30° a +30° (wraps around)
-left_sector=(60, 120)    # 60° a 120°
-right_sector=(240, 300)  # 240° a 300°
+front_sector=(170, 190)  # Em torno de 180 = frente
+left_sector=(120, 150)   # Front-left diagonal (evita índice 90 bloqueado)
+right_sector=(210, 240)  # Front-right diagonal
+LIDAR_DEAD_ZONES = [(70, 110)]  # Lado esquerdo bloqueado pelo corpo
 ```
 
 **Teste 4: Valores de distância**
@@ -226,11 +228,13 @@ ICP correction applied
 # Nos logs:
 vx=X.XX, vy=X.XX, omega=X.XX
 ```
+- `vx` esperado: 0.08-0.15 quando caminho livre (era 0.01-0.03 antes do fix)
+- `omega` esperado: <0.3 quando explorando (não deve dominar o movimento)
 
 **Teste 2: Comportamento de evasão**
-1. Posicionar robô próximo a obstáculo
+1. Posicionar robô próximo a obstáculo (<0.25m = DANGER_ZONE)
 2. Observar se `omega` muda de sinal (rotação para escapar)
-3. `vx` deve ficar negativo ou zero (recuar)
+3. `vx` deve ficar negativo quando <0.18m (reverso)
 
 ### 4.5 Máquina de Estados
 
@@ -244,11 +248,17 @@ phase=RETURN       # Depositando cubo
 
 ### 4.6 Manipulação (Braço/Garra)
 
-**Sequência de coleta:**
-1. Braço desce (`FLOOR`)
-2. Garra fecha (`GRIP`)
-3. Braço sobe (`PLATE`)
-4. `load_state=True` nos logs
+**Sequência de coleta (conforme GRASP_TEST.md):**
+1. `PICK:OPEN_GRIPPER` - Garra abre (`RELEASE`, 1.0s)
+2. `PICK:RESET_ARM` - Braço posição segura (`RESET`, 1.5s)
+3. `PICK:LOWER_ARM` - Braço desce (`FLOOR`, 2.5s)
+4. `PICK:APPROACH` - Robô avança (0.05 m/s, 2.0s)
+5. `PICK:GRIP` - Garra fecha (`GRIP`, 1.5s)
+6. `PICK:LIFT` - Braço sobe (`PLATE`, 2.0s)
+7. `PICK:DONE` - Transição para `DELIVER`
+8. `load_state=True` via arm_service.is_gripping
+
+**Tempo total esperado:** ~11 segundos
 
 **Sequência de depósito:**
 1. Braço posiciona (`PLATE`)
@@ -395,11 +405,10 @@ INFO: youbot: Starting controller: /usr/bin/python3 -u youbot_fuzzy.py
 
 **Durante exploração (SCAN_GRID):**
 ```
-LIDAR_RAW: 0:3.50 | 45:2.10 | 90:1.80 | 135:2.50 | 180:0.45 | 225:2.80 | 270:1.90 | 315:3.20
-CAMERA_DEBUG: mean_BGR=(45.2,48.3,52.1)
-phase=SCAN_GRID load=False cube=- conf=0.00
-front=3.50 left=1.95 right=1.95 density=0.02
-vx=0.10 vy=0.00 omega=0.05
+LIDAR[F=180]: 180:1.10 | 170:1.05 | 190:1.08 | 90:0.11 | 270:1.00 | 0:0.96
+FUZZY[EXPLORE]: f=1.02 l=1.15 r=1.05 → vx=0.12 ω=0.05
+LIDAR: f=1.02 l=1.15 r=1.05 | MAP_ROBOT: f=1.00 l=1.20 r=1.10 obs=0.80
+phase=SCAN_GRID load=False cube=- conf=0.00 vx=0.12 vy=0.00 omega=0.05
 ```
 
 **Quando detecta cubo:**
@@ -425,10 +434,11 @@ vx=0.10 vy=0.00 omega=0.25
 
 **LIDAR com setores incorretos (robô gira sem parar):**
 ```
-# front mostra distância curta quando não há obstáculo na frente
-front=0.17 left=3.20 right=0.10
-vx=-0.15 vy=0.10 omega=0.60  # Escape mode constante
+# Se front_sector usa índice 90 (bloqueado pelo corpo):
+LIDAR[F=180]: 90:0.11 | 180:1.10 ...  # Índice 90 sempre 0.11m (corpo)!
+FUZZY[EXPLORE]: f=0.11 ... → vx=-0.10 ω=0.50  # Escape infinito
 ```
+**Solução:** Verificar config.py usa front_sector=(170,190) e left_sector evita índice 90
 
 **Câmera não detecta cores:**
 ```

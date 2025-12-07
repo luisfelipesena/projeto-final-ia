@@ -48,6 +48,11 @@ class CubeDetector:
         bearing = self._bearing_from_centroid(color_detection.centroid_x, width, frame.camera.getFov())
         alignment = ((color_detection.centroid_x / width) - 0.5) * config.CAMERA_ALIGNMENT_SCALE * 2
         distance = self._estimate_distance(color_detection.coverage)
+
+        # Debug: Log detection
+        if config.ENABLE_LOGGING:
+            print(f"CUBE_DETECT: {color_detection.color} cov={color_detection.coverage:.4f} cx={color_detection.centroid_x:.1f}")
+
         return CubeHypothesis(
             color=color_detection.color.upper(),
             bearing=bearing,

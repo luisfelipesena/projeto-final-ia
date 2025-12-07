@@ -35,6 +35,11 @@ class YoloDetector:
             except Exception:
                 self._model = None
                 self._available = False
+        elif config.ENABLE_LOGGING and config.ENABLE_YOLO:
+            if UltralyticsYOLO is None:
+                print("[WARN] YOLO disabled: ultralytics package not available; using fallback.")
+            elif not self._model_path.is_file():
+                print(f"[WARN] YOLO weights not found at {self._model_path}; using AdaBoost/HSV fallback.")
 
     def available(self) -> bool:
         return self._model is not None
