@@ -1,21 +1,9 @@
+import heapq
 import math
-import time
-from collections import deque
-
 from controller import Robot
 from base import Base
 from arm import Arm
 from gripper import Gripper
-
-try:
-    import numpy as np
-except ImportError:
-    np = None
-
-try:
-    import cv2
-except ImportError:
-    cv2 = None
 
 CUBE_SIZE = 0.03
 ARENA_CENTER = (-0.79, 0.0)
@@ -40,6 +28,173 @@ BOX_POSITIONS = {
 }
 
 
+# Grade de ocupação para navegação baseada em odometria
+class OccupancyGrid:
+    UNKNOWN = 0
+    FREE = 1
+    OBSTACLE = 2
+    BOX = 3
+    CUBE = 4
+
+    def __init__(self, arena_center, arena_size, cell_size=0.12):
+        self.cell_size = cell_size
+        self.min_x = arena_center[0] - arena_size[0] / 2.0
+        self.min_y = arena_center[1] - arena_size[1] / 2.0
+        self.max_x = arena_center[0] + arena_size[0] / 2.0
+        self.max_y = arena_center[1] + arena_size[1] / 2.0
+        self.width = int(math.ceil(arena_size[0] / cell_size))
+        self.height = int(math.ceil(arena_size[1] / cell_size))
+        self.grid = [
+            [self.UNKNOWN for _ in range(self.width)] for _ in range(self.height)
+        ]
+        self.static_mask = [
+            [False for _ in range(self.width)] for _ in range(self.height)
+        ]
+
+    def in_bounds(self, gx, gy):
+        return 0 <= gx < self.width and 0 <= gy < self.height
+
+    def world_to_cell(self, x, y):
+        if math.isnan(x) or math.isnan(y):
+            return None
+        gx = int((x - self.min_x) / self.cell_size)
+        gy = int((y - self.min_y) / self.cell_size)
+        if not self.in_bounds(gx, gy):
+            return None
+        return gx, gy
+
+    def cell_to_world(self, gx, gy):
+        wx = self.min_x + (gx + 0.5) * self.cell_size
+        wy = self.min_y + (gy + 0.5) * self.cell_size
+        return wx, wy
+
+    def get(self, gx, gy):
+        if not self.in_bounds(gx, gy):
+            return self.UNKNOWN
+        return self.grid[gy][gx]
+
+    def set(self, gx, gy, value, static=False, overwrite_static=False):
+        if not self.in_bounds(gx, gy):
+            return False
+        if self.static_mask[gy][gx] and not overwrite_static:
+            return False
+        if self.grid[gy][gx] == value:
+            if static and not self.static_mask[gy][gx]:
+                self.static_mask[gy][gx] = True
+            return False
+        self.grid[gy][gx] = value
+        if static:
+            self.static_mask[gy][gx] = True
+        return True
+
+    def fill_disk(self, x, y, radius, value, static=False):
+        min_x = x - radius
+        max_x = x + radius
+        min_y = y - radius
+        max_y = y + radius
+        cell_min = self.world_to_cell(min_x, min_y)
+        cell_max = self.world_to_cell(max_x, max_y)
+        if cell_min is None or cell_max is None:
+            return
+        gx_min, gy_min = cell_min
+        gx_max, gy_max = cell_max
+        for gy in range(gy_min, gy_max + 1):
+            for gx in range(gx_min, gx_max + 1):
+                wx, wy = self.cell_to_world(gx, gy)
+                if math.hypot(wx - x, wy - y) <= radius:
+                    self.set(gx, gy, value, static=static)
+
+    def fill_border(self, value, static=True):
+        for gx in range(self.width):
+            self.set(gx, 0, value, static=static)
+            self.set(gx, self.height - 1, value, static=static)
+        for gy in range(self.height):
+            self.set(0, gy, value, static=static)
+            self.set(self.width - 1, gy, value, static=static)
+
+    def _bresenham(self, start, end):
+        x0, y0 = start
+        x1, y1 = end
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy
+        points = []
+        while True:
+            points.append((x0, y0))
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+        return points
+
+    def raycast(self, start_world, end_world, hit_state, free_state=FREE):
+        start_cell = self.world_to_cell(*start_world)
+        end_cell = self.world_to_cell(*end_world)
+        if start_cell is None or end_cell is None:
+            return False
+        line = self._bresenham(start_cell, end_cell)
+        # marcar livres até penúltimo
+        for gx, gy in line[:-1]:
+            self.set(gx, gy, free_state)
+        gx_hit, gy_hit = line[-1]
+        return self.set(gx_hit, gy_hit, hit_state)
+
+    def plan_path(self, start_world, goal_world):
+        start_cell = self.world_to_cell(*start_world)
+        goal_cell = self.world_to_cell(*goal_world)
+        if start_cell is None or goal_cell is None:
+            return []
+        if start_cell == goal_cell:
+            return []
+
+        def heuristic(a, b):
+            return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+        open_set = []
+        heapq.heappush(open_set, (0, start_cell))
+        came_from = {}
+        g_score = {start_cell: 0}
+        goal = goal_cell
+
+        while open_set:
+            _, current = heapq.heappop(open_set)
+            if current == goal:
+                break
+            cx, cy = current
+            for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                if not self.in_bounds(nx, ny):
+                    continue
+                if self.get(nx, ny) == self.OBSTACLE:
+                    continue
+                tentative_g = g_score[current] + 1
+                neighbor = (nx, ny)
+                if tentative_g < g_score.get(neighbor, 1e9):
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g
+                    f_score = tentative_g + heuristic(neighbor, goal)
+                    heapq.heappush(open_set, (f_score, neighbor))
+
+        if goal not in came_from and goal != start_cell:
+            return []
+
+        path_cells = []
+        node = goal
+        while node != start_cell:
+            path_cells.append(node)
+            node = came_from.get(node, start_cell)
+            if node == start_cell:
+                break
+        path_cells.reverse()
+        return [self.cell_to_world(gx, gy) for gx, gy in path_cells]
+
+
 def wrap_angle(angle):
     while angle > math.pi:
         angle -= 2.0 * math.pi
@@ -48,93 +203,15 @@ def wrap_angle(angle):
     return angle
 
 
-class ColorClassifier:
-    def __init__(self):
-        self.hsv_ranges = {
-            "red": [
-                ((0, 100, 100), (10, 255, 255)),
-                ((170, 100, 100), (180, 255, 255)),
-            ],
-            "green": [((35, 100, 100), (85, 255, 255))],
-            "blue": [((100, 100, 100), (130, 255, 255))],
-        }
-
-    def classify(self, hsv_roi):
-        if hsv_roi is None or cv2 is None or np is None:
-            return None
-
-        scores = {}
-        for color, ranges in self.hsv_ranges.items():
-            mask = None
-            for low, high in ranges:
-                m = cv2.inRange(
-                    hsv_roi,
-                    np.array(low, dtype=np.uint8),
-                    np.array(high, dtype=np.uint8),
-                )
-                mask = m if mask is None else cv2.bitwise_or(mask, m)
-            scores[color] = cv2.countNonZero(mask) if mask is not None else 0
-
-        if not scores:
-            return None
-        best = max(scores, key=scores.get)
-        if scores[best] == 0:
-            return None
-        total = sum(scores.values()) or 1
-        return best, scores[best] / total
-
-
-class OccupancyGrid:
-    def __init__(self, center, size, resolution=0.1):
-        self.resolution = resolution
-        self.center = center
-        self.size = size
-        self.origin = (
-            center[0] - size[0] / 2.0,
-            center[1] - size[1] / 2.0,
-        )
-        width = int(math.ceil(size[0] / resolution))
-        height = int(math.ceil(size[1] / resolution))
-        if np is not None:
-            self.grid = -1 * np.ones((height, width), dtype=np.int8)
-        else:
-            self.grid = [[-1 for _ in range(width)] for _ in range(height)]
-
-    def world_to_grid(self, x, y):
-        gx = int((x - self.origin[0]) / self.resolution)
-        gy = int((y - self.origin[1]) / self.resolution)
-        return gx, gy
-
-    def grid_in_bounds(self, gx, gy):
-        if np is not None:
-            return (
-                0 <= gy < self.grid.shape[0]
-                and 0 <= gx < self.grid.shape[1]
-            )
-        return (
-            0 <= gy < len(self.grid)
-            and 0 <= gx < len(self.grid[0])
-        )
-
-    def mark_obstacle(self, x, y):
-        gx, gy = self.world_to_grid(x, y)
-        if not self.grid_in_bounds(gx, gy):
-            return
-        if np is not None:
-            self.grid[gy, gx] = 1
-        else:
-            self.grid[gy][gx] = 1
-
-    def mark_free(self, x, y):
-        gx, gy = self.world_to_grid(x, y)
-        if not self.grid_in_bounds(gx, gy):
-            return
-        if np is not None:
-            if self.grid[gy, gx] == -1:
-                self.grid[gy, gx] = 0
-        else:
-            if self.grid[gy][gx] == -1:
-                self.grid[gy][gx] = 0
+def color_from_rgb(r, g, b):
+    """Determina cor do cubo baseado em RGB (0-1)."""
+    if r > 0.5 and g < 0.5 and b < 0.5:
+        return "red"
+    elif g > 0.5 and r < 0.5 and b < 0.5:
+        return "green"
+    elif b > 0.5 and r < 0.5 and g < 0.5:
+        return "blue"
+    return None
 
 
 class FuzzyNavigator:
@@ -142,21 +219,18 @@ class FuzzyNavigator:
 
     def __init__(self, max_speed=0.2):
         self.max_speed = max_speed
-        self.safety_margin = 0.4  # Margem de segurança dos obstáculos
+        self.safety_margin = 0.4
 
     @staticmethod
     def _mu_close(x, threshold=0.45):
-        """Pertinência para 'perto' - threshold aumentado para maior segurança."""
         return max(0.0, min(1.0, (threshold - x) / threshold))
 
     @staticmethod
     def _mu_very_close(x, threshold=0.25):
-        """Pertinência para 'muito perto' - emergência."""
         return max(0.0, min(1.0, (threshold - x) / threshold))
 
     @staticmethod
     def _mu_far(x, start=0.4, end=1.5):
-        """Pertinência para 'longe'."""
         if x <= start:
             return 0.0
         if x >= end:
@@ -165,7 +239,6 @@ class FuzzyNavigator:
 
     @staticmethod
     def _mu_small_angle(angle_rad):
-        """Pertinência para ângulo pequeno (alinhado)."""
         a = abs(wrap_angle(angle_rad))
         if a < math.radians(5):
             return 1.0
@@ -175,7 +248,6 @@ class FuzzyNavigator:
 
     @staticmethod
     def _mu_medium_angle(angle_rad):
-        """Pertinência para ângulo médio."""
         a = abs(wrap_angle(angle_rad))
         if a < math.radians(10) or a > math.radians(60):
             return 0.0
@@ -185,7 +257,6 @@ class FuzzyNavigator:
 
     @staticmethod
     def _mu_big_angle(angle_rad):
-        """Pertinência para ângulo grande (precisa girar muito)."""
         a = abs(wrap_angle(angle_rad))
         if a < math.radians(40):
             return 0.0
@@ -194,7 +265,7 @@ class FuzzyNavigator:
         return (a - math.radians(40)) / math.radians(50)
 
     def check_known_obstacles(self, pose):
-        """Verifica proximidade de obstáculos conhecidos e retorna distâncias por setor."""
+        """Verifica proximidade de obstáculos conhecidos."""
         x, y, yaw = pose
         min_dist_left = 2.0
         min_dist_right = 2.0
@@ -204,11 +275,8 @@ class FuzzyNavigator:
             dx = ox - x
             dy = oy - y
             dist = math.hypot(dx, dy) - radius
-
-            # Ângulo do obstáculo relativo ao robô
             obs_angle = wrap_angle(math.atan2(dy, dx) - yaw)
 
-            # Classificar por setor
             if abs(obs_angle) < math.radians(30):
                 min_dist_front = min(min_dist_front, dist)
             elif obs_angle > 0 and obs_angle < math.radians(120):
@@ -218,21 +286,12 @@ class FuzzyNavigator:
 
         return min_dist_front, min_dist_left, min_dist_right
 
-    def compute(
-        self,
-        has_target,
-        target_distance,
-        target_angle,
-        obs_front,
-        obs_left,
-        obs_right,
-        pose=None,
-    ):
+    def compute(self, has_target, target_distance, target_angle,
+                obs_front, obs_left, obs_right, pose=None):
         """Calcula comandos de velocidade usando lógica fuzzy."""
         if not has_target:
             return 0.0, 0.0, 0.3
 
-        # Combinar LiDAR com obstáculos conhecidos
         if pose is not None:
             known_front, known_left, known_right = self.check_known_obstacles(pose)
             obs_front = min(obs_front, known_front)
@@ -251,29 +310,27 @@ class FuzzyNavigator:
         mu_angle_medium = self._mu_medium_angle(target_angle)
         mu_angle_big = self._mu_big_angle(target_angle)
 
-        # ========== REGRAS FUZZY ==========
-
-        # Regra 1: Se obstáculo muito perto na frente -> PARAR e girar
+        # Regra 1: Obstáculo muito perto -> PARAR e girar
         if mu_front_very_close > 0.5:
-            vx = -0.05  # Recuar levemente
-            vy = 0.1 * (1 if obs_left < obs_right else -1)  # Strafe para lado livre
-            omega = 0.5 * (1 if obs_left > obs_right else -1)  # Girar para lado livre
+            vx = -0.05
+            vy = 0.1 * (1 if obs_left < obs_right else -1)
+            omega = 0.5 * (1 if obs_left > obs_right else -1)
             return vx, vy, omega
 
-        # Regra 2: Se obstáculo perto na frente -> reduzir velocidade, desviar
+        # Regra 2: Obstáculo perto -> reduzir velocidade
         speed_reduction = 1.0 - (0.8 * mu_front_close)
 
-        # Regra 3: Velocidade frontal baseada em distância e alinhamento
+        # Regra 3: Velocidade frontal
         vx = 0.15 * mu_target_far * speed_reduction * (1.0 - 0.5 * mu_angle_big)
 
-        # Regra 4: Se perto do alvo e alinhado -> aproximar devagar
+        # Regra 4: Perto do alvo e alinhado
         if mu_target_close > 0.3 and mu_angle_small > 0.5:
             vx = 0.08 * speed_reduction
 
-        # Regra 5: Strafe para desviar de obstáculos laterais
+        # Regra 5: Strafe para desvio
         vy = 0.12 * (mu_right_close - mu_left_close)
 
-        # Regra 6: Rotação para alinhar com alvo
+        # Regra 6: Rotação para alinhar
         angle_sign = 1 if target_angle > 0 else -1
         omega = (
             0.8 * mu_angle_big * angle_sign +
@@ -281,10 +338,9 @@ class FuzzyNavigator:
             0.1 * (1.0 - mu_angle_small) * angle_sign
         )
 
-        # Regra 7: Ajuste de rotação por obstáculos laterais
+        # Regra 7: Ajuste por obstáculos laterais
         omega += 0.3 * (mu_right_close - mu_left_close)
 
-        # Limitação de velocidades
         vx = max(-self.max_speed, min(self.max_speed, vx))
         vy = max(-self.max_speed * 0.8, min(self.max_speed * 0.8, vy))
         omega = max(-1.0, min(1.0, omega))
@@ -301,34 +357,25 @@ class YouBotController:
         self.arm = Arm(self.robot)
         self.gripper = Gripper(self.robot)
 
-        # Log throttling
         self._log_times = {}
 
-        # Sensores
+        # Camera com Recognition
         self.camera = self.robot.getDevice("camera")
         if self.camera:
             self.camera.enable(self.time_step)
-            # Tentar habilitar recognition se disponível
-            try:
+            if self.camera.hasRecognition():
                 self.camera.recognitionEnable(self.time_step)
-            except:
-                pass
+                print("[INIT] Camera recognition enabled")
+            else:
+                print("[INIT] Camera has no recognition capability")
 
-        # LiDAR principal (altura média - detecta obstáculos e paredes)
+        # LiDAR principal
         self.lidar = self.robot.getDevice("lidar")
         if self.lidar:
             self.lidar.enable(self.time_step)
             self.lidar.enablePointCloud()
 
-        # LiDAR baixo (altura do chão - detecta cubos pequenos)
-        self.lidar_low = self.robot.getDevice("lidar_low")
-        if self.lidar_low:
-            self.lidar_low.enable(self.time_step)
-            self.lidar_low.enablePointCloud()
-
-        self.color_classifier = ColorClassifier()
         self.navigator = FuzzyNavigator()
-        self.grid = OccupancyGrid(ARENA_CENTER, ARENA_SIZE, resolution=0.1)
 
         self.pose = self._initial_pose()
         self.current_target = None
@@ -338,18 +385,23 @@ class YouBotController:
         self.stage_timer = 0.0
         self.collected = 0
         self.max_cubes = 15
-        self.search_spin_dir = 1
 
-        # Navegação em padrão lawnmower (varredura)
-        self.search_state = "forward"  # forward, turn_start, turn_mid, turn_end
-        self.search_direction = 1  # 1 = direita, -1 = esquerda
+        # Navegação lawnmower
+        self.search_state = "forward"
+        self.search_direction = 1
         self.turn_progress = 0.0
-        self.forward_timer = 0.0
 
         self.box_positions = BOX_POSITIONS
 
+        # Grid / caminho
+        self.grid = OccupancyGrid(ARENA_CENTER, ARENA_SIZE, cell_size=0.12)
+        self._seed_static_map()
+        self._waypoints = []
+        self._path_dirty = True
+        self.active_goal = None
+        self._max_cmd = 0.25
+
     def _log_throttled(self, key, msg, interval=1.5):
-        """Log com rate limit por chave."""
         try:
             now = self.robot.getTime()
         except Exception:
@@ -358,6 +410,114 @@ class YouBotController:
         if now - last >= interval:
             print(msg)
             self._log_times[key] = now
+
+    # ===== Grid helpers =====
+    def _seed_static_map(self):
+        self.grid.fill_border(OccupancyGrid.OBSTACLE, static=True)
+        wall_inflate = 0.10
+        # Obstáculos fixos
+        for ox, oy, radius in KNOWN_OBSTACLES:
+            self.grid.fill_disk(ox, oy, radius + wall_inflate, OccupancyGrid.OBSTACLE, static=True)
+        # Caixas de depósito
+        for pos in self.box_positions.values():
+            self.grid.fill_disk(pos[0], pos[1], 0.22, OccupancyGrid.BOX, static=True)
+        print(
+            f"[GRID] size=({self.grid.width}x{self.grid.height}) cell={self.grid.cell_size:.2f} "
+            f"bounds=({self.grid.min_x:.2f},{self.grid.min_y:.2f})-({self.grid.max_x:.2f},{self.grid.max_y:.2f})"
+        )
+
+    def _mark_cube_candidate(self, x, y):
+        cell = self.grid.world_to_cell(x, y)
+        if cell:
+            self.grid.set(cell[0], cell[1], OccupancyGrid.CUBE, static=False)
+            self._path_dirty = True
+
+    def _set_goal(self, target):
+        self.current_target = target
+        self.active_goal = target
+        self._waypoints = []
+        self._path_dirty = True
+
+    def _wall_clearances(self):
+        x, y, _ = self.pose
+        return (
+            x - self.grid.min_x,
+            self.grid.max_x - x,
+            y - self.grid.min_y,
+            self.grid.max_y - y,
+        )
+
+    def _enforce_boundary_safety(self, vx_cmd, vy_cmd, margin=0.25):
+        yaw = self.pose[2]
+        dx_world = math.cos(yaw) * vx_cmd - math.sin(yaw) * vy_cmd
+        dy_world = math.sin(yaw) * vx_cmd + math.cos(yaw) * vy_cmd
+
+        left, right, bottom, top = self._wall_clearances()
+        if left < margin and dx_world < 0:
+            dx_world = 0.0
+        if right < margin and dx_world > 0:
+            dx_world = 0.0
+        if bottom < margin and dy_world < 0:
+            dy_world = 0.0
+        if top < margin and dy_world > 0:
+            dy_world = 0.0
+
+        vx_adj = math.cos(yaw) * dx_world + math.sin(yaw) * dy_world
+        vy_adj = -math.sin(yaw) * dx_world + math.cos(yaw) * dy_world
+        return vx_adj, vy_adj
+
+    def _safe_move(self, vx, vy, omega):
+        vals = [vx, vy, omega]
+        safe = []
+        for v in vals:
+            if v is None or not math.isfinite(v):
+                safe.append(0.0)
+            else:
+                safe.append(max(-self._max_cmd, min(self._max_cmd, v)))
+        self.base.move(safe[0], safe[1], safe[2])
+
+    def _distance_to_point(self, point):
+        dx = point[0] - self.pose[0]
+        dy = point[1] - self.pose[1]
+        distance = math.hypot(dx, dy)
+        angle = wrap_angle(math.atan2(dy, dx) - self.pose[2])
+        return distance, angle
+
+    def _replan_path(self):
+        if not self.active_goal:
+            self._waypoints = []
+            self._path_dirty = False
+            return
+        path = self.grid.plan_path((self.pose[0], self.pose[1]), self.active_goal)
+        self._waypoints = path
+        self._path_dirty = False
+
+    def _next_nav_point(self):
+        if self._path_dirty:
+            self._replan_path()
+        if self._waypoints:
+            return self._waypoints[0]
+        return self.active_goal
+
+    def _update_grid_from_lidar(self, lidar_info):
+        if not lidar_info["points"]:
+            return
+        if any(math.isnan(v) for v in self.pose):
+            return
+        yaw = self.pose[2]
+        origin = (self.pose[0], self.pose[1])
+        hit_changed = False
+        for r, angle in lidar_info["points"]:
+            local_x = r * math.cos(angle)
+            local_y = r * math.sin(angle)
+            wx = origin[0] + math.cos(yaw) * local_x - math.sin(yaw) * local_y
+            wy = origin[1] + math.sin(yaw) * local_x + math.cos(yaw) * local_y
+            if math.isnan(wx) or math.isnan(wy):
+                continue
+            if self.grid.raycast(origin, (wx, wy), OccupancyGrid.OBSTACLE):
+                hit_changed = True
+        if hit_changed:
+            self._path_dirty = True
 
     def _initial_pose(self):
         try:
@@ -377,45 +537,56 @@ class YouBotController:
         self.pose[1] += dy_world * dt
         self.pose[2] = wrap_angle(self.pose[2] + omega * dt)
 
-    def _process_lidar_low(self):
-        """Processa LiDAR baixo para detectar cubos no chão."""
-        if not self.lidar_low:
-            return {"cubes": [], "min_front": 2.0}
+    def _process_recognition(self):
+        """Usa Camera Recognition API para detectar cubos."""
+        if not self.camera or not self.camera.hasRecognition():
+            return None
 
-        ranges = self.lidar_low.getRangeImage()
-        if not ranges:
-            return {"cubes": [], "min_front": 2.0}
+        objects = self.camera.getRecognitionObjects()
+        if not objects:
+            return None
 
-        res = self.lidar_low.getHorizontalResolution()
-        fov = self.lidar_low.getFov()
-        angle_step = fov / max(1, res - 1)
+        best = None
+        best_dist = float('inf')
 
-        # Detectar objetos próximos (potenciais cubos)
-        cube_candidates = []
-        front_readings = []
+        for obj in objects:
+            # Posição relativa à câmera (x=frente, y=esquerda, z=cima)
+            pos = obj.getPosition()
+            colors = obj.getColors()
 
-        for i, r in enumerate(ranges):
-            if math.isinf(r) or math.isnan(r) or r <= 0:
-                continue
-            angle = -fov / 2.0 + i * angle_step
+            # Distância ao objeto
+            dist = math.sqrt(pos[0]**2 + pos[1]**2)
 
-            # Cubos estão tipicamente entre 0.1m e 1.0m
-            if 0.08 < r < 1.0:
-                cube_candidates.append((r, angle))
+            # Determinar cor
+            color = None
+            if colors:
+                try:
+                    r, g, b = colors[0], colors[1], colors[2]
+                    color = color_from_rgb(r, g, b)
+                except Exception:
+                    color = None
 
-            # Leituras frontais
-            if abs(angle) < math.radians(20):
-                front_readings.append(r)
+            # Ângulo horizontal (y/x)
+            angle = math.atan2(pos[1], pos[0]) if pos[0] != 0 else 0
 
-        min_front = min(front_readings) if front_readings else 2.0
-        if cube_candidates:
-            nearest = min(cube_candidates, key=lambda p: p[0])
+            if dist < best_dist and dist < 3.0:
+                best_dist = dist
+                best = {
+                    "color": color,
+                    "distance": dist,
+                    "angle": angle,
+                    "position": pos,
+                    "model": obj.getModel(),
+                }
+
+        if best:
             self._log_throttled(
-                "lidar_low_candidates",
-                f"[LIDAR_LOW] candidatos={len(cube_candidates)} nearest r={nearest[0]:.2f} ang={nearest[1]:.2f}",
-                interval=1.0,
+                "recognition",
+                f"[RECOG] {best['model']} cor={best['color']} dist={best['distance']:.2f} ang={math.degrees(best['angle']):.1f}°",
+                interval=0.5,
             )
-        return {"cubes": cube_candidates, "min_front": min_front}
+
+        return best
 
     def _process_lidar(self):
         if not self.lidar:
@@ -437,7 +608,6 @@ class YouBotController:
                 continue
             if i % 2 == 0:
                 points.append((r, angle))
-            # windows
             deg = math.degrees(angle)
             if -20 <= deg <= 20:
                 front_window.append(r)
@@ -450,115 +620,16 @@ class YouBotController:
         left = min(left_window) if left_window else 2.0
         right = min(right_window) if right_window else 2.0
 
-        return {"front": front, "left": left, "right": right, "points": points, "fov": fov}
-
-    def _update_grid_with_lidar(self, lidar_points):
-        yaw = self.pose[2]
-        for r, angle in lidar_points:
-            if math.isnan(r) or math.isinf(r) or r <= 0:
-                continue
-            x_r = r * math.cos(angle)
-            y_r = r * math.sin(angle)
-            x_w = self.pose[0] + math.cos(yaw) * x_r - math.sin(yaw) * y_r
-            y_w = self.pose[1] + math.sin(yaw) * x_r + math.cos(yaw) * y_r
-            if math.isnan(x_w) or math.isnan(y_w):
-                continue
-            self.grid.mark_obstacle(x_w, y_w)
-
-    def _process_camera(self):
-        if not self.camera or cv2 is None or np is None:
-            return None
-        image = self.camera.getImageArray()
-        if image is None:
-            return None
-
-        img = np.array(image, dtype=np.uint8)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h, w, _ = img.shape
-
-        best_detection = None
-        for color, ranges in self.color_classifier.hsv_ranges.items():
-            mask = None
-            for low, high in ranges:
-                m = cv2.inRange(
-                    hsv,
-                    np.array(low, dtype=np.uint8),
-                    np.array(high, dtype=np.uint8),
-                )
-                mask = m if mask is None else cv2.bitwise_or(mask, m)
-            if mask is None:
-                continue
-            mask = cv2.morphologyEx(
-                mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
-            )
-            contours, _ = cv2.findContours(
-                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            if not contours:
-                continue
-            contour = max(contours, key=cv2.contourArea)
-            area = cv2.contourArea(contour)
-            if area < 6:  # aceitar cubos pequenos distantes
-                continue
-            x, y, bw, bh = cv2.boundingRect(contour)
-            cx = x + bw / 2.0
-            angle = ((cx - (w / 2.0)) / w) * self.camera.getFov()
-            distance = self._estimate_distance(bh, h)
-            if (
-                best_detection is None
-                or area > best_detection["area"]
-            ):
-                best_detection = {
-                    "color": color,
-                    "angle": angle,
-                    "distance": distance,
-                    "area": area,
-                    "bbox": (x, y, bw, bh),
-                }
-
-        if best_detection:
-            self._log_throttled(
-                "camera_detect",
-                f"[CAM] cor={best_detection['color']} area={best_detection['area']:.1f} dist≈{best_detection['distance']:.2f} angle={best_detection['angle']:.2f}",
-                interval=1.0,
-            )
-        return best_detection
-
-    def _estimate_distance(self, bbox_h, img_h):
-        try:
-            f = (img_h / 2.0) / math.tan(self.camera.getFov() / 2.0)
-            distance = (CUBE_SIZE * f) / max(1.0, bbox_h)
-            return distance
-        except Exception:
-            return 0.4
-
-    def _project_target_world(self, detection):
-        yaw = self.pose[2]
-        dist = detection["distance"]
-        ang = detection["angle"]
-        x_r = dist * math.cos(ang)
-        y_r = dist * math.sin(ang)
-        x_w = self.pose[0] + math.cos(yaw) * x_r - math.sin(yaw) * y_r
-        y_w = self.pose[1] + math.sin(yaw) * x_r + math.cos(yaw) * y_r
-        return (x_w, y_w)
-
-    def _project_lidar_point_world(self, r, angle):
-        """Converte medida do LiDAR baixo para coordenada no mundo."""
-        yaw = self.pose[2]
-        x_r = r * math.cos(angle)
-        y_r = r * math.sin(angle)
-        x_w = self.pose[0] + math.cos(yaw) * x_r - math.sin(yaw) * y_r
-        y_w = self.pose[1] + math.sin(yaw) * x_r + math.cos(yaw) * y_r
-        return (x_w, y_w)
+        return {"front": front, "left": left, "right": right, "points": points}
 
     def _check_obstacle_ahead(self, lidar_front, threshold=0.5):
-        """Verifica se há obstáculo à frente (LiDAR + conhecidos)."""
-        # Verificar LiDAR
         if lidar_front < threshold:
             return True
 
-        # Verificar obstáculos conhecidos
+        left, right, bottom, top = self._wall_clearances()
+        if min(left, right, bottom, top) < threshold:
+            return True
+
         x, y, yaw = self.pose
         for ox, oy, radius in KNOWN_OBSTACLES:
             dx = ox - x
@@ -566,48 +637,42 @@ class YouBotController:
             dist = math.hypot(dx, dy)
             obs_angle = wrap_angle(math.atan2(dy, dx) - yaw)
 
-            # Se obstáculo está na frente e próximo
             if abs(obs_angle) < math.radians(40) and dist < (threshold + radius + 0.1):
                 return True
 
         return False
 
     def _search_navigation(self, lidar_info, dt):
-        """Navegação lawnmower: anda reto, gira ao encontrar obstáculo/parede."""
+        """Navegação lawnmower."""
         front_dist = lidar_info["front"]
         left_dist = lidar_info["left"]
         right_dist = lidar_info["right"]
 
-        OBSTACLE_THRESHOLD = 0.55  # metros - aumentado para segurança
-        TURN_SPEED = 0.5  # rad/s
-        FORWARD_SPEED = 0.12  # m/s - reduzido para mais controle
-        TURN_DURATION = math.pi / 2 / TURN_SPEED  # tempo para girar 90°
+        OBSTACLE_THRESHOLD = 0.55
+        TURN_SPEED = 0.5
+        FORWARD_SPEED = 0.12
+        TURN_DURATION = math.pi / 2 / TURN_SPEED
 
-        # Verificar obstáculos conhecidos também
         obstacle_ahead = self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD)
 
         if self.search_state == "forward":
             if obstacle_ahead:
-                # Decidir direção da curva baseado no espaço lateral
                 if left_dist > right_dist:
-                    self.search_direction = 1  # Girar para esquerda
+                    self.search_direction = 1
                 else:
-                    self.search_direction = -1  # Girar para direita
+                    self.search_direction = -1
                 self.search_state = "turn_start"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
             else:
-                # Correção lateral para desviar de obstáculos próximos
                 vy_correct = 0.0
                 omega_correct = 0.0
-
                 if left_dist < 0.35:
                     vy_correct = -0.06
                     omega_correct = -0.1
                 elif right_dist < 0.35:
                     vy_correct = 0.06
                     omega_correct = 0.1
-
                 return FORWARD_SPEED, vy_correct, omega_correct
 
         elif self.search_state == "turn_start":
@@ -620,12 +685,10 @@ class YouBotController:
 
         elif self.search_state == "turn_mid":
             self.turn_progress += dt
-            # Andar um pouco para mudar de faixa
             if self.turn_progress >= 0.8:
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
-            # Se encontrar obstáculo, encurtar
             if self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD):
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
@@ -646,6 +709,7 @@ class YouBotController:
         self.stage = 0
         self.stage_timer = 0.0
         self.base.reset()
+        print(f"[GRASP] Iniciando captura - cor={self.current_color}")
 
     def _start_drop(self):
         self.mode = "drop"
@@ -670,8 +734,7 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 2:
-            # Slow approach
-            self.base.move(0.05, 0.0, 0.0)
+            self._safe_move(0.05, 0.0, 0.0)
             if self.stage_timer >= 2.0:
                 self.base.reset()
                 self.stage += 1
@@ -692,6 +755,12 @@ class YouBotController:
 
         elif self.stage == 5:
             self.collected += 1
+            print(f"[GRASP] Cubo coletado! Total: {self.collected}/{self.max_cubes}")
+            if self.active_goal:
+                cell = self.grid.world_to_cell(*self.active_goal)
+                if cell:
+                    self.grid.set(cell[0], cell[1], OccupancyGrid.FREE, overwrite_static=False)
+                    self._path_dirty = True
             self.mode = "to_box"
             self.stage = 0
             self.stage_timer = 0.0
@@ -699,10 +768,9 @@ class YouBotController:
                 (self.current_color or "").lower(), None
             )
             if target_box:
-                self.current_target = target_box
+                self._set_goal(target_box)
             else:
-                self.current_target = list(self.box_positions.values())[0]
-            return
+                self._set_goal(list(self.box_positions.values())[0])
 
     def _handle_drop(self, dt):
         self.stage_timer += dt
@@ -712,7 +780,7 @@ class YouBotController:
                 self.stage += 1
                 self.stage_timer = 0.0
         elif self.stage == 1:
-            self.base.move(0.03, 0.0, 0.0)
+            self._safe_move(0.03, 0.0, 0.0)
             if self.stage_timer >= 1.2:
                 self.base.reset()
                 self.stage += 1
@@ -728,8 +796,12 @@ class YouBotController:
                 self.stage += 1
                 self.stage_timer = 0.0
         elif self.stage == 4:
+            print(f"[DROP] Cubo depositado na caixa {self.current_color}")
             self.mode = "search"
             self.current_target = None
+            self.active_goal = None
+            self._waypoints = []
+            self._path_dirty = True
             self.current_color = None
             self.base.reset()
             self.stage = 0
@@ -744,67 +816,76 @@ class YouBotController:
         return distance, angle
 
     def run(self):
+        print("[RUN] YouBot controller started")
+
         while self.robot.step(self.time_step) != -1:
             dt = self.time_step / 1000.0
 
             if self.collected >= self.max_cubes:
+                print("[DONE] Todos os cubos coletados!")
                 self.base.reset()
                 break
 
-            # Odometry update
+            # Odometry
             vx_odo, vy_odo, omega_odo = self.base.compute_odometry(dt)
             self._integrate_pose(vx_odo, vy_odo, omega_odo, dt)
 
-            # Sensor processing
+            # Sensores
             lidar_info = self._process_lidar()
-            self._update_grid_with_lidar(lidar_info["points"])
-            detection = self._process_camera()
+            self._update_grid_from_lidar(lidar_info)
+            recognition = self._process_recognition()
 
+            # ===== MODO SEARCH =====
             if self.mode == "search":
-                if detection:
-                    self.current_color = detection["color"]
-                    self.current_target = self._project_target_world(detection)
+                if recognition:
+                    self.current_color = recognition["color"]
+                    pos = recognition["position"]
+                    yaw = self.pose[2]
+                    x_w = self.pose[0] + math.cos(yaw) * pos[0] - math.sin(yaw) * pos[1]
+                    y_w = self.pose[1] + math.sin(yaw) * pos[0] + math.cos(yaw) * pos[1]
+                    self._mark_cube_candidate(x_w, y_w)
+                    self._set_goal((x_w, y_w))
                     self.mode = "approach"
-                else:
-                    # Tentar usar LiDAR baixo para encontrar cubo à frente
-                    lidar_low_info = self._process_lidar_low()
-                    candidates = [
-                        (r, ang) for r, ang in lidar_low_info["cubes"]
-                        if r < 1.2 and abs(ang) < math.radians(40)
-                    ]
-                    best = min(candidates, key=lambda p: p[0]) if candidates else None
-                    if best:
-                        self._log_throttled(
-                            "lidar_low_detect",
-                            f"[LIDAR_LOW] alvo r={best[0]:.2f} ang={best[1]:.2f}",
-                            interval=1.0,
-                        )
-                        self.current_color = None  # cor será determinada quando a câmera ver
-                        self.current_target = self._project_lidar_point_world(best[0], best[1])
-                        self.mode = "approach"
-                        continue
-
-                    # Navegação em padrão lawnmower: andar reto, girar ao encontrar obstáculo/parede
-                    vx_cmd, vy_cmd, omega_cmd = self._search_navigation(lidar_info, dt)
-                    self.base.move(vx_cmd, vy_cmd, omega_cmd)
+                    print(f"[SEARCH] Cubo detectado (cor={self.current_color}), iniciando approach")
                     continue
 
-            if self.mode == "approach":
-                if detection:
-                    self.current_color = detection["color"]
-                    self.current_target = self._project_target_world(detection)
-                distance, angle = self._distance_to_target()
+                # Navegação lawnmower
+                vx_cmd, vy_cmd, omega_cmd = self._search_navigation(lidar_info, dt)
+                vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                continue
 
-                # Usar LiDAR baixo para alinhamento fino quando perto
-                lidar_low_info = self._process_lidar_low()
-                if lidar_low_info["min_front"] < 0.25 and distance and distance < 0.3:
-                    # Muito perto - iniciar grasp
-                    self._start_grasp()
+            # ===== MODO APPROACH =====
+            if self.mode == "approach":
+                # Atualizar posição do cubo se ainda visível
+                if recognition:
+                    if recognition["color"]:
+                        self.current_color = recognition["color"]
+                    pos = recognition["position"]
+                    yaw = self.pose[2]
+                    x_w = self.pose[0] + math.cos(yaw) * pos[0] - math.sin(yaw) * pos[1]
+                    y_w = self.pose[1] + math.sin(yaw) * pos[0] + math.cos(yaw) * pos[1]
+                    self._mark_cube_candidate(x_w, y_w)
+                    self._set_goal((x_w, y_w))
+
+                    if recognition["distance"] < 0.20:
+                        self._start_grasp()
+                        continue
+
+                nav_point = self._next_nav_point()
+                distance, angle = self._distance_to_point(nav_point) if nav_point else (None, None)
+
+                if nav_point and self._waypoints and distance is not None and distance < 0.15:
+                    self._waypoints.pop(0)
                     continue
 
                 if distance is not None and distance < 0.22:
                     self._start_grasp()
                     continue
+
+                # Se perdeu o cubo de vista por muito tempo, voltar a buscar
+                if not recognition:
+                    self._log_throttled("lost_cube", "[APPROACH] Cubo perdido de vista", 2.0)
 
                 vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
                     True,
@@ -813,17 +894,24 @@ class YouBotController:
                     lidar_info["front"],
                     lidar_info["left"],
                     lidar_info["right"],
-                    pose=self.pose,  # Passar pose para verificar obstáculos conhecidos
+                    pose=self.pose,
                 )
-                self.base.move(vx_cmd, vy_cmd, omega_cmd)
+                vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                 continue
 
+            # ===== MODO GRASP =====
             if self.mode == "grasp":
                 self._handle_grasp(dt)
                 continue
 
+            # ===== MODO TO_BOX =====
             if self.mode == "to_box":
-                distance, angle = self._distance_to_target()
+                nav_point = self._next_nav_point()
+                distance, angle = self._distance_to_point(nav_point) if nav_point else (None, None)
+                if nav_point and self._waypoints and distance is not None and distance < 0.15:
+                    self._waypoints.pop(0)
+                    continue
                 if distance is not None and distance < 0.30:
                     self._start_drop()
                     continue
@@ -834,18 +922,16 @@ class YouBotController:
                     lidar_info["front"],
                     lidar_info["left"],
                     lidar_info["right"],
-                    pose=self.pose,  # Passar pose para verificar obstáculos conhecidos
+                    pose=self.pose,
                 )
-                self.base.move(vx_cmd, vy_cmd, omega_cmd)
+                vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                 continue
 
+            # ===== MODO DROP =====
             if self.mode == "drop":
                 self._handle_drop(dt)
                 continue
-
-            if self.collected >= self.max_cubes:
-                self.base.reset()
-                break
 
 
 if __name__ == "__main__":
