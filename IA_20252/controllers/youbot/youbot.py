@@ -301,6 +301,9 @@ class YouBotController:
         self.arm = Arm(self.robot)
         self.gripper = Gripper(self.robot)
 
+        # Log throttling
+        self._log_times = {}
+
         # Sensores
         self.camera = self.robot.getDevice("camera")
         if self.camera:
@@ -344,6 +347,17 @@ class YouBotController:
         self.forward_timer = 0.0
 
         self.box_positions = BOX_POSITIONS
+
+    def _log_throttled(self, key, msg, interval=1.5):
+        """Log com rate limit por chave."""
+        try:
+            now = self.robot.getTime()
+        except Exception:
+            now = 0.0
+        last = self._log_times.get(key, -1e9)
+        if now - last >= interval:
+            print(msg)
+            self._log_times[key] = now
 
     def _initial_pose(self):
         try:
@@ -496,6 +510,12 @@ class YouBotController:
                     "bbox": (x, y, bw, bh),
                 }
 
+        if best_detection:
+            self._log_throttled(
+                "camera_detect",
+                f"[CAM] cor={best_detection['color']} area={best_detection['area']:.1f} dist≈{best_detection['distance']:.2f} angle={best_detection['angle']:.2f}",
+                interval=1.0,
+            )
         return best_detection
 
     def _estimate_distance(self, bbox_h, img_h):
@@ -747,6 +767,12 @@ class YouBotController:
                             best = (r, ang)
                             break
                     if best:
+                        if lidar_info["front"] > best[0]:
+                            self._log_throttled(
+                                "lidar_low_detect",
+                                f"[LIDAR_LOW] alvo r={best[0]:.2f} ang={best[1]:.2f} (alto não marcou)",
+                                interval=1.0,
+                            )
                         self.current_color = None  # cor será determinada quando a câmera ver
                         self.current_target = self._project_lidar_point_world(best[0], best[1])
                         self.mode = "approach"
