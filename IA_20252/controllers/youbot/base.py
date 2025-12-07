@@ -55,11 +55,19 @@ class Base:
             robot.getDevice("wheel3"),
             robot.getDevice("wheel4")
         ]
-        
-        # Set wheels to velocity control mode
+
+        # Set wheels to velocity control mode and enable encoders for odometry
+        self.wheel_sensors = []
         for wheel in self.wheels:
-            wheel.setPosition(float('inf'))
+            wheel.setPosition(float("inf"))
             wheel.setVelocity(0.0)
+            sensor = wheel.getPositionSensor()
+            if sensor:
+                sensor.enable(self.time_step)
+            self.wheel_sensors.append(sensor)
+        self.prev_wheel_positions = [
+            sensor.getValue() if sensor else 0.0 for sensor in self.wheel_sensors
+        ]
         
         # Movement state
         self.vx = 0.0 
@@ -163,3 +171,31 @@ class Base:
         self.vy -= SPEED_INCREMENT
         self.vy = max(self.vy, -MAX_SPEED)
         self.move(self.vx, self.vy, self.omega)
+
+    def read_wheel_positions(self):
+        """Return current wheel encoder readings (rad)"""
+        return [sensor.getValue() if sensor else 0.0 for sensor in self.wheel_sensors]
+
+    def compute_odometry(self, delta_t):
+        """Compute chassis velocities from wheel encoder deltas.
+
+        Args:
+            delta_t: timestep in seconds
+
+        Returns:
+            tuple: (vx, vy, omega) estimated in robot frame.
+        """
+        current = self.read_wheel_positions()
+        deltas = [c - p for c, p in zip(current, self.prev_wheel_positions)]
+        self.prev_wheel_positions = current
+
+        if delta_t <= 0:
+            return 0.0, 0.0, 0.0
+
+        wheel_w = [d / delta_t for d in deltas]
+        vx = (WHEEL_RADIUS / 4.0) * sum(wheel_w)
+        vy = (WHEEL_RADIUS / 4.0) * (-wheel_w[0] + wheel_w[1] + wheel_w[2] - wheel_w[3])
+        omega = (WHEEL_RADIUS / (4.0 * (LX + LY))) * (
+            -wheel_w[0] + wheel_w[1] - wheel_w[2] + wheel_w[3]
+        )
+        return vx, vy, omega

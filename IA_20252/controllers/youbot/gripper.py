@@ -37,28 +37,47 @@ class Gripper:
         self.robot = robot
         self.time_step = int(robot.getBasicTimeStep())
         
-        # Get gripper finger motor (single motor controls both fingers)
-        self.finger = robot.getDevice("finger::left")
-        
-        # Set velocity for position control
-        if self.finger:
-            self.finger.setVelocity(0.03)
-        else:
-            print("Warning: Could not find gripper motor 'finger::left'")
-        
+        # Get gripper finger motors (both sides)
+        self.finger_left = robot.getDevice("finger::left")
+        self.finger_right = robot.getDevice("finger::right")
+
+        self.sensor_left = None
+        self.sensor_right = None
+
+        for motor_attr in ("finger_left", "finger_right"):
+            motor = getattr(self, motor_attr)
+            if motor:
+                motor.setVelocity(0.03)
+                sensor = motor.getPositionSensor()
+                if sensor:
+                    sensor.enable(self.time_step)
+                if motor_attr == "finger_left":
+                    self.sensor_left = sensor
+                else:
+                    self.sensor_right = sensor
+            else:
+                print(f"Warning: Could not find gripper motor '{motor_attr.replace('_', '::')}'")
+
+        # Alias for backward compatibility
+        self.finger = self.finger_left
+
         # Current state
         self.is_gripping = False
     
     def grip(self):
         """Close gripper to grip an object"""
-        if self.finger:
-            self.finger.setPosition(MIN_POS)
+        if self.finger_left:
+            self.finger_left.setPosition(MIN_POS)
+        if self.finger_right:
+            self.finger_right.setPosition(MIN_POS)
         self.is_gripping = True
     
     def release(self):
         """Open gripper to release an object"""
-        if self.finger:
-            self.finger.setPosition(MAX_POS)
+        if self.finger_left:
+            self.finger_left.setPosition(MAX_POS)
+        if self.finger_right:
+            self.finger_right.setPosition(MAX_POS)
         self.is_gripping = False
     
     def set_gap(self, gap):
@@ -70,10 +89,12 @@ class Gripper:
         # Calculate motor position with offset compensation
         v = bound(0.5 * (gap - OFFSET_WHEN_LOCKED), MIN_POS, MAX_POS)
         
-        if self.finger:
-            self.finger.setPosition(v)
+        if self.finger_left:
+            self.finger_left.setPosition(v)
+        if self.finger_right:
+            self.finger_right.setPosition(v)
         
-        self.is_gripping = (v < MAX_POS / 2)
+        self.is_gripping = v < MAX_POS / 2
     
     def is_closed(self):
         """Check if gripper is in closed/gripping state
@@ -82,3 +103,17 @@ class Gripper:
             bool: True if gripper is gripping
         """
         return self.is_gripping
+
+    def finger_positions(self):
+        """Return current finger sensor readings if available"""
+        left = self.sensor_left.getValue() if self.sensor_left else None
+        right = self.sensor_right.getValue() if self.sensor_right else None
+        return left, right
+
+    def has_object(self, threshold=0.002):
+        """Detect if an object is held based on finger positions"""
+        left, right = self.finger_positions()
+        samples = [v for v in (left, right) if v is not None]
+        if not samples:
+            return self.is_gripping
+        return all(v <= threshold for v in samples)
