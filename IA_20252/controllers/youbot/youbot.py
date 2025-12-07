@@ -21,6 +21,24 @@ CUBE_SIZE = 0.03
 ARENA_CENTER = (-0.79, 0.0)
 ARENA_SIZE = (7.0, 4.0)
 
+# Obstáculos conhecidos (WoodenBoxes do mundo) - posição (x, y) e raio de segurança
+KNOWN_OBSTACLES = [
+    (0.6, 0.0, 0.25),      # A
+    (1.96, -1.24, 0.25),   # B
+    (1.95, 1.25, 0.25),    # C
+    (-2.28, 1.5, 0.25),    # D
+    (-1.02, 0.75, 0.25),   # E
+    (-1.02, -0.74, 0.25),  # F
+    (-2.27, -1.51, 0.25),  # G
+]
+
+# Depósitos (PlasticFruitBox) - evitar colisão mas são destinos
+BOX_POSITIONS = {
+    "green": (0.48, 1.58),
+    "blue": (0.48, -1.62),
+    "red": (2.31, 0.01),
+}
+
 
 def wrap_angle(angle):
     while angle > math.pi:
@@ -120,15 +138,25 @@ class OccupancyGrid:
 
 
 class FuzzyNavigator:
+    """Controlador Fuzzy para navegação com desvio de obstáculos."""
+
     def __init__(self, max_speed=0.2):
         self.max_speed = max_speed
+        self.safety_margin = 0.4  # Margem de segurança dos obstáculos
 
     @staticmethod
-    def _mu_close(x, threshold=0.35):
+    def _mu_close(x, threshold=0.45):
+        """Pertinência para 'perto' - threshold aumentado para maior segurança."""
         return max(0.0, min(1.0, (threshold - x) / threshold))
 
     @staticmethod
-    def _mu_far(x, start=0.35, end=1.2):
+    def _mu_very_close(x, threshold=0.25):
+        """Pertinência para 'muito perto' - emergência."""
+        return max(0.0, min(1.0, (threshold - x) / threshold))
+
+    @staticmethod
+    def _mu_far(x, start=0.4, end=1.5):
+        """Pertinência para 'longe'."""
         if x <= start:
             return 0.0
         if x >= end:
@@ -137,21 +165,58 @@ class FuzzyNavigator:
 
     @staticmethod
     def _mu_small_angle(angle_rad):
+        """Pertinência para ângulo pequeno (alinhado)."""
         a = abs(wrap_angle(angle_rad))
         if a < math.radians(5):
             return 1.0
-        if a > math.radians(30):
+        if a > math.radians(25):
             return 0.0
-        return (math.radians(30) - a) / math.radians(25)
+        return (math.radians(25) - a) / math.radians(20)
+
+    @staticmethod
+    def _mu_medium_angle(angle_rad):
+        """Pertinência para ângulo médio."""
+        a = abs(wrap_angle(angle_rad))
+        if a < math.radians(10) or a > math.radians(60):
+            return 0.0
+        if a < math.radians(35):
+            return (a - math.radians(10)) / math.radians(25)
+        return (math.radians(60) - a) / math.radians(25)
 
     @staticmethod
     def _mu_big_angle(angle_rad):
+        """Pertinência para ângulo grande (precisa girar muito)."""
         a = abs(wrap_angle(angle_rad))
-        if a < math.radians(10):
+        if a < math.radians(40):
             return 0.0
-        if a > math.radians(70):
+        if a > math.radians(90):
             return 1.0
-        return (a - math.radians(10)) / math.radians(60)
+        return (a - math.radians(40)) / math.radians(50)
+
+    def check_known_obstacles(self, pose):
+        """Verifica proximidade de obstáculos conhecidos e retorna distâncias por setor."""
+        x, y, yaw = pose
+        min_dist_left = 2.0
+        min_dist_right = 2.0
+        min_dist_front = 2.0
+
+        for ox, oy, radius in KNOWN_OBSTACLES:
+            dx = ox - x
+            dy = oy - y
+            dist = math.hypot(dx, dy) - radius
+
+            # Ângulo do obstáculo relativo ao robô
+            obs_angle = wrap_angle(math.atan2(dy, dx) - yaw)
+
+            # Classificar por setor
+            if abs(obs_angle) < math.radians(30):
+                min_dist_front = min(min_dist_front, dist)
+            elif obs_angle > 0 and obs_angle < math.radians(120):
+                min_dist_left = min(min_dist_left, dist)
+            elif obs_angle < 0 and obs_angle > math.radians(-120):
+                min_dist_right = min(min_dist_right, dist)
+
+        return min_dist_front, min_dist_left, min_dist_right
 
     def compute(
         self,
@@ -161,33 +226,69 @@ class FuzzyNavigator:
         obs_front,
         obs_left,
         obs_right,
+        pose=None,
     ):
+        """Calcula comandos de velocidade usando lógica fuzzy."""
         if not has_target:
-            return 0.0, 0.0, 0.35
+            return 0.0, 0.0, 0.3
 
+        # Combinar LiDAR com obstáculos conhecidos
+        if pose is not None:
+            known_front, known_left, known_right = self.check_known_obstacles(pose)
+            obs_front = min(obs_front, known_front)
+            obs_left = min(obs_left, known_left)
+            obs_right = min(obs_right, known_right)
+
+        # Fuzzificação
         mu_front_close = self._mu_close(obs_front)
+        mu_front_very_close = self._mu_very_close(obs_front)
         mu_left_close = self._mu_close(obs_left)
         mu_right_close = self._mu_close(obs_right)
 
-        mu_far = self._mu_far(target_distance)
-        mu_small = self._mu_small_angle(target_angle)
-        mu_big = self._mu_big_angle(target_angle)
+        mu_target_far = self._mu_far(target_distance)
+        mu_target_close = self._mu_close(target_distance, threshold=0.3)
+        mu_angle_small = self._mu_small_angle(target_angle)
+        mu_angle_medium = self._mu_medium_angle(target_angle)
+        mu_angle_big = self._mu_big_angle(target_angle)
 
-        # Rule aggregation (simple weighted blend)
-        vx = (0.12 * mu_far) * (1.0 - mu_front_close)
-        # Strafe away from the closest side obstacle
-        vy = 0.08 * (mu_right_close - mu_left_close)
+        # ========== REGRAS FUZZY ==========
 
-        # Heading correction
+        # Regra 1: Se obstáculo muito perto na frente -> PARAR e girar
+        if mu_front_very_close > 0.5:
+            vx = -0.05  # Recuar levemente
+            vy = 0.1 * (1 if obs_left < obs_right else -1)  # Strafe para lado livre
+            omega = 0.5 * (1 if obs_left > obs_right else -1)  # Girar para lado livre
+            return vx, vy, omega
+
+        # Regra 2: Se obstáculo perto na frente -> reduzir velocidade, desviar
+        speed_reduction = 1.0 - (0.8 * mu_front_close)
+
+        # Regra 3: Velocidade frontal baseada em distância e alinhamento
+        vx = 0.15 * mu_target_far * speed_reduction * (1.0 - 0.5 * mu_angle_big)
+
+        # Regra 4: Se perto do alvo e alinhado -> aproximar devagar
+        if mu_target_close > 0.3 and mu_angle_small > 0.5:
+            vx = 0.08 * speed_reduction
+
+        # Regra 5: Strafe para desviar de obstáculos laterais
+        vy = 0.12 * (mu_right_close - mu_left_close)
+
+        # Regra 6: Rotação para alinhar com alvo
+        angle_sign = 1 if target_angle > 0 else -1
         omega = (
-            0.6 * mu_big * (1 if target_angle > 0 else -1)
-            + 0.25 * (mu_right_close - mu_left_close)
+            0.8 * mu_angle_big * angle_sign +
+            0.4 * mu_angle_medium * angle_sign +
+            0.1 * (1.0 - mu_angle_small) * angle_sign
         )
-        omega += 0.25 * (0.5 - mu_small) * (1 if target_angle > 0 else -1)
 
+        # Regra 7: Ajuste de rotação por obstáculos laterais
+        omega += 0.3 * (mu_right_close - mu_left_close)
+
+        # Limitação de velocidades
         vx = max(-self.max_speed, min(self.max_speed, vx))
-        vy = max(-self.max_speed, min(self.max_speed, vy))
-        omega = max(-0.8, min(0.8, omega))
+        vy = max(-self.max_speed * 0.8, min(self.max_speed * 0.8, vy))
+        omega = max(-1.0, min(1.0, omega))
+
         return vx, vy, omega
 
 
@@ -200,13 +301,27 @@ class YouBotController:
         self.arm = Arm(self.robot)
         self.gripper = Gripper(self.robot)
 
+        # Sensores
         self.camera = self.robot.getDevice("camera")
         if self.camera:
             self.camera.enable(self.time_step)
+            # Tentar habilitar recognition se disponível
+            try:
+                self.camera.recognitionEnable(self.time_step)
+            except:
+                pass
+
+        # LiDAR principal (altura média - detecta obstáculos e paredes)
         self.lidar = self.robot.getDevice("lidar")
         if self.lidar:
             self.lidar.enable(self.time_step)
             self.lidar.enablePointCloud()
+
+        # LiDAR baixo (altura do chão - detecta cubos pequenos)
+        self.lidar_low = self.robot.getDevice("lidar_low")
+        if self.lidar_low:
+            self.lidar_low.enable(self.time_step)
+            self.lidar_low.enablePointCloud()
 
         self.color_classifier = ColorClassifier()
         self.navigator = FuzzyNavigator()
@@ -228,11 +343,7 @@ class YouBotController:
         self.turn_progress = 0.0
         self.forward_timer = 0.0
 
-        self.box_positions = {
-            "green": (0.48, 1.58),
-            "blue": (0.48, -1.62),
-            "red": (2.31, 0.01),
-        }
+        self.box_positions = BOX_POSITIONS
 
     def _initial_pose(self):
         try:
@@ -251,6 +362,39 @@ class YouBotController:
         self.pose[0] += dx_world * dt
         self.pose[1] += dy_world * dt
         self.pose[2] = wrap_angle(self.pose[2] + omega * dt)
+
+    def _process_lidar_low(self):
+        """Processa LiDAR baixo para detectar cubos no chão."""
+        if not self.lidar_low:
+            return {"cubes": [], "min_front": 2.0}
+
+        ranges = self.lidar_low.getRangeImage()
+        if not ranges:
+            return {"cubes": [], "min_front": 2.0}
+
+        res = self.lidar_low.getHorizontalResolution()
+        fov = self.lidar_low.getFov()
+        angle_step = fov / max(1, res - 1)
+
+        # Detectar objetos próximos (potenciais cubos)
+        cube_candidates = []
+        front_readings = []
+
+        for i, r in enumerate(ranges):
+            if math.isinf(r) or math.isnan(r) or r <= 0:
+                continue
+            angle = -fov / 2.0 + i * angle_step
+
+            # Cubos estão tipicamente entre 0.1m e 1.0m
+            if 0.08 < r < 1.0:
+                cube_candidates.append((r, angle))
+
+            # Leituras frontais
+            if abs(angle) < math.radians(20):
+                front_readings.append(r)
+
+        min_front = min(front_readings) if front_readings else 2.0
+        return {"cubes": cube_candidates, "min_front": min_front}
 
     def _process_lidar(self):
         if not self.lidar:
@@ -334,7 +478,7 @@ class YouBotController:
                 continue
             contour = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(contour)
-            if area < 30:
+            if area < 10:  # aceitar cubos pequenos distantes
                 continue
             x, y, bw, bh = cv2.boundingRect(contour)
             cx = x + bw / 2.0
@@ -372,35 +516,74 @@ class YouBotController:
         y_w = self.pose[1] + math.sin(yaw) * x_r + math.cos(yaw) * y_r
         return (x_w, y_w)
 
+    def _project_lidar_point_world(self, r, angle):
+        """Converte medida do LiDAR baixo para coordenada no mundo."""
+        yaw = self.pose[2]
+        x_r = r * math.cos(angle)
+        y_r = r * math.sin(angle)
+        x_w = self.pose[0] + math.cos(yaw) * x_r - math.sin(yaw) * y_r
+        y_w = self.pose[1] + math.sin(yaw) * x_r + math.cos(yaw) * y_r
+        return (x_w, y_w)
+
+    def _check_obstacle_ahead(self, lidar_front, threshold=0.5):
+        """Verifica se há obstáculo à frente (LiDAR + conhecidos)."""
+        # Verificar LiDAR
+        if lidar_front < threshold:
+            return True
+
+        # Verificar obstáculos conhecidos
+        x, y, yaw = self.pose
+        for ox, oy, radius in KNOWN_OBSTACLES:
+            dx = ox - x
+            dy = oy - y
+            dist = math.hypot(dx, dy)
+            obs_angle = wrap_angle(math.atan2(dy, dx) - yaw)
+
+            # Se obstáculo está na frente e próximo
+            if abs(obs_angle) < math.radians(40) and dist < (threshold + radius + 0.1):
+                return True
+
+        return False
+
     def _search_navigation(self, lidar_info, dt):
-        """Navegação lawnmower: anda reto, gira 90° ao encontrar obstáculo/parede."""
+        """Navegação lawnmower: anda reto, gira ao encontrar obstáculo/parede."""
         front_dist = lidar_info["front"]
         left_dist = lidar_info["left"]
         right_dist = lidar_info["right"]
 
-        OBSTACLE_THRESHOLD = 0.5  # metros
-        TURN_SPEED = 0.6  # rad/s
-        FORWARD_SPEED = 0.15  # m/s
+        OBSTACLE_THRESHOLD = 0.55  # metros - aumentado para segurança
+        TURN_SPEED = 0.5  # rad/s
+        FORWARD_SPEED = 0.12  # m/s - reduzido para mais controle
         TURN_DURATION = math.pi / 2 / TURN_SPEED  # tempo para girar 90°
 
+        # Verificar obstáculos conhecidos também
+        obstacle_ahead = self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD)
+
         if self.search_state == "forward":
-            # Andar reto até encontrar obstáculo na frente
-            if front_dist < OBSTACLE_THRESHOLD:
-                # Iniciar manobra de curva
+            if obstacle_ahead:
+                # Decidir direção da curva baseado no espaço lateral
+                if left_dist > right_dist:
+                    self.search_direction = 1  # Girar para esquerda
+                else:
+                    self.search_direction = -1  # Girar para direita
                 self.search_state = "turn_start"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
             else:
-                # Pequena correção para desviar de obstáculos laterais
+                # Correção lateral para desviar de obstáculos próximos
                 vy_correct = 0.0
-                if left_dist < 0.3:
-                    vy_correct = -0.05
-                elif right_dist < 0.3:
-                    vy_correct = 0.05
-                return FORWARD_SPEED, vy_correct, 0.0
+                omega_correct = 0.0
+
+                if left_dist < 0.35:
+                    vy_correct = -0.06
+                    omega_correct = -0.1
+                elif right_dist < 0.35:
+                    vy_correct = 0.06
+                    omega_correct = 0.1
+
+                return FORWARD_SPEED, vy_correct, omega_correct
 
         elif self.search_state == "turn_start":
-            # Primeira curva de 90° na direção atual
             self.turn_progress += dt
             if self.turn_progress >= TURN_DURATION:
                 self.search_state = "turn_mid"
@@ -409,25 +592,23 @@ class YouBotController:
             return 0.0, 0.0, TURN_SPEED * self.search_direction
 
         elif self.search_state == "turn_mid":
-            # Andar reto um pouco (trocar de faixa)
             self.turn_progress += dt
-            if self.turn_progress >= 1.0:  # 1 segundo andando
+            # Andar um pouco para mudar de faixa
+            if self.turn_progress >= 0.8:
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
-            # Se encontrar obstáculo, voltar a girar
-            if front_dist < OBSTACLE_THRESHOLD:
+            # Se encontrar obstáculo, encurtar
+            if self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD):
                 self.search_state = "turn_end"
                 self.turn_progress = 0.0
             return FORWARD_SPEED, 0.0, 0.0
 
         elif self.search_state == "turn_end":
-            # Segunda curva de 90° na mesma direção
             self.turn_progress += dt
             if self.turn_progress >= TURN_DURATION:
                 self.search_state = "forward"
                 self.turn_progress = 0.0
-                self.search_direction *= -1  # Inverter direção para próxima vez
                 return 0.0, 0.0, 0.0
             return 0.0, 0.0, TURN_SPEED * self.search_direction
 
@@ -558,6 +739,19 @@ class YouBotController:
                     self.current_target = self._project_target_world(detection)
                     self.mode = "approach"
                 else:
+                    # Tentar usar LiDAR baixo para encontrar cubo à frente
+                    lidar_low_info = self._process_lidar_low()
+                    best = None
+                    for r, ang in lidar_low_info["cubes"]:
+                        if r < 1.2 and abs(ang) < math.radians(35):
+                            best = (r, ang)
+                            break
+                    if best:
+                        self.current_color = None  # cor será determinada quando a câmera ver
+                        self.current_target = self._project_lidar_point_world(best[0], best[1])
+                        self.mode = "approach"
+                        continue
+
                     # Navegação em padrão lawnmower: andar reto, girar ao encontrar obstáculo/parede
                     vx_cmd, vy_cmd, omega_cmd = self._search_navigation(lidar_info, dt)
                     self.base.move(vx_cmd, vy_cmd, omega_cmd)
@@ -568,9 +762,18 @@ class YouBotController:
                     self.current_color = detection["color"]
                     self.current_target = self._project_target_world(detection)
                 distance, angle = self._distance_to_target()
-                if distance is not None and distance < 0.18:
+
+                # Usar LiDAR baixo para alinhamento fino quando perto
+                lidar_low_info = self._process_lidar_low()
+                if lidar_low_info["min_front"] < 0.25 and distance and distance < 0.3:
+                    # Muito perto - iniciar grasp
                     self._start_grasp()
                     continue
+
+                if distance is not None and distance < 0.22:
+                    self._start_grasp()
+                    continue
+
                 vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
                     True,
                     distance or 0.5,
@@ -578,6 +781,7 @@ class YouBotController:
                     lidar_info["front"],
                     lidar_info["left"],
                     lidar_info["right"],
+                    pose=self.pose,  # Passar pose para verificar obstáculos conhecidos
                 )
                 self.base.move(vx_cmd, vy_cmd, omega_cmd)
                 continue
@@ -588,7 +792,7 @@ class YouBotController:
 
             if self.mode == "to_box":
                 distance, angle = self._distance_to_target()
-                if distance is not None and distance < 0.25:
+                if distance is not None and distance < 0.30:
                     self._start_drop()
                     continue
                 vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
@@ -598,6 +802,7 @@ class YouBotController:
                     lidar_info["front"],
                     lidar_info["left"],
                     lidar_info["right"],
+                    pose=self.pose,  # Passar pose para verificar obstáculos conhecidos
                 )
                 self.base.move(vx_cmd, vy_cmd, omega_cmd)
                 continue

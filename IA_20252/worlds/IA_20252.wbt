@@ -89,26 +89,6 @@ PlasticFruitBox {
   color 1 0 0
 }
 Youbot {
-  hidden position_0_0 15.994544765033256
-  hidden position_0_1 -15.994563013321551
-  hidden position_0_2 -24.183727372173948
-  hidden position_0_3 24.183743417312467
-  hidden position_3_0 -2.182190582319627e-10
-  hidden position_4_0 1.5700025634452441
-  hidden rotation_5 0 -1 0 1.5700025634452441
-  hidden position_5_0 -2.63500163792944
-  hidden rotation_6 0 0.9999999999999999 0 2.63500163792944
-  hidden position_6_0 1.780000422997133
-  hidden rotation_7 0 -1 0 1.780000422997133
-  hidden position_7_0 1.3095366507060104e-09
-  hidden position_8_0 0.0068994264057803635
-  hidden position_8_1 9.999992826833685e-05
-  hidden translation_9 0 0.0068994264057803635 0.09
-  hidden translation_10 0 -9.999992826833685e-05 0.09
-  hidden rotation_11 0 0.9999999999999999 0 3.428174150674083
-  hidden rotation_12 0 -1 0 3.4281923989623784
-  hidden rotation_13 0 1 0 0.9490138565443978
-  hidden rotation_14 0 -1 0 0.9489978114058787
   translation -3.9997416678390314 9.611380688677505e-06 0.1019377704282028
   rotation -0.025943278593371307 0.9992896840147073 0.027332649297378084 0.001589857913403252
   controllerArgs [
@@ -125,11 +105,24 @@ Youbot {
       minRange 0.1
       maxRange 5.0
     }
+    Lidar {
+      name "lidar_low"
+      translation 0.20 0 -0.12
+      rotation 0 0 1 0
+      horizontalResolution 90
+      fieldOfView 1.57
+      numberOfLayers 1
+      minRange 0.05
+      maxRange 1.5
+    }
     Camera {
       name "camera"
       translation 0.27 0 -0.06
       width 128
       height 128
+      recognition Recognition {
+        maxRange 3
+      }
     }
   ]
 }

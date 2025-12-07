@@ -63,6 +63,7 @@ class Gripper:
 
         # Current state
         self.is_gripping = False
+        self.last_positions = (None, None)
     
     def grip(self):
         """Close gripper to grip an object"""
@@ -108,7 +109,8 @@ class Gripper:
         """Return current finger sensor readings if available"""
         left = self.sensor_left.getValue() if self.sensor_left else None
         right = self.sensor_right.getValue() if self.sensor_right else None
-        return left, right
+        self.last_positions = (left, right)
+        return self.last_positions
 
     def has_object(self, threshold=0.002):
         """Detect if an object is held based on finger positions"""
