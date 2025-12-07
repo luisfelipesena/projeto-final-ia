@@ -409,8 +409,9 @@ class YouBotController:
         # Timeout para cubo perdido durante approach
         self.lost_cube_timer = 0.0
 
-        # Lock no cubo específico (ângulo inicial em radianos)
+        # Lock no cubo específico (ângulo e distância)
         self.locked_cube_angle = None
+        self.locked_cube_distance = None  # Última distância conhecida do cubo
 
         self.box_positions = BOX_POSITIONS
 
@@ -799,6 +800,17 @@ class YouBotController:
     def _handle_grasp(self, dt):
         self.stage_timer += dt
 
+        # Calcular distância de avanço baseado na última distância conhecida
+        # Camera offset: +0.27m, Arm reach: ~0.25m (quase se cancelam)
+        # Fórmula: forward = cam_dist - 0.12 (buffer maior para não empurrar o cubo)
+        if not hasattr(self, '_grasp_forward_time'):
+            dist = self.locked_cube_distance if self.locked_cube_distance else 0.20
+            # Subtrair buffer MAIOR para gripper não empurrar o cubo
+            forward_needed = dist - 0.12
+            forward_needed = max(0.05, min(0.25, forward_needed))  # Clamp entre 5-25cm
+            self._grasp_forward_time = forward_needed / 0.05  # Tempo a 5cm/s
+            print(f"[GRASP] Distância para avanço: {forward_needed:.2f}m ({self._grasp_forward_time:.1f}s)")
+
         if self.stage == 0:
             self.gripper.release()
             self.arm.set_height(Arm.RESET)
@@ -813,8 +825,9 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 2:
+            # Avançar pelo tempo calculado
             self._safe_move(0.05, 0.0, 0.0)
-            if self.stage_timer >= 2.0:
+            if self.stage_timer >= self._grasp_forward_time:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
@@ -837,6 +850,8 @@ class YouBotController:
                     self.current_color = None
                     self.stage = 0
                     self.stage_timer = 0.0
+                    if hasattr(self, '_grasp_forward_time'):
+                        del self._grasp_forward_time
                     return
                 self.base.reset()
                 self.stage += 1
@@ -845,6 +860,10 @@ class YouBotController:
         elif self.stage == 5:
             self.collected += 1
             print(f"[GRASP] Cubo capturado com sucesso! Total: {self.collected}/{self.max_cubes}")
+            # Cleanup
+            if hasattr(self, '_grasp_forward_time'):
+                del self._grasp_forward_time
+            self.locked_cube_distance = None
             if self.active_goal:
                 cell = self.grid.world_to_cell(*self.active_goal)
                 if cell:
@@ -853,13 +872,15 @@ class YouBotController:
             self.mode = "to_box"
             self.stage = 0
             self.stage_timer = 0.0
-            target_box = self.box_positions.get(
-                (self.current_color or "").lower(), None
-            )
+            color_key = (self.current_color or "").lower()
+            target_box = self.box_positions.get(color_key, None)
             if target_box:
+                print(f"[TO_BOX] Indo para caixa {color_key.upper()} em {target_box}")
                 self._set_goal(target_box)
             else:
-                self._set_goal(list(self.box_positions.values())[0])
+                fallback = list(self.box_positions.values())[0]
+                print(f"[TO_BOX] Cor '{self.current_color}' não encontrada, usando fallback {fallback}")
+                self._set_goal(fallback)
 
     def _handle_drop(self, dt):
         self.stage_timer += dt
@@ -953,50 +974,66 @@ class YouBotController:
             if self.mode == "approach":
                 if recognition:
                     self.lost_cube_timer = 0.0
-                    # NÃO atualizar lock_angle - manter fixo no cubo inicial
-
                     cam_dist = recognition["distance"]
                     cam_angle = recognition["angle"]
 
-                    # Chegou perto o suficiente -> grasp (0.22m para dar margem)
-                    if cam_dist < 0.22:
-                        self.locked_cube_angle = None
+                    # Atualizar distância e ângulo conhecidos
+                    self.locked_cube_distance = cam_dist
+                    self.locked_cube_angle = cam_angle
+
+                    # Chegou perto o suficiente -> grasp (trigger at 0.32m - ficar mais longe)
+                    if cam_dist < 0.32:
+                        print(f"[APPROACH] Cubo a {cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°, iniciando grasp")
                         self._start_grasp()
                         continue
 
-                    # CONTROLE DIRETO: avançar + corrigir ângulo
-                    # vx maior, omega menor para não overshooting
-                    vx_cmd = 0.12
-                    omega_cmd = cam_angle * 0.5  # Correção mais suave
-                    omega_cmd = max(-0.3, min(0.3, omega_cmd))
+                    # ESTRATÉGIA: Primeiro ALINHAR, depois AVANÇAR
+                    # Threshold mais baixo para garantir alinhamento preciso
+                    angle_threshold = math.radians(5)  # 5 graus
 
-                    # Se ângulo pequeno, priorizar avanço
-                    if abs(cam_angle) < math.radians(10):
-                        vx_cmd = 0.15
-                        omega_cmd *= 0.5
+                    if abs(cam_angle) > angle_threshold:
+                        # Fase 1: APENAS ROTACIONAR para alinhar
+                        # SINAL NEGATIVO: se ângulo positivo (cubo à esquerda), girar para esquerda (omega negativo)
+                        omega_cmd = -cam_angle * 0.8
+                        omega_cmd = max(-0.3, min(0.3, omega_cmd))
+                        vx_cmd = 0.0  # Não avança enquanto não alinhado
+                        print(f"[APPROACH] Alinhando: ângulo={math.degrees(cam_angle):.1f}°, dist={cam_dist:.2f}m")
+                    else:
+                        # Fase 2: AVANÇAR RETO com correção de ângulo
+                        vx_cmd = 0.08  # Velocidade mais lenta para manter alinhamento
+                        omega_cmd = -cam_angle * 1.2  # SINAL NEGATIVO
+                        omega_cmd = max(-0.2, min(0.2, omega_cmd))
+                        print(f"[APPROACH] Avançando: dist={cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°")
 
-                    # Se obstáculo na frente, desviar
-                    if lidar_info["front"] < 0.30:
-                        vx_cmd = 0.05
-                        omega_cmd += 0.15 * (1 if lidar_info["left"] > lidar_info["right"] else -1)
+                    # Se obstáculo na frente, parar
+                    if lidar_info["front"] < 0.25:
+                        vx_cmd = 0.0
+                        print(f"[APPROACH] Obstáculo frontal a {lidar_info['front']:.2f}m")
 
                     self._safe_move(vx_cmd, 0.0, omega_cmd)
                     continue
                 else:
                     self.lost_cube_timer += dt
 
-                    if self.lost_cube_timer > 4.0:  # Timeout maior
+                    # Se temos distância conhecida e estamos perto, iniciar grasp mesmo sem ver
+                    if self.locked_cube_distance is not None and self.locked_cube_distance < 0.35:
+                        if self.lost_cube_timer > 0.3:  # Perdeu de vista mas estava perto
+                            print(f"[APPROACH] Cubo perdido a {self.locked_cube_distance:.2f}m, iniciando grasp")
+                            self._start_grasp()
+                            continue
+
+                    if self.lost_cube_timer > 4.0:
                         print("[APPROACH] Timeout - voltando ao search")
                         self.mode = "search"
                         self.locked_cube_angle = None
+                        self.locked_cube_distance = None
                         self.current_color = None
                         self.lost_cube_timer = 0.0
                         continue
 
-                    # Continuar movendo devagar na direção do último lock
-                    # Rotacionar levemente para reencontrar o cubo
+                    # Continuar movendo devagar na direção do último ângulo conhecido
                     if self.locked_cube_angle is not None:
-                        omega_recovery = self.locked_cube_angle * 0.3
+                        omega_recovery = -self.locked_cube_angle * 0.3  # SINAL NEGATIVO
                         omega_recovery = max(-0.2, min(0.2, omega_recovery))
                     else:
                         omega_recovery = 0.0
@@ -1010,6 +1047,10 @@ class YouBotController:
 
             # ===== MODO TO_BOX =====
             if self.mode == "to_box":
+                # MANTER gripper fechado e braço levantado durante transporte!
+                self.gripper.grip()
+                self.arm.set_height(Arm.FRONT_PLATE)  # Manter braço levantado
+
                 nav_point = self._next_nav_point()
                 distance, angle = self._distance_to_point(nav_point) if nav_point else (None, None)
                 if nav_point and self._waypoints and distance is not None and distance < 0.15:
