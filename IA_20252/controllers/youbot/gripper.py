@@ -112,10 +112,18 @@ class Gripper:
         self.last_positions = (left, right)
         return self.last_positions
 
-    def has_object(self, threshold=0.002):
-        """Detect if an object is held based on finger positions"""
+    def has_object(self, threshold=0.003):
+        """Detect if an object is held - fingers stopped by object.
+
+        When empty: fingers close fully to ~0.0
+        When holding cube: fingers stop at position > threshold (~0.003-0.015)
+        """
+        if not self.is_gripping:
+            return False
         left, right = self.finger_positions()
         samples = [v for v in (left, right) if v is not None]
         if not samples:
             return self.is_gripping
-        return all(v <= threshold for v in samples)
+        # Object held = fingers didn't close fully (stopped by object)
+        # position > threshold means something is between the fingers
+        return all(v > threshold for v in samples)

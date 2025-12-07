@@ -801,86 +801,124 @@ class YouBotController:
         self.stage_timer += dt
 
         # Calcular distância de avanço baseado na última distância conhecida
-        # Camera offset: +0.27m, Arm reach: ~0.25m (quase se cancelam)
-        # Fórmula: forward = cam_dist - 0.12 (buffer maior para não empurrar o cubo)
+        # Fórmula: forward = cam_dist - 0.12 (deixar ~12cm para o gripper alcançar)
+        # O gripper tem alcance de 5-10cm quando aberto
         if not hasattr(self, '_grasp_forward_time'):
-            dist = self.locked_cube_distance if self.locked_cube_distance else 0.20
-            # Subtrair buffer MAIOR para gripper não empurrar o cubo
+            dist = self.locked_cube_distance if self.locked_cube_distance else 0.25
+            # Buffer -0.12: mais conservador, para ~1cm antes do cubo
             forward_needed = dist - 0.12
-            forward_needed = max(0.05, min(0.25, forward_needed))  # Clamp entre 5-25cm
-            self._grasp_forward_time = forward_needed / 0.05  # Tempo a 5cm/s
+            forward_needed = max(0.08, min(0.25, forward_needed))  # Clamp entre 8-25cm
+            self._grasp_forward_time = forward_needed / 0.04  # Tempo a 4cm/s (mais lento)
+            self._grasp_samples = []  # Para verificar gripper
             print(f"[GRASP] Distância para avanço: {forward_needed:.2f}m ({self._grasp_forward_time:.1f}s)")
 
         if self.stage == 0:
             self.gripper.release()
             self.arm.set_height(Arm.RESET)
-            if self.stage_timer >= 1.5:
+            if self.stage_timer >= 1.2:
                 self.stage += 1
                 self.stage_timer = 0.0
 
         elif self.stage == 1:
             self.arm.set_height(Arm.FRONT_FLOOR)
-            if self.stage_timer >= 2.5:
+            if self.stage_timer >= 2.0:
                 self.stage += 1
                 self.stage_timer = 0.0
 
         elif self.stage == 2:
-            # Avançar pelo tempo calculado
-            self._safe_move(0.05, 0.0, 0.0)
+            # Avançar LENTAMENTE pelo tempo calculado
+            self._safe_move(0.04, 0.0, 0.0)
             if self.stage_timer >= self._grasp_forward_time:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
+                print("[GRASP] Parado, fechando garra...")
 
         elif self.stage == 3:
+            # Fechar gripper e esperar
             self.gripper.grip()
-            if self.stage_timer >= 1.5:
+            if self.stage_timer >= 1.2:
                 self.stage += 1
                 self.stage_timer = 0.0
+                self._grasp_samples = []  # Reset samples
 
         elif self.stage == 4:
+            # Levantar e coletar amostras do sensor para verificação
             self.arm.set_height(Arm.FRONT_PLATE)
-            if self.stage_timer >= 2.0:
-                # Verificar se realmente pegou o cubo
-                if not self.gripper.has_object():
-                    print("[GRASP] Falha - cubo não capturado, voltando ao search")
-                    self.gripper.release()
-                    self.arm.set_height(Arm.RESET)
-                    self.mode = "search"
-                    self.current_color = None
-                    self.stage = 0
-                    self.stage_timer = 0.0
-                    if hasattr(self, '_grasp_forward_time'):
-                        del self._grasp_forward_time
-                    return
+            self.gripper.grip()  # Manter fechado
+
+            # Coletar múltiplas amostras do sensor de posição dos dedos
+            left, _ = self.gripper.finger_positions()
+            if left is not None:
+                self._grasp_samples.append(left)
+
+            if self.stage_timer >= 1.8:
+                # Verificar com múltiplas amostras se objeto foi capturado
+                # Dedos > 0.003 = objeto entre eles (não fecharam totalmente)
+                if self._grasp_samples:
+                    avg_pos = sum(self._grasp_samples) / len(self._grasp_samples)
+                    has_obj = avg_pos > 0.003
+                    print(f"[GRASP] Verificação: pos_media={avg_pos:.4f}, has_object={has_obj}")
+                else:
+                    has_obj = True  # Sem sensor, assumir sucesso
+                    print("[GRASP] Sem dados do sensor, assumindo sucesso")
+
                 self.base.reset()
+                self._grasp_verified = has_obj
                 self.stage += 1
                 self.stage_timer = 0.0
 
         elif self.stage == 5:
-            self.collected += 1
-            print(f"[GRASP] Cubo capturado com sucesso! Total: {self.collected}/{self.max_cubes}")
+            # Verificar resultado e decidir próximo passo
+            has_obj = getattr(self, '_grasp_verified', True)
+
             # Cleanup
             if hasattr(self, '_grasp_forward_time'):
                 del self._grasp_forward_time
-            self.locked_cube_distance = None
-            if self.active_goal:
-                cell = self.grid.world_to_cell(*self.active_goal)
-                if cell:
-                    self.grid.set(cell[0], cell[1], OccupancyGrid.FREE, overwrite_static=False)
-                    self._path_dirty = True
-            self.mode = "to_box"
-            self.stage = 0
-            self.stage_timer = 0.0
-            color_key = (self.current_color or "").lower()
-            target_box = self.box_positions.get(color_key, None)
-            if target_box:
-                print(f"[TO_BOX] Indo para caixa {color_key.upper()} em {target_box}")
-                self._set_goal(target_box)
+            if hasattr(self, '_grasp_samples'):
+                del self._grasp_samples
+            if hasattr(self, '_grasp_verified'):
+                del self._grasp_verified
+
+            if has_obj:
+                # SUCESSO - ir para caixa
+                self.collected += 1
+                print(f"[GRASP] Cubo capturado! Total: {self.collected}/{self.max_cubes}")
+
+                self.locked_cube_distance = None
+                if self.active_goal:
+                    cell = self.grid.world_to_cell(*self.active_goal)
+                    if cell:
+                        self.grid.set(cell[0], cell[1], OccupancyGrid.FREE, overwrite_static=False)
+                        self._path_dirty = True
+
+                self.mode = "to_box"
+                self.stage = 0
+                self.stage_timer = 0.0
+                color_key = (self.current_color or "").lower()
+                target_box = self.box_positions.get(color_key, None)
+                if target_box:
+                    print(f"[TO_BOX] Indo para caixa {color_key.upper()} em {target_box}")
+                    self._set_goal(target_box)
+                else:
+                    fallback = list(self.box_positions.values())[0]
+                    print(f"[TO_BOX] Cor '{self.current_color}' não encontrada, usando fallback {fallback}")
+                    self._set_goal(fallback)
             else:
-                fallback = list(self.box_positions.values())[0]
-                print(f"[TO_BOX] Cor '{self.current_color}' não encontrada, usando fallback {fallback}")
-                self._set_goal(fallback)
+                # FALHA - voltar ao search e procurar outro cubo
+                print("[GRASP] FALHA - garra vazia, voltando ao search")
+                self.gripper.release()
+                self.arm.set_height(Arm.FRONT_PLATE)
+                self.mode = "search"
+                self.stage = 0
+                self.stage_timer = 0.0
+                self.current_color = None
+                self.locked_cube_angle = None
+                self.locked_cube_distance = None
+                self.current_target = None
+                self.active_goal = None
+                self._waypoints = []
+                self._path_dirty = True
 
     def _handle_drop(self, dt):
         self.stage_timer += dt
