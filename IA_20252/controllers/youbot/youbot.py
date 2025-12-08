@@ -898,7 +898,20 @@ class YouBotController:
 
         elif self.stage == 2:
             # Avançar LENTAMENTE pelo tempo calculado
-            self._safe_move(0.04, 0.0, 0.0)
+            # Com correção de ângulo em tempo real para rastrear o cubo
+            omega_cmd = 0.0
+
+            # Usar câmera para correção de trajetória durante avanço
+            objects = self.camera.getRecognitionObjects()
+            if objects:
+                obj = objects[0]
+                pos = obj.getPosition()
+                cam_angle = math.atan2(pos[1], pos[0])
+                # Correção suave: P-controller no ângulo
+                omega_cmd = -cam_angle * 0.8
+                omega_cmd = max(-0.3, min(0.3, omega_cmd))
+
+            self._safe_move(0.04, 0.0, omega_cmd)
             if self.stage_timer >= self._grasp_forward_time:
                 self.base.reset()
                 self.stage += 1
@@ -1020,8 +1033,10 @@ class YouBotController:
                 self.stage += 1
                 self.stage_timer = 0.0
         elif self.stage == 1:
-            self._safe_move(0.03, 0.0, 0.0)
-            if self.stage_timer >= 1.2:
+            # Avançar até ficar bem próximo do box para depositar dentro
+            # Velocidade 0.05 m/s × 2.5s = 12.5cm de avanço
+            self._safe_move(0.05, 0.0, 0.0)
+            if self.stage_timer >= 2.5:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
@@ -1280,8 +1295,10 @@ class YouBotController:
                         self._tobox_log_timer = 0.0
 
                     # === DROP TRIGGER ===
-                    # Use LIDAR for precise box detection - box wall at 0.15-0.45m means we're ready to drop
-                    if in_final_approach and 0.15 < lidar_front < 0.45:
+                    # Use LIDAR for precise box detection
+                    # Box must be CLOSE (lidar < 0.35m) to ensure cube lands inside
+                    # PlasticFruitBox is ~0.60m x 0.40m, we need to be almost over it
+                    if in_final_approach and 0.15 < lidar_front < 0.35:
                         print(f"[TO_BOX] DROP TRIGGER! lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m, ang={math.degrees(final_angle):.1f}°")
                         if hasattr(self, '_tobox_log_timer'):
                             del self._tobox_log_timer
