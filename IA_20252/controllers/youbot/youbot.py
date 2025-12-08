@@ -853,13 +853,12 @@ class YouBotController:
         # O gripper tem alcance de 5-10cm quando aberto
         if not hasattr(self, '_grasp_forward_time'):
             dist = self.locked_cube_distance if self.locked_cube_distance else 0.25
-            # Buffer -0.05: gripper precisa estar BEM PERTO do cubo
-            # Camera está 0.27m do centro, gripper em FRONT_FLOOR está ~0.30m do centro
-            # Então gripper está ~0.03m NA FRENTE da camera
-            # Se cubo está a 0.28m da camera, precisa avançar ~0.25m para gripper alcançar
-            forward_needed = dist - 0.03  # Menos buffer = mais perto do cubo
-            forward_needed = max(0.10, min(0.30, forward_needed))  # Clamp entre 10-30cm
-            self._grasp_forward_time = forward_needed / 0.05  # Tempo a 5cm/s
+            # Buffer GRANDE: gripper estava passando o cubo consistentemente
+            # Camera está 0.27m do centro, gripper em FRONT_FLOOR está BEM à frente
+            # Parar com margem de 0.12m para gripper alcançar cubo sem ultrapassar
+            forward_needed = dist - 0.12  # Buffer grande = para bem antes do cubo
+            forward_needed = max(0.05, min(0.25, forward_needed))  # Clamp entre 5-25cm
+            self._grasp_forward_time = forward_needed / 0.04  # Tempo a 4cm/s (velocidade real)
             self._grasp_samples = []  # Para verificar gripper
             print(f"[GRASP] Distância para avanço: {forward_needed:.2f}m ({self._grasp_forward_time:.1f}s) (cubo a {dist:.2f}m)")
 
@@ -906,8 +905,8 @@ class YouBotController:
                 self._grasp_samples.append(right)
 
             if self.stage_timer >= 1.5:
-                # Usar método has_object do gripper (threshold=0.002)
-                has_obj = self.gripper.has_object(threshold=0.002)
+                # Usar método has_object do gripper (threshold=0.003 para 3cm cube)
+                has_obj = self.gripper.has_object(threshold=0.003)
 
                 # Log detalhado
                 if self._grasp_samples:
@@ -961,10 +960,19 @@ class YouBotController:
                     print(f"[TO_BOX] Cor '{self.current_color}' não encontrada, usando fallback {fallback}")
                     self._set_goal(fallback)
             else:
-                # FALHA - voltar ao search e procurar outro cubo
-                print("[GRASP] FALHA - garra vazia, voltando ao search")
+                # FALHA - dar RÉ antes de tentar novamente
+                print("[GRASP] FALHA - garra vazia, dando ré para tentar novamente")
                 self.gripper.release()
-                self.arm.set_height(Arm.FRONT_PLATE)
+                self.stage += 1  # Ir para stage 6 (reverse)
+                self.stage_timer = 0.0
+
+        elif self.stage == 6:
+            # Stage de RÉ - recuar para tentar novamente
+            self.arm.set_height(Arm.FRONT_PLATE)
+            self._safe_move(-0.06, 0.0, 0.0)  # Ré lenta
+            if self.stage_timer >= 2.0:  # Recuar por 2s = ~12cm
+                self.base.reset()
+                print("[GRASP] Ré completa, voltando ao search")
                 self.mode = "search"
                 self.stage = 0
                 self.stage_timer = 0.0
@@ -1091,7 +1099,7 @@ class YouBotController:
 
                     # Chegou perto o suficiente E alinhado -> grasp
                     # IMPORTANTE: Só iniciar grasp se estiver ALINHADO (< 10°)
-                    grasp_distance = 0.28  # Mais perto para garantir alcance do gripper
+                    grasp_distance = 0.32  # Trigger mais cedo para dar margem ao buffer
                     grasp_angle_max = math.radians(10)  # Máximo 10° de desvio
 
                     if cam_dist < grasp_distance and abs(cam_angle) < grasp_angle_max:
@@ -1103,7 +1111,7 @@ class YouBotController:
                         omega_cmd = -cam_angle * 1.0
                         omega_cmd = max(-0.4, min(0.4, omega_cmd))
                         self._safe_move(0.0, 0.0, omega_cmd)
-                        print(f"[APPROACH] Perto mas desalinhado: ângulo={math.degrees(cam_angle):.1f}°")
+                        self._log_throttled("approach_align_close", f"[APPROACH] Perto mas desalinhado: ângulo={math.degrees(cam_angle):.1f}°", 1.0)
                         continue
 
                     # ESTRATÉGIA: Primeiro ALINHAR, depois AVANÇAR
@@ -1116,13 +1124,13 @@ class YouBotController:
                         omega_cmd = -cam_angle * 0.8
                         omega_cmd = max(-0.3, min(0.3, omega_cmd))
                         vx_cmd = 0.0  # Não avança enquanto não alinhado
-                        print(f"[APPROACH] Alinhando: ângulo={math.degrees(cam_angle):.1f}°, dist={cam_dist:.2f}m")
+                        self._log_throttled("approach_align", f"[APPROACH] Alinhando: ângulo={math.degrees(cam_angle):.1f}°, dist={cam_dist:.2f}m", 1.0)
                     else:
                         # Fase 2: AVANÇAR RETO com correção de ângulo
                         vx_cmd = 0.08  # Velocidade mais lenta para manter alinhamento
                         omega_cmd = -cam_angle * 1.2  # SINAL NEGATIVO
                         omega_cmd = max(-0.2, min(0.2, omega_cmd))
-                        print(f"[APPROACH] Avançando: dist={cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°")
+                        self._log_throttled("approach_advance", f"[APPROACH] Avançando: dist={cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°", 1.0)
 
                     # Se obstáculo na frente, parar
                     if lidar_info["front"] < 0.25:

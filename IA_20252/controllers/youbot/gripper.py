@@ -112,18 +112,23 @@ class Gripper:
         self.last_positions = (left, right)
         return self.last_positions
 
-    def has_object(self, threshold=0.002):
+    def has_object(self, threshold=0.003):
         """Detect if an object is held - fingers stopped by object.
 
         YouBot gripper range: 0.0 (closed) to 0.025 (open)
         When empty: fingers close fully to ~0.0-0.001
-        When holding 3cm cube: fingers stop at ~0.004-0.012
+        When holding 3cm cube: fingers stop at ~0.010-0.015 (half of cube width)
+
+        Detection logic:
+        - 3cm cube = 30mm → each finger stops at ~15mm = 0.015m
+        - Empty gripper → fingers at ~0.0-0.001m
+        - Threshold 0.003 reliably separates these cases
 
         Args:
-            threshold: minimum position indicating object (default 0.002)
+            threshold: minimum position indicating object (default 0.003)
 
         Returns:
-            True if any finger shows position > threshold (object detected)
+            True if object detected (finger position > threshold)
         """
         if not self.is_gripping:
             return False
@@ -132,13 +137,11 @@ class Gripper:
         if not samples:
             return self.is_gripping
 
-        # Use ANY instead of ALL - more robust detection
-        # If ANY finger stopped before full close, object is present
         avg_pos = sum(samples) / len(samples)
         max_pos = max(samples)
 
-        # Debug info
-        # print(f"[GRIPPER] left={left:.4f}, right={right:.4f}, avg={avg_pos:.4f}, max={max_pos:.4f}")
-
-        # Object held if average position > threshold OR max position > threshold*2
-        return avg_pos > threshold or max_pos > threshold * 2
+        # Object held if:
+        # 1) Average position > threshold (both fingers stopped by object), OR
+        # 2) Max position > threshold*1.5 (at least one finger clearly stopped)
+        # For 3cm cube: expect ~0.012-0.015, so 0.003 threshold is conservative
+        return avg_pos > threshold or max_pos > threshold * 1.5
