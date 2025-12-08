@@ -1,6 +1,8 @@
 \babel@toc {portuguese}{}\relax 
-\beamer@sectionintoc {1}{Fundamentos dos AVAs}{3}{0}{1}
-\beamer@sectionintoc {2}{Abordagens Pedagógicas}{7}{0}{2}
-\beamer@sectionintoc {3}{Análise Crítica}{11}{0}{3}
-\beamer@sectionintoc {4}{Referências}{16}{0}{4}
-\beamer@sectionintoc {5}{Encerramento}{17}{0}{5}
+\beamer@sectionintoc {1}{Problema e Desafios}{3}{0}{1}
+\beamer@sectionintoc {2}{Sistema de Percepção}{5}{0}{2}
+\beamer@sectionintoc {3}{Navegação Fuzzy}{7}{0}{3}
+\beamer@sectionintoc {4}{Planejamento A*}{9}{0}{4}
+\beamer@sectionintoc {5}{Arquitetura do Sistema}{11}{0}{5}
+\beamer@sectionintoc {6}{Resultados e Demo}{14}{0}{6}
+\beamer@sectionintoc {7}{Conclusão}{19}{0}{7}

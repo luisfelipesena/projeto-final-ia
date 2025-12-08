@@ -10,6 +10,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{tikz}
+\usepackage[normalem]{ulem}  % For \sout{} strikethrough
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, calc, mindmap, shadows}
 
 % ------------------------------------------------
@@ -114,31 +115,37 @@
 \end{frame}
 
 \begin{frame}{Restrições do Projeto}
-    \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \textbf{Obrigatórios:}
-            \begin{itemize}
-                \item Usar \textbf{Rede Neural} (MLP ou CNN) para classificação
-                \item Usar \textbf{Lógica Fuzzy} para controle de navegação
-                \item Sensores: \textbf{LIDAR} + \textbf{Câmera RGB}
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.48\textwidth}
-            \textbf{Proibidos:}
-            \begin{itemize}
-                \item \textcolor{red}{GPS} -- Robô deve usar odometria
-                \item \textcolor{red}{Teleoperação} -- Completamente autônomo
-                \item \textcolor{red}{Informações privilegiadas} -- Sem acesso direto à posição dos cubos
-            \end{itemize}
-        \end{column}
-    \end{columns}
-
-    \vspace{1em}
     \centering
-    \begin{tikzpicture}
-        \node[draw, rounded corners, fill=yellow!20, text width=10cm, align=center] {
-            \textbf{Desafio Principal:} Navegação autônoma em ambiente com obstáculos dinâmicos (cubos podem ser empurrados) usando apenas sensores locais
-        };
+    \begin{tikzpicture}[scale=0.85]
+        % Center: YouBot
+        \node[draw, circle, fill=blue!30, minimum size=2.2cm, thick] (robot) at (0,0) {\small YouBot};
+
+        % Required (green boxes around robot)
+        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
+            (nn) at (-4,1.8) {\small Rede\\Neural};
+        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
+            (fuzzy) at (4,1.8) {\small Lógica\\Fuzzy};
+        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
+            (sensors) at (0,3.5) {\small LIDAR +\\Câmera};
+
+        % Prohibited (red boxes, crossed out)
+        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
+            (gps) at (-4,-1.8) {\small \sout{GPS}};
+        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
+            (tele) at (0,-3) {\small \sout{Teleop}};
+        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
+            (priv) at (4,-1.8) {\small \sout{Info Priv.}};
+
+        % Arrows
+        \draw[->, thick, green!70!black, line width=1.5pt] (nn) -- (robot);
+        \draw[->, thick, green!70!black, line width=1.5pt] (fuzzy) -- (robot);
+        \draw[->, thick, green!70!black, line width=1.5pt] (sensors) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (gps) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (tele) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (priv) -- (robot);
+
+        % Legend
+        \node[below] at (0,-4.2) {\small \textcolor{green!70!black}{Verde = Obrigatório} \quad \textcolor{red!70}{Vermelho = Proibido}};
     \end{tikzpicture}
 \end{frame}
 
@@ -147,50 +154,40 @@
 %=================================================
 
 \begin{frame}{Sensores do YouBot}
-    \begin{columns}[T]
-        \begin{column}{0.5\textwidth}
-            \textbf{LIDAR (180° FOV)}
-            \begin{itemize}
-                \item 180 feixes de laser
-                \item Alcance: 0.1m -- 5.0m
-                \item Atualização: 32Hz
-                \item \textbf{Uso:} Detecção de obstáculos
-            \end{itemize}
+    \centering
+    \begin{tikzpicture}[scale=0.75]
+        % Robot body
+        \draw[fill=gray!30, thick, rounded corners=3pt] (-1.3,-1.8) rectangle (1.3,1.8);
+        \node at (0,0) {YouBot};
 
-            \vspace{0.5em}
-            \textbf{Câmera RGB}
-            \begin{itemize}
-                \item Resolução: 320$\times$240
-                \item API de Reconhecimento Webots
-                \item \textbf{Uso:} Detecção e classificação de cubos
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.45\textwidth}
-            \centering
-            % Robot sensor diagram
-            \begin{tikzpicture}[scale=0.8]
-                % Robot body
-                \draw[fill=gray!30, thick] (-1,-1.5) rectangle (1,1.5);
-                \node at (0,0) {\small YouBot};
+        % LIDAR rays
+        \foreach \a in {-90,-72,...,90} {
+            \draw[red!60, ->, line width=0.7pt] (0,1.8) -- ++(\a:2.5);
+        }
+        \node[red, font=\small\bfseries] at (0,4.6) {LIDAR 180°};
+        \node[red, font=\scriptsize] at (0,4.1) {(0.1--5.0m)};
 
-                % LIDAR rays
-                \foreach \a in {-90,-75,...,90} {
-                    \draw[red!50, ->] (0,1.5) -- ++(\a:2);
-                }
-                \node[above, red] at (0,3.5) {\small LIDAR 180°};
+        % Camera FOV
+        \draw[blue!60, fill=blue!15, line width=1pt] (0,1.8) -- ++(55:2) arc (55:125:2) -- cycle;
+        \node[blue, font=\small\bfseries] at (0,3.3) {Câmera RGB};
 
-                % Camera FOV
-                \draw[blue!50, fill=blue!10] (0,1.5) -- ++(45:1.5) arc (45:135:1.5) -- cycle;
-                \node[above, blue] at (0,2.5) {\small Câmera};
+        % Distance sensors (front + rear)
+        \draw[green!70!black, thick, ->] (-0.8,1.8) -- ++(0,0.7);
+        \draw[green!70!black, thick, ->] (0,1.8) -- ++(0,0.7);
+        \draw[green!70!black, thick, ->] (0.8,1.8) -- ++(0,0.7);
+        \draw[green!70!black, thick, ->] (-0.8,-1.8) -- ++(0,-0.7);
+        \draw[green!70!black, thick, ->] (0,-1.8) -- ++(0,-0.7);
+        \draw[green!70!black, thick, ->] (0.8,-1.8) -- ++(0,-0.7);
+        \node[green!70!black, font=\small\bfseries] at (0,-3) {6 Dist. Sensors};
 
-                % Distance sensors
-                \draw[green!70, thick, ->] (-1,0) -- ++(-0.8,0);
-                \draw[green!70, thick, ->] (1,0) -- ++(0.8,0);
-                \draw[green!70, thick, ->] (0,-1.5) -- ++(0,-0.8);
-                \node[below, green!70] at (0,-2.5) {\small Dist. Sensors};
-            \end{tikzpicture}
-        \end{column}
-    \end{columns}
+        % Legend box
+        \node[draw, rounded corners, fill=yellow!10, font=\scriptsize, text width=5cm, align=center] at (5,0) {
+            \textbf{Função}\\[0.2em]
+            \textcolor{red!70}{LIDAR} $\rightarrow$ Obstáculos\\
+            \textcolor{blue!70}{Câmera} $\rightarrow$ Cubos + CNN\\
+            \textcolor{green!60!black}{Dist.} $\rightarrow$ Colisão
+        };
+    \end{tikzpicture}
 \end{frame}
 
 \begin{frame}{Rede Neural -- MobileNetV3-Small}
@@ -255,103 +252,117 @@
 %=================================================
 
 \begin{frame}{Lógica Fuzzy -- Conceito}
+    \centering
     \begin{columns}[T]
-        \begin{column}{0.5\textwidth}
-            \textbf{Por que Fuzzy?}
-            \begin{itemize}
-                \item Controle suave e contínuo (sem transições bruscas)
-                \item Lida com incerteza dos sensores
-                \item Regras linguísticas intuitivas
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Variáveis Linguísticas}
-            \begin{itemize}
-                \item \textbf{Distância:} muito\_perto, perto, longe
-                \item \textbf{Ângulo:} pequeno, médio, grande
-                \item \textbf{Velocidade:} reverso, lento, normal, rápido
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.45\textwidth}
+        \begin{column}{0.48\textwidth}
             \centering
-            % Membership function diagram
-            \begin{tikzpicture}[scale=0.7]
+            % Membership function diagram (larger)
+            \begin{tikzpicture}[scale=0.95]
                 % Axes
-                \draw[->] (0,0) -- (5,0) node[right] {\small dist(m)};
-                \draw[->] (0,0) -- (0,2.5) node[above] {\small $\mu$};
+                \draw[->, thick] (0,0) -- (5.5,0) node[right] {dist(m)};
+                \draw[->, thick] (0,0) -- (0,2.8) node[above] {$\mu$};
 
-                % muito_perto (triangular)
-                \draw[thick, red] (0,2) -- (0.5,2) -- (1.5,0);
-                \node[red, above] at (0.5,2) {\tiny muito\_perto};
+                % muito_perto
+                \draw[line width=2pt, red] (0,2.3) -- (0.5,2.3) -- (1.5,0);
+                \node[red, font=\scriptsize] at (0.7,2.6) {muito\_perto};
 
-                % perto (triangular)
-                \draw[thick, orange] (0.5,0) -- (1.5,2) -- (2.5,0);
-                \node[orange, above] at (1.5,2) {\tiny perto};
+                % perto
+                \draw[line width=2pt, orange] (0.5,0) -- (1.5,2.3) -- (2.5,0);
+                \node[orange, font=\scriptsize] at (1.5,2.6) {perto};
 
-                % longe (trapezoidal)
-                \draw[thick, green!70!black] (2,0) -- (3,2) -- (5,2);
-                \node[green!70!black, above] at (4,2) {\tiny longe};
+                % longe
+                \draw[line width=2pt, green!70!black] (2,0) -- (3,2.3) -- (5.2,2.3);
+                \node[green!70!black, font=\scriptsize] at (4.2,2.6) {longe};
 
                 % Ticks
-                \foreach \x/\label in {0.5/0.25, 1.5/0.45, 3/1.0} {
-                    \draw (\x,0) -- (\x,-0.1) node[below] {\tiny \label};
+                \foreach \x/\l in {0.8/0.25, 1.7/0.45, 3.2/1.0} {
+                    \draw (\x,0) -- (\x,-0.15) node[below, font=\tiny] {\l m};
                 }
             \end{tikzpicture}
 
+            \vspace{0.3em}
+            {\footnotesize Funções de pertinência}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            % Why Fuzzy - visual
+            \begin{tikzpicture}[scale=0.8]
+                % Crisp vs Fuzzy comparison
+                \node[draw, rectangle, fill=gray!20, minimum width=3cm, minimum height=1cm] (crisp) at (0,2) {Crisp};
+                \node[draw, rectangle, fill=blue!20, minimum width=3cm, minimum height=1cm, rounded corners] (fuzzy) at (0,0) {Fuzzy};
+
+                % Labels
+                \node[right, font=\scriptsize] at (1.8,2) {0 ou 1};
+                \node[right, font=\scriptsize] at (1.8,0) {0.0 -- 1.0};
+
+                % Arrow
+                \draw[->, thick, green!60!black] (0,1.3) -- (0,0.7) node[midway, right, font=\scriptsize] {suave};
+            \end{tikzpicture}
+
             \vspace{0.5em}
-            {\small Funções de pertinência para distância ao obstáculo}
+            \footnotesize
+            \textbf{Vantagens:}\\
+            $\bullet$ Transições suaves\\
+            $\bullet$ Lida com incerteza\\
+            $\bullet$ Regras intuitivas
         \end{column}
     \end{columns}
 \end{frame}
 
 \begin{frame}{Regras Fuzzy de Navegação}
-    \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \textbf{Regras de Desvio}
-            \begin{itemize}
-                \item SE obstáculo\_muito\_perto ENTÃO reverso + strafe
-                \item SE obstáculo\_perto ENTÃO reduzir\_velocidade
-                \item SE lateral\_bloqueado ENTÃO strafe\_oposto
-            \end{itemize}
+    \centering
+    \begin{tikzpicture}[scale=0.75]
+        % Scenario 1: Obstacle front - Reverse + Strafe
+        \begin{scope}[shift={(0,0)}]
+            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
+            \node[font=\tiny] at (0.4,0.7) {R};
+            \draw[fill=red!50, thick] (0.2,1.8) rectangle (0.6,2.2);
+            \draw[->, ultra thick, red!70] (0.4,0) -- (0.4,-0.7);
+            \draw[->, thick, green!60!black] (0.8,0.7) -- (1.4,0.7);
+            \node[below, font=\scriptsize] at (0.4,-1) {Ré + Strafe};
+        \end{scope}
 
-            \vspace{0.5em}
-            \textbf{Regras de Alinhamento}
-            \begin{itemize}
-                \item SE ângulo\_grande ENTÃO apenas\_rotacionar
-                \item SE ângulo\_médio ENTÃO avançar\_lento + rotacionar
-                \item SE ângulo\_pequeno ENTÃO avançar\_rápido
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.48\textwidth}
-            \centering
-            % Fuzzy inference diagram
-            \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.8}]
-                % Input
-                \node[draw, rectangle, fill=blue!20] (input) at (0,2) {Sensores};
+        % Scenario 2: Obstacle left - Strafe right
+        \begin{scope}[shift={(4,0)}]
+            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
+            \node[font=\tiny] at (0.4,0.7) {R};
+            \draw[fill=orange!50, thick] (-0.6,0.4) rectangle (-0.2,1);
+            \draw[->, thick, green!60!black] (0.8,0.7) -- (1.4,0.7);
+            \node[below, font=\scriptsize] at (0.4,-1) {Strafe direita};
+        \end{scope}
 
-                % Fuzzification
-                \node[draw, rectangle, fill=orange!20] (fuzz) at (0,0) {Fuzzificação};
+        % Scenario 3: Aligned with target - Forward
+        \begin{scope}[shift={(8,0)}]
+            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
+            \node[font=\tiny] at (0.4,0.7) {R};
+            \draw[fill=green!50, thick] (0.2,2.5) rectangle (0.6,2.9);
+            \draw[->, ultra thick, green!60!black] (0.4,1.4) -- (0.4,2.3);
+            \node[below, font=\scriptsize] at (0.4,-1) {Avançar};
+        \end{scope}
 
-                % Rules
-                \node[draw, rectangle, fill=yellow!20] (rules) at (3,0) {Regras};
+        % Scenario 4: Angle big - Rotate only
+        \begin{scope}[shift={(12,0)}]
+            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
+            \node[font=\tiny] at (0.4,0.7) {R};
+            \draw[fill=green!50, thick] (1.8,2) rectangle (2.2,2.4);
+            \draw[->, thick, orange, rotate around={30:(0.4,0.7)}] (0.4,1.4) -- (0.4,2);
+            \node[below, font=\scriptsize] at (0.4,-1) {Rotacionar};
+        \end{scope}
+    \end{tikzpicture}
 
-                % Defuzzification
-                \node[draw, rectangle, fill=green!20] (defuzz) at (6,0) {Defuzzificação};
+    \vspace{0.5em}
 
-                % Output
-                \node[draw, rectangle, fill=red!20] (output) at (6,2) {vx, vy, $\omega$};
-
-                % Arrows
-                \draw[->, thick] (input) -- (fuzz);
-                \draw[->, thick] (fuzz) -- (rules);
-                \draw[->, thick] (rules) -- (defuzz);
-                \draw[->, thick] (defuzz) -- (output);
-            \end{tikzpicture}
-
-            \vspace{0.8em}
-            \textbf{Defuzzificação:} Centróide ponderado
-        \end{column}
-    \end{columns}
+    % Rules table (compact)
+    \footnotesize
+    \begin{tabular}{|c|c|}
+    \hline
+    \textbf{SE} & \textbf{ENTÃO} \\
+    \hline
+    obstáculo muito perto & reverso + strafe \\
+    lateral bloqueado & strafe oposto \\
+    ângulo pequeno & avançar rápido \\
+    \hline
+    \end{tabular}
 \end{frame}
 
 %=================================================
@@ -464,67 +475,61 @@
 \begin{frame}{Máquina de Estados Finita}
     \centering
     \begin{tikzpicture}[
-        scale=0.75,
-        state/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=1cm, fill=blue!20},
+        scale=0.9,
+        state/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=0.9cm, fill=blue!20, font=\small},
         arrow/.style={->, thick, >=stealth}
     ]
         % States
         \node[state, fill=yellow!30] (search) at (0,0) {SEARCH};
         \node[state, fill=orange!30] (approach) at (4,0) {APPROACH};
         \node[state, fill=green!30] (grasp) at (8,0) {GRASP};
-        \node[state, fill=purple!30] (tobox) at (8,-3) {TO\_BOX};
-        \node[state, fill=red!30] (drop) at (4,-3) {DROP};
+        \node[state, fill=purple!30] (tobox) at (8,-2.5) {TO\_BOX};
+        \node[state, fill=red!30] (drop) at (4,-2.5) {DROP};
 
         % Transitions
-        \draw[arrow] (search) -- node[above] {\tiny cubo detectado} (approach);
-        \draw[arrow] (approach) -- node[above] {\tiny dist $<$ 0.32m} (grasp);
-        \draw[arrow] (grasp) -- node[right] {\tiny objeto agarrado} (tobox);
-        \draw[arrow] (tobox) -- node[above] {\tiny chegou à caixa} (drop);
-        \draw[arrow] (drop) -- node[left] {\tiny completado} (search);
+        \draw[arrow] (search) -- node[above, font=\scriptsize] {detectado} (approach);
+        \draw[arrow] (approach) -- node[above, font=\scriptsize] {perto} (grasp);
+        \draw[arrow] (grasp) -- node[right, font=\scriptsize] {agarrado} (tobox);
+        \draw[arrow] (tobox) -- node[above, font=\scriptsize] {chegou} (drop);
+        \draw[arrow] (drop) -- node[left, font=\scriptsize] {ok} (search);
 
-        % Self-loop for search
-        \draw[arrow] (approach.north) .. controls (2,1.5) and (-2,1.5) .. node[above] {\tiny cubo perdido} (search.north);
-
-        % Legend
-        \node[below] at (4,-4.5) {\small Fluxo principal de execução};
+        % Self-loop
+        \draw[arrow] (approach.north) .. controls (2,1.3) and (-2,1.3) .. node[above, font=\scriptsize] {perdido} (search.north);
     \end{tikzpicture}
 \end{frame}
 
 \begin{frame}{Hierarquia de Prioridades}
-    \begin{columns}[T]
-        \begin{column}{0.55\textwidth}
-            \textbf{Regras de Segurança (Top $\rightarrow$ Bottom)}
-            \begin{enumerate}
-                \item \textbf{NUNCA} colidir com paredes ou obstáculos de madeira
-                \item Evitar empurrar cubos pequenos (podem ficar inacessíveis)
-                \item Manter progresso em direção ao objetivo
-            \end{enumerate}
-
-            \vspace{0.5em}
-            \textbf{Recuperação de Travamento}
-            \begin{itemize}
-                \item Detecção de oscilação (posição fixa por 12s)
-                \item Escape em 4 fases: strafe puro, diagonal
-                \item Rota via corredores seguros (bordas da arena)
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.42\textwidth}
+    \centering
+    \begin{columns}[c]
+        \begin{column}{0.45\textwidth}
             \centering
-            % Priority pyramid
-            \begin{tikzpicture}[scale=0.6]
-                % Pyramid
-                \fill[red!60] (0,0) -- (2,0) -- (1,1) -- cycle;
-                \fill[orange!60] (-0.5,-1) -- (2.5,-1) -- (2,0) -- (0,0) -- cycle;
-                \fill[yellow!60] (-1,-2) -- (3,-2) -- (2.5,-1) -- (-0.5,-1) -- cycle;
+            % Priority pyramid (larger)
+            \begin{tikzpicture}[scale=1.0]
+                % Pyramid layers
+                \fill[red!70] (0,0) -- (2.5,0) -- (1.25,1.2) -- cycle;
+                \fill[orange!60] (-0.6,-1.2) -- (3.1,-1.2) -- (2.5,0) -- (0,0) -- cycle;
+                \fill[yellow!50] (-1.2,-2.4) -- (3.7,-2.4) -- (3.1,-1.2) -- (-0.6,-1.2) -- cycle;
 
                 % Labels
-                \node at (1,0.4) {\tiny Paredes};
-                \node at (1,-0.5) {\tiny Obstáculos};
-                \node at (1,-1.5) {\tiny Cubos};
+                \node[font=\small\bfseries, white] at (1.25,0.4) {Paredes};
+                \node[font=\small\bfseries] at (1.25,-0.6) {Obstáculos};
+                \node[font=\small\bfseries] at (1.25,-1.8) {Cubos};
 
                 % Priority arrow
-                \draw[->, thick] (4,0.5) -- (4,-1.5) node[midway, right] {\tiny Prioridade};
+                \draw[->, ultra thick] (4.5,1) -- (4.5,-2.2);
+                \node[right, font=\scriptsize, rotate=-90] at (4.8,-0.6) {Prioridade};
             \end{tikzpicture}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \footnotesize
+            \textbf{Segurança:}\\
+            1. Nunca colidir com paredes\\
+            2. Evitar empurrar cubos\\
+            3. Manter progresso
+
+            \vspace{0.5em}
+            \textbf{Recuperação (stuck $>$ 3s):}\\
+            $\rightarrow$ Escape para corredor seguro
         \end{column}
     \end{columns}
 \end{frame}
@@ -571,6 +576,185 @@
 %=================================================
 \section{Resultados e Demo}
 %=================================================
+
+\begin{frame}{Sequência de Coleta}
+    \centering
+    \begin{tikzpicture}[scale=0.65]
+        % Step 1: Search
+        \begin{scope}[shift={(0,0)}]
+            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
+            \draw[fill=blue!30] (-0.3,-0.5) rectangle (0.3,0.1);
+            \draw[red!60, dashed] (0,0.1) -- ++(30:1.5);
+            \draw[red!60, dashed] (0,0.1) -- ++(-30:1.5);
+            \draw[fill=red!70] (0.8,0.8) rectangle (1,1);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {1. SEARCH};
+            \draw[->, thick, blue!60] (-0.5,-0.2) arc (180:90:0.3);
+        \end{scope}
+
+        % Arrow
+        \draw[->, ultra thick, green!60!black] (2,0.3) -- (3,0.3);
+
+        % Step 2: Approach
+        \begin{scope}[shift={(5,0)}]
+            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
+            \draw[fill=blue!30] (-0.3,-0.3) rectangle (0.3,0.3);
+            \draw[fill=red!70] (0.6,0.5) rectangle (0.8,0.7);
+            \draw[->, thick, green!60!black] (0,0.3) -- (0.5,0.5);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {2. APPROACH};
+        \end{scope}
+
+        % Arrow
+        \draw[->, ultra thick, green!60!black] (7,0.3) -- (8,0.3);
+
+        % Step 3: Grasp
+        \begin{scope}[shift={(10,0)}]
+            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
+            \draw[fill=blue!30] (-0.3,-0.1) rectangle (0.3,0.5);
+            % Arm extended
+            \draw[fill=gray!50, thick] (0,0.5) rectangle (0.15,1.1);
+            % Gripper
+            \draw[fill=orange!60, thick] (-0.1,1.1) rectangle (0.25,1.25);
+            \draw[fill=red!70] (0,0.85) rectangle (0.15,1);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {3. GRASP};
+        \end{scope}
+    \end{tikzpicture}
+
+    \vspace{0.8em}
+
+    \begin{tikzpicture}[scale=0.65]
+        % Step 4: TO_BOX
+        \begin{scope}[shift={(0,0)}]
+            \draw[thick, gray] (-1.8,-1.2) rectangle (1.8,1.5);
+            \draw[fill=blue!30] (-1.2,0) rectangle (-0.6,0.6);
+            % Cube on robot
+            \draw[fill=red!70] (-1,0.6) rectangle (-0.8,0.8);
+            % Target box
+            \draw[fill=red!40, thick] (1,0.2) rectangle (1.5,0.7);
+            % A* path
+            \draw[blue!60, thick, dashed, ->] (-0.9,0.3) -- (-0.2,0.3) -- (0.3,0.6) -- (0.9,0.45);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {4. TO\_BOX (A*)};
+        \end{scope}
+
+        % Arrow
+        \draw[->, ultra thick, green!60!black] (2.3,0.3) -- (3.3,0.3);
+
+        % Step 5: Drop
+        \begin{scope}[shift={(5.5,0)}]
+            \draw[thick, gray] (-1.5,-1.2) rectangle (1.5,1.5);
+            \draw[fill=blue!30] (-0.3,0) rectangle (0.3,0.6);
+            % Box
+            \draw[fill=red!40, thick] (0.5,-0.3) rectangle (1.2,0.5);
+            % Cube dropping
+            \draw[fill=red!70] (0.7,0.1) rectangle (0.9,0.3);
+            \draw[->, thick, orange] (0.1,0.6) -- (0.65,0.2);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {5. DROP};
+        \end{scope}
+
+        % Arrow (loop back)
+        \draw[->, ultra thick, green!60!black] (7.5,0.3) -- (8.5,0.3);
+
+        % Step 6: Repeat
+        \begin{scope}[shift={(10.5,0)}]
+            \draw[thick, gray] (-1.5,-1.2) rectangle (1.5,1.5);
+            \draw[fill=blue!30] (-0.3,-0.3) rectangle (0.3,0.3);
+            \draw[->, thick, blue!60] (0,0.3) arc (90:450:0.4);
+            \node[font=\scriptsize] at (0,0) {\tiny $\times$15};
+            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {6. REPETIR};
+        \end{scope}
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Visualização LIDAR + Câmera}
+    \centering
+    \begin{tikzpicture}[scale=0.8]
+        % Arena
+        \draw[thick] (-4,-2.5) rectangle (4,2.5);
+
+        % Robot at center
+        \draw[fill=blue!40, thick] (-0.4,-0.25) rectangle (0.4,0.25);
+        \node[font=\tiny] at (0,0) {YouBot};
+
+        % LIDAR rays (180 degrees)
+        \foreach \a in {-85,-70,-55,-40,-25,-10,5,20,35,50,65,80} {
+            \pgfmathsetmacro{\len}{1.5+rand*0.5}
+            \draw[red!50, thick] (0,0.25) -- ++(\a+90:\len);
+        }
+
+        % Obstacle detected by LIDAR
+        \draw[fill=brown!60] (1.2,1) rectangle (1.8,1.6);
+        \draw[red!80, ultra thick] (0,0.25) -- (1.3,1);
+
+        % Camera FOV cone
+        \draw[blue!40, fill=blue!10, thick] (0,0.25) -- ++(60:2.5) arc (60:120:2.5) -- cycle;
+
+        % Cube in camera view
+        \draw[fill=green!70] (-0.8,1.8) rectangle (-0.5,2.1);
+        \node[green!70!black, font=\scriptsize] at (-0.65,2.4) {Detectado!};
+
+        % Distance to cube
+        \draw[<->, thick, green!60!black] (0,0.25) -- (-0.65,1.8);
+        \node[green!60!black, font=\tiny, right] at (-0.3,1) {1.6m};
+
+        % Legend
+        \node[draw, fill=white, rounded corners, font=\scriptsize, text width=2.8cm, align=left] at (-2.8,-1.5) {
+            \textcolor{red!70}{---} LIDAR\\[0.1em]
+            \textcolor{blue!50}{$\triangle$} Câmera FOV\\[0.1em]
+            \textcolor{green!60!black}{$\bullet$} Cubo detectado
+        };
+
+        % Recognition box
+        \node[draw, fill=yellow!20, rounded corners, font=\scriptsize, text width=1.8cm, align=center] at (2.5,-1.5) {
+            CNN: Verde\\[0.1em]
+            Conf: 0.97
+        };
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Navegação A* em Ação}
+    \centering
+    \begin{tikzpicture}[scale=0.55]
+        % Arena grid
+        \draw[step=0.5, gray!20, thin] (-4,-2.5) grid (4,2.5);
+        \draw[thick] (-4,-2.5) rectangle (4,2.5);
+
+        % Obstacles (wooden boxes) with inflation shown
+        \foreach \x/\y in {0.5/0, 2/-1.2, 2/1.2, -2.3/1.5, -1/-0.7, -1/0.7, -2.3/-1.5} {
+            \fill[brown!40, opacity=0.5] (\x-0.4,\y-0.4) rectangle (\x+0.4,\y+0.4);
+            \fill[brown!70] (\x-0.2,\y-0.2) rectangle (\x+0.2,\y+0.2);
+        }
+
+        % Deposit boxes
+        \draw[fill=green!50, thick] (3.2,1.3) rectangle (3.8,1.8);
+        \node[font=\tiny] at (3.5,1.55) {G};
+        \draw[fill=blue!50, thick] (3.2,-1.8) rectangle (3.8,-1.3);
+        \node[font=\tiny] at (3.5,-1.55) {B};
+        \draw[fill=red!50, thick] (3.5,-0.25) rectangle (4,0.25);
+        \node[font=\tiny] at (3.75,0) {R};
+
+        % Robot position
+        \draw[fill=blue!60, thick] (-3.2,-0.2) rectangle (-2.6,0.2);
+        \node[font=\tiny, white] at (-2.9,0) {R};
+
+        % A* path to red box (avoiding obstacles)
+        \draw[blue!70, line width=2.5pt, ->]
+            (-2.6,0) -- (-1.5,0) -- (-1.5,1.5) -- (0.8,1.5) -- (0.8,0.5) -- (1.5,0.5) -- (2.5,0) -- (3.5,0);
+
+        % Waypoints
+        \foreach \x/\y in {-1.5/0, -1.5/1.5, 0.8/1.5, 0.8/0.5, 1.5/0.5, 2.5/0} {
+            \fill[blue!70] (\x,\y) circle (0.1);
+        }
+
+        % Legend
+        \node[draw, fill=white, rounded corners, font=\scriptsize, text width=2cm, align=left] at (-2.8,-2) {
+            \textcolor{brown!70}{$\blacksquare$} Obstáculo\\[0.1em]
+            \textcolor{brown!40}{$\square$} Inflação\\[0.1em]
+            \textcolor{blue!70}{---} A* path
+        };
+
+        % Label
+        \node[font=\small\bfseries] at (0,3) {Caminho calculado evitando obstáculos};
+    \end{tikzpicture}
+\end{frame}
 
 \begin{frame}{Resultados}
     \begin{columns}[T]
