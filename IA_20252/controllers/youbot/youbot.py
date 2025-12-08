@@ -287,6 +287,27 @@ class FuzzyNavigator:
 
         return min_dist_front, min_dist_left, min_dist_right
 
+    def check_rear_clearance(self, omega, obs_front, obs_left, obs_right):
+        """Check if rotation will cause rear collision. Robot body ~0.58m long."""
+        ROBOT_HALF_LENGTH = 0.30  # 30cm from center to rear
+        SAFETY_MARGIN = 0.20
+        MIN_CLEARANCE = ROBOT_HALF_LENGTH + SAFETY_MARGIN  # 0.50m
+
+        # If rotating left (omega > 0), rear swings right - check right clearance
+        # If rotating right (omega < 0), rear swings left - check left clearance
+        if omega > 0.05:  # Rotating left
+            if obs_right < MIN_CLEARANCE:
+                return False, "rear_right"
+        elif omega < -0.05:  # Rotating right
+            if obs_left < MIN_CLEARANCE:
+                return False, "rear_left"
+
+        # Also check if front is too close for any rotation
+        if obs_front < 0.35:
+            return False, "front_blocked"
+
+        return True, None
+
     def compute(self, has_target, target_distance, target_angle,
                 obs_front, obs_left, obs_right, pose=None):
         """Calcula comandos de velocidade usando lógica fuzzy."""
@@ -1238,6 +1259,15 @@ class YouBotController:
 
                     # Always check final goal distance for DROP trigger
                     final_distance, final_angle = self._distance_to_point(self.active_goal)
+                    lidar_front = lidar_info["front"]
+
+                    # === FINAL APPROACH DETECTION ===
+                    # When close to goal with box detected by LIDAR, switch to final approach mode
+                    # Removed angle requirement - robot can approach from any angle
+                    in_final_approach = (
+                        final_distance < 1.2 and
+                        lidar_front < 0.80
+                    )
 
                     # Log periódico de navegação
                     if not hasattr(self, '_tobox_log_timer'):
@@ -1245,34 +1275,31 @@ class YouBotController:
                     self._tobox_log_timer += dt
                     if self._tobox_log_timer >= 2.0:
                         wp_info = f"wp={len(self._waypoints)}" if self._waypoints else "direct"
-                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={final_distance:.2f}m ang={math.degrees(final_angle):.1f}° [{wp_info}]")
+                        fa_info = " [FINAL]" if in_final_approach else ""
+                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={final_distance:.2f}m ang={math.degrees(final_angle):.1f}° [{wp_info}]{fa_info}")
                         self._tobox_log_timer = 0.0
 
-                    # Chegou ao box - validar com LIDAR antes de depositar
-                    # Use FINAL goal distance, not waypoint distance
-                    if final_distance < 0.35:
-                        # LIDAR deve detectar box como obstáculo frontal entre 0.15-0.60m
-                        lidar_front = lidar_info["front"]
-                        box_detected = 0.15 < lidar_front < 0.60
+                    # === DROP TRIGGER ===
+                    # Use LIDAR for precise box detection - box wall at 0.15-0.45m means we're ready to drop
+                    if in_final_approach and 0.15 < lidar_front < 0.45:
+                        print(f"[TO_BOX] DROP TRIGGER! lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m, ang={math.degrees(final_angle):.1f}°")
+                        if hasattr(self, '_tobox_log_timer'):
+                            del self._tobox_log_timer
+                        self._start_drop()
+                        continue
 
-                        if box_detected:
-                            print(f"[TO_BOX] Chegou ao box! dist={distance:.2f}m, lidar_front={lidar_front:.2f}m")
-                            if hasattr(self, '_tobox_log_timer'):
-                                del self._tobox_log_timer
-                            self._start_drop()
-                            continue
-                        else:
-                            # Odometria diz que chegou mas LIDAR não vê box
-                            # Forçar sync com ground truth e continuar navegando
-                            gt = self._get_ground_truth_pose()
-                            if gt:
-                                old_pose = self.pose.copy()
-                                self.pose = gt
-                                new_dist, _ = self._distance_to_point(self.active_goal)
-                                print(f"[TO_BOX] LIDAR não vê box (front={lidar_front:.2f}m). Pose corrigida: ({old_pose[0]:.2f},{old_pose[1]:.2f})->({gt[0]:.2f},{gt[1]:.2f}), dist real={new_dist:.2f}m")
-                            else:
-                                print(f"[TO_BOX] LIDAR não vê box (front={lidar_front:.2f}m), sem ground truth")
-                            # Não iniciar drop, continuar navegando
+                    # === FINAL APPROACH MODE ===
+                    # Bypass obstacle avoidance - slowly approach the box
+                    if in_final_approach:
+                        # Align with goal and approach slowly
+                        omega_cmd = -final_angle * 0.6
+                        omega_cmd = max(-0.3, min(0.3, omega_cmd))
+                        vx_cmd = 0.06  # Slow approach
+                        vy_cmd = 0.0
+                        self._log_throttled("tobox_final", f"[TO_BOX] Final approach: lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m", 0.8)
+                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                        continue
 
                     # ===== DESVIO DE OBSTÁCULOS - ROTAÇÃO + STRAFE =====
                     obs_front = lidar_info["front"]
@@ -1296,23 +1323,41 @@ class YouBotController:
                         self._clearing_timer = 0.0
 
                     # PARADA DE EMERGÊNCIA: obstáculo muito perto (< 0.30m)
-                    # Reduced threshold since A* path planning handles main avoidance
+                    # Now with rear clearance check to prevent rear collisions during escape
                     if obs_front < 0.30:
                         self._emergency_counter += 1
                         self._clearing_timer = 1.5  # Continuar evitando por 1.5s após sair da emergência
 
+                        # Calcular rotação desejada para escape
+                        desired_omega = 0.45 if escape_left else -0.45
+
+                        # Verificar rear clearance mesmo em emergência
+                        rear_safe, rear_issue = self.navigator.check_rear_clearance(
+                            desired_omega, obs_front, obs_left, obs_right
+                        )
+
                         # Se preso por muito tempo (>25 ciclos), manobra agressiva de escape
                         if self._emergency_counter > 25:
                             vx_cmd = -0.10  # Ré forte
-                            omega_cmd = 0.6 if escape_left else -0.6  # Rotação muito forte
-                            vy_cmd = 0.18 if escape_left else -0.18  # Strafe muito forte
-                            self._log_throttled("tobox_stuck", f"[TO_BOX] PRESO! Escape agressivo: ré + rotação {'L' if escape_left else 'R'}", 0.5)
+                            if rear_safe:
+                                omega_cmd = 0.6 if escape_left else -0.6
+                                vy_cmd = 0.15 if escape_left else -0.15
+                            else:
+                                # Priorizar strafe quando rear em risco
+                                omega_cmd = 0.0
+                                vy_cmd = 0.20 if escape_left else -0.20
+                            self._log_throttled("tobox_stuck", f"[TO_BOX] PRESO! Escape: rear_safe={rear_safe}", 0.5)
                         else:
-                            # Escape normal: ré + rotação forte + strafe forte
+                            # Escape normal: ré + rotation/strafe baseado em rear clearance
                             vx_cmd = -0.06  # Recuar
-                            omega_cmd = 0.45 if escape_left else -0.45  # Rotação forte
-                            vy_cmd = 0.15 if escape_left else -0.15  # Strafe forte
-                            self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, escape={'L' if escape_left else 'R'}", 1.0)
+                            if rear_safe:
+                                omega_cmd = desired_omega
+                                vy_cmd = 0.12 if escape_left else -0.12
+                            else:
+                                # Usar strafe predominante quando rear em risco
+                                omega_cmd = 0.0
+                                vy_cmd = 0.18 if escape_left else -0.18
+                            self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, rear_safe={rear_safe}", 1.0)
 
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
@@ -1322,46 +1367,93 @@ class YouBotController:
                         self._emergency_counter = 0
 
                     # DESVIO PREVENTIVO: obstáculo próximo (< 0.50m) OU ainda em clearing
-                    # Reduced threshold since A* path planning handles main avoidance
+                    # Now includes rear clearance check to prevent rear wheel collisions
                     if obs_front < 0.50 or self._clearing_timer > 0:
                         if self._clearing_timer > 0:
                             self._clearing_timer -= dt
 
-                        # Continuar contornando até limpar completamente o obstáculo
-                        # Avançar devagar enquanto gira e strafe para contornar
-                        vx_cmd = 0.04
+                        # Calcular rotação desejada
+                        desired_omega = 0.35 if escape_left else -0.35
 
-                        # Rotação forte para contornar o obstáculo
-                        omega_cmd = 0.35 if escape_left else -0.35
+                        # CRÍTICO: Verificar clearance traseira antes de rotacionar
+                        rear_safe, rear_issue = self.navigator.check_rear_clearance(
+                            desired_omega, obs_front, obs_left, obs_right
+                        )
 
-                        # Strafe forte para afastar do obstáculo
-                        vy_cmd = 0.14 if escape_left else -0.14
+                        if rear_safe:
+                            # Seguro rotacionar - movimento normal de contorno
+                            omega_cmd = desired_omega
+                            vy_cmd = 0.12 if escape_left else -0.12
+                            vx_cmd = 0.04
+                        else:
+                            # Risco de colisão traseira - usar strafe prioritário
+                            if rear_issue == "rear_right":
+                                # Traseira bateria à direita - strafe esquerda, não girar à esquerda
+                                vy_cmd = 0.15
+                                omega_cmd = min(0.0, -0.15)  # Só permite giro à direita (leve)
+                            elif rear_issue == "rear_left":
+                                # Traseira bateria à esquerda - strafe direita, não girar à direita
+                                vy_cmd = -0.15
+                                omega_cmd = max(0.0, 0.15)  # Só permite giro à esquerda (leve)
+                            else:
+                                # Frente bloqueada - ré + strafe
+                                vy_cmd = 0.12 if escape_left else -0.12
+                                omega_cmd = 0.0
+                            vx_cmd = 0.02  # Avançar bem devagar quando traseira em risco
+                            self._log_throttled("tobox_rear_risk", f"[TO_BOX] Rear collision risk: {rear_issue}", 1.0)
 
-                        self._log_throttled("tobox_preventive", f"[TO_BOX] Contornando: obs_front={obs_front:.2f}m, lado={'L' if escape_left else 'R'}, clearing={self._clearing_timer:.1f}s", 1.5)
+                        self._log_throttled("tobox_preventive", f"[TO_BOX] Contornando: obs_front={obs_front:.2f}m, lado={'L' if escape_left else 'R'}, rear_safe={rear_safe}", 1.5)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
 
-                    # NAVEGAÇÃO NORMAL: sem obstáculos críticos
-                    angle_threshold = math.radians(12)
+                    # NAVEGAÇÃO NORMAL: Car-like motion with proportional control
+                    # Allow forward motion even with larger angles to prevent oscillation
+                    angle_threshold = math.radians(25)  # Increased from 12° to 25°
 
-                    if abs(angle) > angle_threshold:
-                        # Rotacionar para alinhar com o box
-                        omega_cmd = -angle * 0.5
-                        omega_cmd = max(-0.35, min(0.35, omega_cmd))
-                        vx_cmd = 0.0
-                        vy_cmd = 0.0
+                    # Calculate rotation command
+                    omega_cmd = -angle * 0.6
+                    omega_cmd = max(-0.40, min(0.40, omega_cmd))
+
+                    # Check rear clearance before rotating
+                    rear_safe, rear_issue = self.navigator.check_rear_clearance(
+                        omega_cmd, obs_front, obs_left, obs_right
+                    )
+
+                    if not rear_safe:
+                        # Rear collision risk - prefer forward + strafe instead of rotation
+                        if rear_issue == "rear_right":
+                            # Rear hitting right - strafe left and reduce right rotation
+                            vy_cmd = 0.10
+                            omega_cmd = max(0.0, omega_cmd)  # Only allow left rotation
+                            self._log_throttled("tobox_rear_right", "[TO_BOX] Rear clearance risk RIGHT, strafe left", 1.0)
+                        elif rear_issue == "rear_left":
+                            # Rear hitting left - strafe right and reduce left rotation
+                            vy_cmd = -0.10
+                            omega_cmd = min(0.0, omega_cmd)  # Only allow right rotation
+                            self._log_throttled("tobox_rear_left", "[TO_BOX] Rear clearance risk LEFT, strafe right", 1.0)
+                        else:
+                            # Front blocked - use strafe primarily
+                            vy_cmd = 0.08 if obs_left > obs_right else -0.08
+                            omega_cmd *= 0.5  # Reduce rotation
+                            self._log_throttled("tobox_front_blocked", "[TO_BOX] Front blocked, using strafe", 1.0)
+                        vx_cmd = 0.03  # Reduced forward speed
                     else:
-                        # Avançar em direção ao box
-                        vx_cmd = min(0.10, distance * 0.12)
-                        omega_cmd = -angle * 0.6
-                        omega_cmd = max(-0.25, min(0.25, omega_cmd))
+                        # Car-like arc motion: always move forward while rotating
+                        # Scale vx by alignment quality (1.0 when aligned, 0.4 at 25°)
+                        alignment_quality = 1.0 - (abs(angle) / angle_threshold)
+                        alignment_quality = max(0.4, min(1.0, alignment_quality))
 
-                        # Correção lateral se obstáculo lateral
+                        # Base speed scaled by alignment and distance
+                        base_speed = min(0.12, distance * 0.15)
+                        vx_cmd = base_speed * alignment_quality
+                        vx_cmd = max(0.04, vx_cmd)  # Minimum 4cm/s to maintain progress
+
+                        # Lateral correction for side obstacles
                         if obs_left < 0.35:
-                            vy_cmd = -0.04
+                            vy_cmd = -0.05
                         elif obs_right < 0.35:
-                            vy_cmd = 0.04
+                            vy_cmd = 0.05
                         else:
                             vy_cmd = 0.0
 
