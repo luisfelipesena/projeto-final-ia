@@ -436,7 +436,7 @@ class YouBotController:
     # ===== Grid helpers =====
     def _seed_static_map(self):
         self.grid.fill_border(OccupancyGrid.OBSTACLE, static=True)
-        wall_inflate = 0.10
+        wall_inflate = 0.30  # Robot half-width (~0.29m) + safety margin for full body clearance
         # Obstáculos fixos
         for ox, oy, radius in KNOWN_OBSTACLES:
             self.grid.fill_disk(ox, oy, radius + wall_inflate, OccupancyGrid.OBSTACLE, static=True)
@@ -1219,20 +1219,38 @@ class YouBotController:
                 self.gripper.grip()
                 self.arm.set_height(Arm.FRONT_PLATE)
 
-                # Navegação com Fuzzy + LIDAR para desvio de obstáculos
+                # Navegação com A* waypoints + LIDAR para desvio de obstáculos
                 if self.active_goal:
-                    distance, angle = self._distance_to_point(self.active_goal)
+                    # === A* WAYPOINT NAVIGATION ===
+                    # Use waypoints from A* path planner instead of direct-to-goal
+                    waypoint = self._next_nav_point()
+                    if waypoint:
+                        distance, angle = self._distance_to_point(waypoint)
+                        # Pop waypoint when reached (within 0.25m)
+                        if distance < 0.25 and self._waypoints:
+                            self._waypoints.pop(0)
+                            waypoint = self._next_nav_point()
+                            if waypoint:
+                                distance, angle = self._distance_to_point(waypoint)
+                    else:
+                        # No waypoints, go direct to goal
+                        distance, angle = self._distance_to_point(self.active_goal)
+
+                    # Always check final goal distance for DROP trigger
+                    final_distance, final_angle = self._distance_to_point(self.active_goal)
 
                     # Log periódico de navegação
                     if not hasattr(self, '_tobox_log_timer'):
                         self._tobox_log_timer = 0.0
                     self._tobox_log_timer += dt
                     if self._tobox_log_timer >= 2.0:
-                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={distance:.2f}m ang={math.degrees(angle):.1f}°")
+                        wp_info = f"wp={len(self._waypoints)}" if self._waypoints else "direct"
+                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={final_distance:.2f}m ang={math.degrees(final_angle):.1f}° [{wp_info}]")
                         self._tobox_log_timer = 0.0
 
                     # Chegou ao box - validar com LIDAR antes de depositar
-                    if distance < 0.35:
+                    # Use FINAL goal distance, not waypoint distance
+                    if final_distance < 0.35:
                         # LIDAR deve detectar box como obstáculo frontal entre 0.15-0.60m
                         lidar_front = lidar_info["front"]
                         box_detected = 0.15 < lidar_front < 0.60
@@ -1271,27 +1289,29 @@ class YouBotController:
                     # Prioriza o lado com MAIS espaço para contornar o obstáculo
                     escape_left = obs_left > obs_right
 
-                    # Stuck detection - contador de emergências consecutivas
+                    # Stuck detection e clearing timer
                     if not hasattr(self, '_emergency_counter'):
                         self._emergency_counter = 0
-                        self._last_emergency_pose = None
+                    if not hasattr(self, '_clearing_timer'):
+                        self._clearing_timer = 0.0
 
-                    # PARADA DE EMERGÊNCIA: obstáculo muito perto
-                    if obs_front < 0.25:
+                    # PARADA DE EMERGÊNCIA: obstáculo muito perto (< 0.30m)
+                    # Reduced threshold since A* path planning handles main avoidance
+                    if obs_front < 0.30:
                         self._emergency_counter += 1
+                        self._clearing_timer = 1.5  # Continuar evitando por 1.5s após sair da emergência
 
-                        # Se preso por muito tempo (>30 ciclos), manobra agressiva de escape
-                        if self._emergency_counter > 30:
-                            vx_cmd = -0.08  # Ré mais forte
-                            omega_cmd = 0.5 if escape_left else -0.5  # Rotação forte
-                            vy_cmd = 0.15 if escape_left else -0.15  # Strafe forte
+                        # Se preso por muito tempo (>25 ciclos), manobra agressiva de escape
+                        if self._emergency_counter > 25:
+                            vx_cmd = -0.10  # Ré forte
+                            omega_cmd = 0.6 if escape_left else -0.6  # Rotação muito forte
+                            vy_cmd = 0.18 if escape_left else -0.18  # Strafe muito forte
                             self._log_throttled("tobox_stuck", f"[TO_BOX] PRESO! Escape agressivo: ré + rotação {'L' if escape_left else 'R'}", 0.5)
                         else:
-                            # Escape normal: ré + rotação + strafe
-                            vx_cmd = -0.05  # Recuar
-                            # ROTACIONAR para virar na direção do escape
-                            omega_cmd = 0.35 if escape_left else -0.35
-                            vy_cmd = 0.12 if escape_left else -0.12
+                            # Escape normal: ré + rotação forte + strafe forte
+                            vx_cmd = -0.06  # Recuar
+                            omega_cmd = 0.45 if escape_left else -0.45  # Rotação forte
+                            vy_cmd = 0.15 if escape_left else -0.15  # Strafe forte
                             self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, escape={'L' if escape_left else 'R'}", 1.0)
 
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
@@ -1301,18 +1321,23 @@ class YouBotController:
                         # Reset contador quando não está em emergência
                         self._emergency_counter = 0
 
-                    # DESVIO PREVENTIVO: obstáculo próximo mas não crítico
-                    if obs_front < 0.50:
-                        # Velocidade reduzida + rotação para contornar
-                        vx_cmd = 0.03
+                    # DESVIO PREVENTIVO: obstáculo próximo (< 0.50m) OU ainda em clearing
+                    # Reduced threshold since A* path planning handles main avoidance
+                    if obs_front < 0.50 or self._clearing_timer > 0:
+                        if self._clearing_timer > 0:
+                            self._clearing_timer -= dt
 
-                        # Rotacionar na direção do escape (lado mais livre)
-                        omega_cmd = 0.25 if escape_left else -0.25
+                        # Continuar contornando até limpar completamente o obstáculo
+                        # Avançar devagar enquanto gira e strafe para contornar
+                        vx_cmd = 0.04
 
-                        # Strafe na direção do escape
-                        vy_cmd = 0.10 if escape_left else -0.10
+                        # Rotação forte para contornar o obstáculo
+                        omega_cmd = 0.35 if escape_left else -0.35
 
-                        self._log_throttled("tobox_preventive", f"[TO_BOX] Preventivo: obs_front={obs_front:.2f}m, contornando {'L' if escape_left else 'R'}", 1.5)
+                        # Strafe forte para afastar do obstáculo
+                        vy_cmd = 0.14 if escape_left else -0.14
+
+                        self._log_throttled("tobox_preventive", f"[TO_BOX] Contornando: obs_front={obs_front:.2f}m, lado={'L' if escape_left else 'R'}, clearing={self._clearing_timer:.1f}s", 1.5)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
