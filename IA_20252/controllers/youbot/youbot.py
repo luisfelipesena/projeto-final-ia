@@ -548,22 +548,70 @@ class YouBotController:
             self._path_dirty = True
 
     def _initial_pose(self):
+        """Obtém pose inicial do nó do robô no Webots."""
         try:
             self_node = self.robot.getSelf()
-            translation = self_node.getField("translation").getSFVec3f()
-            rotation = self_node.getField("rotation").getSFRotation()
-            yaw = rotation[3] * rotation[2] if abs(rotation[2]) > 0.5 else rotation[3]
-            return [translation[0], translation[1], yaw]
+            if self_node:
+                # Usar getPosition() para coordenadas precisas
+                pos = self_node.getPosition()
+                # Extrair yaw da matriz de orientação
+                orient = self_node.getOrientation()
+                # orient é matriz 3x3 [R00,R01,R02,R10,R11,R12,R20,R21,R22]
+                # yaw = atan2(R10, R00)
+                yaw = math.atan2(orient[3], orient[0])
+                return [pos[0], pos[1], yaw]
+        except Exception as e:
+            print(f"[POSE] Erro ao obter pose inicial: {e}")
+        return [0.0, 0.0, 0.0]
+
+    def _get_ground_truth_pose(self):
+        """Obtém pose real do Webots (ground truth)."""
+        try:
+            self_node = self.robot.getSelf()
+            if self_node:
+                pos = self_node.getPosition()
+                orient = self_node.getOrientation()
+                yaw = math.atan2(orient[3], orient[0])
+                return [pos[0], pos[1], yaw]
         except Exception:
-            return [0.0, 0.0, 0.0]
+            pass
+        return None
 
     def _integrate_pose(self, vx, vy, omega, dt):
+        """Integra odometria com proteção contra NaN."""
+        # Proteção contra valores NaN na entrada
+        if math.isnan(vx) or math.isnan(vy) or math.isnan(omega):
+            return
+
+        # Verificar se pose atual está corrompida
+        if any(math.isnan(v) for v in self.pose):
+            # Recuperar do ground truth
+            gt = self._get_ground_truth_pose()
+            if gt:
+                self.pose = gt
+                print(f"[POSE] Recuperado do ground truth: ({gt[0]:.2f}, {gt[1]:.2f})")
+            else:
+                self.pose = [0.0, 0.0, 0.0]
+            return
+
         yaw = self.pose[2]
         dx_world = math.cos(yaw) * vx - math.sin(yaw) * vy
         dy_world = math.sin(yaw) * vx + math.cos(yaw) * vy
-        self.pose[0] += dx_world * dt
-        self.pose[1] += dy_world * dt
-        self.pose[2] = wrap_angle(self.pose[2] + omega * dt)
+
+        new_x = self.pose[0] + dx_world * dt
+        new_y = self.pose[1] + dy_world * dt
+        new_yaw = wrap_angle(self.pose[2] + omega * dt)
+
+        # Validar resultado antes de aplicar
+        if not (math.isnan(new_x) or math.isnan(new_y) or math.isnan(new_yaw)):
+            self.pose[0] = new_x
+            self.pose[1] = new_y
+            self.pose[2] = new_yaw
+        else:
+            # Recuperar do ground truth se resultado é NaN
+            gt = self._get_ground_truth_pose()
+            if gt:
+                self.pose = gt
 
     def _process_recognition(self, lock_color=None, lock_angle=None):
         """Usa Camera Recognition API para detectar cubos.
@@ -805,12 +853,15 @@ class YouBotController:
         # O gripper tem alcance de 5-10cm quando aberto
         if not hasattr(self, '_grasp_forward_time'):
             dist = self.locked_cube_distance if self.locked_cube_distance else 0.25
-            # Buffer -0.12: mais conservador, para ~1cm antes do cubo
-            forward_needed = dist - 0.12
-            forward_needed = max(0.08, min(0.25, forward_needed))  # Clamp entre 8-25cm
-            self._grasp_forward_time = forward_needed / 0.04  # Tempo a 4cm/s (mais lento)
+            # Buffer -0.05: gripper precisa estar BEM PERTO do cubo
+            # Camera está 0.27m do centro, gripper em FRONT_FLOOR está ~0.30m do centro
+            # Então gripper está ~0.03m NA FRENTE da camera
+            # Se cubo está a 0.28m da camera, precisa avançar ~0.25m para gripper alcançar
+            forward_needed = dist - 0.03  # Menos buffer = mais perto do cubo
+            forward_needed = max(0.10, min(0.30, forward_needed))  # Clamp entre 10-30cm
+            self._grasp_forward_time = forward_needed / 0.05  # Tempo a 5cm/s
             self._grasp_samples = []  # Para verificar gripper
-            print(f"[GRASP] Distância para avanço: {forward_needed:.2f}m ({self._grasp_forward_time:.1f}s)")
+            print(f"[GRASP] Distância para avanço: {forward_needed:.2f}m ({self._grasp_forward_time:.1f}s) (cubo a {dist:.2f}m)")
 
         if self.stage == 0:
             self.gripper.release()
@@ -848,20 +899,23 @@ class YouBotController:
             self.gripper.grip()  # Manter fechado
 
             # Coletar múltiplas amostras do sensor de posição dos dedos
-            left, _ = self.gripper.finger_positions()
+            left, right = self.gripper.finger_positions()
             if left is not None:
                 self._grasp_samples.append(left)
+            if right is not None:
+                self._grasp_samples.append(right)
 
-            if self.stage_timer >= 1.8:
-                # Verificar com múltiplas amostras se objeto foi capturado
-                # Dedos > 0.003 = objeto entre eles (não fecharam totalmente)
+            if self.stage_timer >= 1.5:
+                # Usar método has_object do gripper (threshold=0.002)
+                has_obj = self.gripper.has_object(threshold=0.002)
+
+                # Log detalhado
                 if self._grasp_samples:
                     avg_pos = sum(self._grasp_samples) / len(self._grasp_samples)
-                    has_obj = avg_pos > 0.003
-                    print(f"[GRASP] Verificação: pos_media={avg_pos:.4f}, has_object={has_obj}")
+                    max_pos = max(self._grasp_samples) if self._grasp_samples else 0
+                    print(f"[GRASP] Verificação: avg={avg_pos:.4f}, max={max_pos:.4f}, has_object={has_obj}")
                 else:
-                    has_obj = True  # Sem sensor, assumir sucesso
-                    print("[GRASP] Sem dados do sensor, assumindo sucesso")
+                    print(f"[GRASP] Sem amostras, has_object={has_obj}")
 
                 self.base.reset()
                 self._grasp_verified = has_obj
@@ -898,7 +952,9 @@ class YouBotController:
                 color_key = (self.current_color or "").lower()
                 target_box = self.box_positions.get(color_key, None)
                 if target_box:
+                    dist_to_box = math.hypot(target_box[0] - self.pose[0], target_box[1] - self.pose[1])
                     print(f"[TO_BOX] Indo para caixa {color_key.upper()} em {target_box}")
+                    print(f"[TO_BOX] Pose atual: ({self.pose[0]:.2f}, {self.pose[1]:.2f}, {math.degrees(self.pose[2]):.1f}°) dist={dist_to_box:.2f}m")
                     self._set_goal(target_box)
                 else:
                     fallback = list(self.box_positions.values())[0]
@@ -974,9 +1030,23 @@ class YouBotController:
                 self.base.reset()
                 break
 
-            # Odometry
+            # Odometry com sincronização periódica
             vx_odo, vy_odo, omega_odo = self.base.compute_odometry(dt)
             self._integrate_pose(vx_odo, vy_odo, omega_odo, dt)
+
+            # Sincronizar com ground truth periodicamente (a cada 2s) ou se pose inválida
+            if not hasattr(self, '_gt_sync_timer'):
+                self._gt_sync_timer = 0.0
+            self._gt_sync_timer += dt
+
+            pose_invalid = any(math.isnan(v) for v in self.pose)
+            if pose_invalid or self._gt_sync_timer >= 2.0:
+                gt = self._get_ground_truth_pose()
+                if gt:
+                    if pose_invalid:
+                        print(f"[POSE] Pose inválida, sincronizando: ({gt[0]:.2f}, {gt[1]:.2f}, {math.degrees(gt[2]):.1f}°)")
+                    self.pose = gt
+                self._gt_sync_timer = 0.0
 
             # Sensores
             lidar_info = self._process_lidar()
@@ -1019,10 +1089,21 @@ class YouBotController:
                     self.locked_cube_distance = cam_dist
                     self.locked_cube_angle = cam_angle
 
-                    # Chegou perto o suficiente -> grasp (trigger at 0.32m - ficar mais longe)
-                    if cam_dist < 0.32:
+                    # Chegou perto o suficiente E alinhado -> grasp
+                    # IMPORTANTE: Só iniciar grasp se estiver ALINHADO (< 10°)
+                    grasp_distance = 0.28  # Mais perto para garantir alcance do gripper
+                    grasp_angle_max = math.radians(10)  # Máximo 10° de desvio
+
+                    if cam_dist < grasp_distance and abs(cam_angle) < grasp_angle_max:
                         print(f"[APPROACH] Cubo a {cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°, iniciando grasp")
                         self._start_grasp()
+                        continue
+                    elif cam_dist < grasp_distance and abs(cam_angle) >= grasp_angle_max:
+                        # Perto mas desalinhado - apenas rotacionar
+                        omega_cmd = -cam_angle * 1.0
+                        omega_cmd = max(-0.4, min(0.4, omega_cmd))
+                        self._safe_move(0.0, 0.0, omega_cmd)
+                        print(f"[APPROACH] Perto mas desalinhado: ângulo={math.degrees(cam_angle):.1f}°")
                         continue
 
                     # ESTRATÉGIA: Primeiro ALINHAR, depois AVANÇAR
@@ -1087,28 +1168,104 @@ class YouBotController:
             if self.mode == "to_box":
                 # MANTER gripper fechado e braço levantado durante transporte!
                 self.gripper.grip()
-                self.arm.set_height(Arm.FRONT_PLATE)  # Manter braço levantado
+                self.arm.set_height(Arm.FRONT_PLATE)
 
-                nav_point = self._next_nav_point()
-                distance, angle = self._distance_to_point(nav_point) if nav_point else (None, None)
-                if nav_point and self._waypoints and distance is not None and distance < 0.15:
-                    self._waypoints.pop(0)
-                    continue
-                if distance is not None and distance < 0.30:
-                    self._start_drop()
-                    continue
-                vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
-                    True,
-                    distance or 0.5,
-                    angle or 0.0,
-                    lidar_info["front"],
-                    lidar_info["left"],
-                    lidar_info["right"],
-                    pose=self.pose,
-                )
-                vx_cmd, vy_cmd, omega_cmd = self._clamp_cmds(vx_cmd, vy_cmd, omega_cmd)
-                vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                # Navegação com Fuzzy + LIDAR para desvio de obstáculos
+                if self.active_goal:
+                    distance, angle = self._distance_to_point(self.active_goal)
+
+                    # Log periódico de navegação
+                    if not hasattr(self, '_tobox_log_timer'):
+                        self._tobox_log_timer = 0.0
+                    self._tobox_log_timer += dt
+                    if self._tobox_log_timer >= 2.0:
+                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={distance:.2f}m ang={math.degrees(angle):.1f}°")
+                        self._tobox_log_timer = 0.0
+
+                    # Chegou ao box
+                    if distance < 0.35:
+                        print(f"[TO_BOX] Chegou ao box! dist={distance:.2f}m")
+                        if hasattr(self, '_tobox_log_timer'):
+                            del self._tobox_log_timer
+                        self._start_drop()
+                        continue
+
+                    # ===== DESVIO DE OBSTÁCULOS PRIORITÁRIO =====
+                    obs_front = lidar_info["front"]
+                    obs_left = lidar_info["left"]
+                    obs_right = lidar_info["right"]
+
+                    # Verificar obstáculos conhecidos também
+                    known_front, known_left, known_right = self.navigator.check_known_obstacles(self.pose)
+                    obs_front = min(obs_front, known_front)
+                    obs_left = min(obs_left, known_left)
+                    obs_right = min(obs_right, known_right)
+
+                    # PARADA DE EMERGÊNCIA: obstáculo muito perto
+                    if obs_front < 0.25:
+                        vx_cmd = -0.04  # Recuar levemente
+                        omega_cmd = 0.0
+                        # Strafe para lado mais livre
+                        if obs_left > obs_right + 0.1:
+                            vy_cmd = 0.10
+                        elif obs_right > obs_left + 0.1:
+                            vy_cmd = -0.10
+                        else:
+                            vy_cmd = 0.0
+                            omega_cmd = 0.3 if obs_left > obs_right else -0.3
+                        print(f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, strafing")
+                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                        continue
+
+                    # DESVIO PREVENTIVO: obstáculo próximo mas não crítico
+                    if obs_front < 0.45:
+                        # Usar Fuzzy Navigator para desvio inteligente
+                        vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
+                            has_target=True,
+                            target_distance=distance,
+                            target_angle=angle,
+                            obs_front=obs_front,
+                            obs_left=obs_left,
+                            obs_right=obs_right,
+                            pose=self.pose
+                        )
+                        # Reduzir velocidade durante desvio
+                        vx_cmd *= 0.7
+                        vy_cmd *= 0.9
+                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                        continue
+
+                    # NAVEGAÇÃO NORMAL: sem obstáculos críticos
+                    angle_threshold = math.radians(12)
+
+                    if abs(angle) > angle_threshold:
+                        # Rotacionar para alinhar com o box
+                        omega_cmd = angle * 0.5
+                        omega_cmd = max(-0.35, min(0.35, omega_cmd))
+                        vx_cmd = 0.0
+                        vy_cmd = 0.0
+                    else:
+                        # Avançar em direção ao box
+                        vx_cmd = min(0.10, distance * 0.12)
+                        omega_cmd = angle * 0.6
+                        omega_cmd = max(-0.25, min(0.25, omega_cmd))
+
+                        # Correção lateral se obstáculo lateral
+                        if obs_left < 0.35:
+                            vy_cmd = -0.04
+                        elif obs_right < 0.35:
+                            vy_cmd = 0.04
+                        else:
+                            vy_cmd = 0.0
+
+                    vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
+                    self._safe_move(vx_cmd, vy_cmd, omega_cmd)
+                else:
+                    # Sem goal definido - voltar ao search
+                    print("[TO_BOX] Sem goal definido, voltando ao search")
+                    self.mode = "search"
                 continue
 
             # ===== MODO DROP =====

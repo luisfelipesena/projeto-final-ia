@@ -112,11 +112,18 @@ class Gripper:
         self.last_positions = (left, right)
         return self.last_positions
 
-    def has_object(self, threshold=0.003):
+    def has_object(self, threshold=0.002):
         """Detect if an object is held - fingers stopped by object.
 
-        When empty: fingers close fully to ~0.0
-        When holding cube: fingers stop at position > threshold (~0.003-0.015)
+        YouBot gripper range: 0.0 (closed) to 0.025 (open)
+        When empty: fingers close fully to ~0.0-0.001
+        When holding 3cm cube: fingers stop at ~0.004-0.012
+
+        Args:
+            threshold: minimum position indicating object (default 0.002)
+
+        Returns:
+            True if any finger shows position > threshold (object detected)
         """
         if not self.is_gripping:
             return False
@@ -124,6 +131,14 @@ class Gripper:
         samples = [v for v in (left, right) if v is not None]
         if not samples:
             return self.is_gripping
-        # Object held = fingers didn't close fully (stopped by object)
-        # position > threshold means something is between the fingers
-        return all(v > threshold for v in samples)
+
+        # Use ANY instead of ALL - more robust detection
+        # If ANY finger stopped before full close, object is present
+        avg_pos = sum(samples) / len(samples)
+        max_pos = max(samples)
+
+        # Debug info
+        # print(f"[GRIPPER] left={left:.4f}, right={right:.4f}, avg={avg_pos:.4f}, max={max_pos:.4f}")
+
+        # Object held if average position > threshold OR max position > threshold*2
+        return avg_pos > threshold or max_pos > threshold * 2
