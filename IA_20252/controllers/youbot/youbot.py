@@ -1,6 +1,6 @@
 import heapq
 import math
-from controller import Robot
+from controller import Supervisor
 from base import Base
 from arm import Arm
 from gripper import Gripper
@@ -311,11 +311,11 @@ class FuzzyNavigator:
         mu_angle_medium = self._mu_medium_angle(target_angle)
         mu_angle_big = self._mu_big_angle(target_angle)
 
-        # Regra 1: Obstáculo muito perto -> PARAR e recuar/strafe
+        # Regra 1: Obstáculo muito perto -> PARAR e recuar/strafe (SEM rotação excessiva)
         if mu_front_very_close > 0.5:
-            vx = -0.06
-            vy = 0.08 * (1 if obs_left < obs_right else -1)
-            omega = 0.3 * (1 if obs_left > obs_right else -1)
+            vx = -0.04
+            vy = 0.10 * (1 if obs_left < obs_right else -1)  # Strafe prioritário
+            omega = 0.0  # NÃO ROTACIONAR - apenas strafe para evitar spinning
             return vx, vy, omega
 
         # Regra 2: Obstáculo perto -> reduzir velocidade
@@ -362,7 +362,7 @@ class FuzzyNavigator:
 
 class YouBotController:
     def __init__(self):
-        self.robot = Robot()
+        self.robot = Supervisor()
         self.time_step = int(self.robot.getBasicTimeStep())
 
         self.base = Base(self.robot)
@@ -945,6 +945,12 @@ class YouBotController:
                         self.grid.set(cell[0], cell[1], OccupancyGrid.FREE, overwrite_static=False)
                         self._path_dirty = True
 
+                # CRÍTICO: Sincronizar pose com ground truth ANTES de calcular rota
+                gt = self._get_ground_truth_pose()
+                if gt:
+                    self.pose = gt
+                    print(f"[TO_BOX] Ground truth sync: ({gt[0]:.2f}, {gt[1]:.2f}, {math.degrees(gt[2]):.1f}°)")
+
                 self.mode = "to_box"
                 self.stage = 0
                 self.stage_timer = 0.0
@@ -952,8 +958,9 @@ class YouBotController:
                 target_box = self.box_positions.get(color_key, None)
                 if target_box:
                     dist_to_box = math.hypot(target_box[0] - self.pose[0], target_box[1] - self.pose[1])
+                    angle_to_box = wrap_angle(math.atan2(target_box[1] - self.pose[1], target_box[0] - self.pose[0]) - self.pose[2])
                     print(f"[TO_BOX] Indo para caixa {color_key.upper()} em {target_box}")
-                    print(f"[TO_BOX] Pose atual: ({self.pose[0]:.2f}, {self.pose[1]:.2f}, {math.degrees(self.pose[2]):.1f}°) dist={dist_to_box:.2f}m")
+                    print(f"[TO_BOX] Pose atual: ({self.pose[0]:.2f}, {self.pose[1]:.2f}, {math.degrees(self.pose[2]):.1f}°) dist={dist_to_box:.2f}m ang={math.degrees(angle_to_box):.1f}°")
                     self._set_goal(target_box)
                 else:
                     fallback = list(self.box_positions.values())[0]
@@ -1008,6 +1015,22 @@ class YouBotController:
                 self.stage += 1
                 self.stage_timer = 0.0
         elif self.stage == 4:
+            # Recuar após soltar para não re-detectar o mesmo cubo
+            self._safe_move(-0.10, 0.0, 0.0)
+            if self.stage_timer >= 2.5:  # Recuar por 2.5s = ~25cm
+                self.base.reset()
+                self.stage += 1
+                self.stage_timer = 0.0
+
+        elif self.stage == 5:
+            # Girar ~120° para afastar da área do box
+            self._safe_move(0.0, 0.0, 0.4)
+            if self.stage_timer >= 2.0:  # ~80° de rotação
+                self.base.reset()
+                self.stage += 1
+                self.stage_timer = 0.0
+
+        elif self.stage == 6:
             print(f"[DROP] Cubo depositado na caixa {self.current_color}")
             self.mode = "search"
             self.current_target = None
@@ -1030,6 +1053,22 @@ class YouBotController:
     def run(self):
         print("[RUN] YouBot controller started")
 
+        # Move forward at spawn to clear wall (robot spawns at x=-3.99 near left wall)
+        print("[INIT] Moving forward to clear spawn wall...")
+        for _ in range(50):  # ~0.8s at 16ms timestep
+            if self.robot.step(self.time_step) == -1:
+                return
+            self.base.move(0.12, 0.0, 0.0)
+        self.base.reset()
+
+        # Sincronizar pose com ground truth após movimento inicial
+        gt = self._get_ground_truth_pose()
+        if gt:
+            self.pose = gt
+            print(f"[INIT] Spawn complete. Pose: ({gt[0]:.2f}, {gt[1]:.2f}, {math.degrees(gt[2]):.1f}°)")
+        else:
+            print("[INIT] Spawn complete (sem ground truth)")
+
         while self.robot.step(self.time_step) != -1:
             dt = self.time_step / 1000.0
 
@@ -1042,13 +1081,15 @@ class YouBotController:
             vx_odo, vy_odo, omega_odo = self.base.compute_odometry(dt)
             self._integrate_pose(vx_odo, vy_odo, omega_odo, dt)
 
-            # Sincronizar com ground truth periodicamente (a cada 2s) ou se pose inválida
+            # Sincronizar com ground truth periodicamente
+            # TO_BOX precisa de sync mais frequente (0.5s), outros modos 2s
             if not hasattr(self, '_gt_sync_timer'):
                 self._gt_sync_timer = 0.0
             self._gt_sync_timer += dt
 
+            sync_interval = 0.5 if self.mode == "to_box" else 2.0
             pose_invalid = any(math.isnan(v) for v in self.pose)
-            if pose_invalid or self._gt_sync_timer >= 2.0:
+            if pose_invalid or self._gt_sync_timer >= sync_interval:
                 gt = self._get_ground_truth_pose()
                 if gt:
                     if pose_invalid:
@@ -1190,15 +1231,32 @@ class YouBotController:
                         print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={distance:.2f}m ang={math.degrees(angle):.1f}°")
                         self._tobox_log_timer = 0.0
 
-                    # Chegou ao box
+                    # Chegou ao box - validar com LIDAR antes de depositar
                     if distance < 0.35:
-                        print(f"[TO_BOX] Chegou ao box! dist={distance:.2f}m")
-                        if hasattr(self, '_tobox_log_timer'):
-                            del self._tobox_log_timer
-                        self._start_drop()
-                        continue
+                        # LIDAR deve detectar box como obstáculo frontal entre 0.15-0.60m
+                        lidar_front = lidar_info["front"]
+                        box_detected = 0.15 < lidar_front < 0.60
 
-                    # ===== DESVIO DE OBSTÁCULOS PRIORITÁRIO =====
+                        if box_detected:
+                            print(f"[TO_BOX] Chegou ao box! dist={distance:.2f}m, lidar_front={lidar_front:.2f}m")
+                            if hasattr(self, '_tobox_log_timer'):
+                                del self._tobox_log_timer
+                            self._start_drop()
+                            continue
+                        else:
+                            # Odometria diz que chegou mas LIDAR não vê box
+                            # Forçar sync com ground truth e continuar navegando
+                            gt = self._get_ground_truth_pose()
+                            if gt:
+                                old_pose = self.pose.copy()
+                                self.pose = gt
+                                new_dist, _ = self._distance_to_point(self.active_goal)
+                                print(f"[TO_BOX] LIDAR não vê box (front={lidar_front:.2f}m). Pose corrigida: ({old_pose[0]:.2f},{old_pose[1]:.2f})->({gt[0]:.2f},{gt[1]:.2f}), dist real={new_dist:.2f}m")
+                            else:
+                                print(f"[TO_BOX] LIDAR não vê box (front={lidar_front:.2f}m), sem ground truth")
+                            # Não iniciar drop, continuar navegando
+
+                    # ===== DESVIO DE OBSTÁCULOS - PRIORIZAR STRAFE, NÃO ROTAÇÃO =====
                     obs_front = lidar_info["front"]
                     obs_left = lidar_info["left"]
                     obs_right = lidar_info["right"]
@@ -1209,38 +1267,48 @@ class YouBotController:
                     obs_left = min(obs_left, known_left)
                     obs_right = min(obs_right, known_right)
 
+                    # Determinar lado preferido para desvio baseado no ângulo do goal
+                    # Se goal está à esquerda (angle > 0), preferir strafe esquerda
+                    # Se goal está à direita (angle < 0), preferir strafe direita
+                    prefer_left = angle > 0
+
                     # PARADA DE EMERGÊNCIA: obstáculo muito perto
                     if obs_front < 0.25:
-                        vx_cmd = -0.04  # Recuar levemente
-                        omega_cmd = 0.0
-                        # Strafe para lado mais livre
-                        if obs_left > obs_right + 0.1:
-                            vy_cmd = 0.10
-                        elif obs_right > obs_left + 0.1:
-                            vy_cmd = -0.10
+                        vx_cmd = -0.02  # Recuar minimamente
+                        omega_cmd = 0.0  # NÃO ROTACIONAR - apenas strafe
+
+                        # Strafe na direção do goal, se livre
+                        if prefer_left and obs_left > 0.30:
+                            vy_cmd = 0.12
+                        elif not prefer_left and obs_right > 0.30:
+                            vy_cmd = -0.12
+                        elif obs_left > obs_right:
+                            vy_cmd = 0.12
                         else:
-                            vy_cmd = 0.0
-                            omega_cmd = 0.3 if obs_left > obs_right else -0.3
-                        print(f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, strafing")
+                            vy_cmd = -0.12
+
+                        self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, strafe={'L' if vy_cmd > 0 else 'R'}", 1.0)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
 
                     # DESVIO PREVENTIVO: obstáculo próximo mas não crítico
                     if obs_front < 0.45:
-                        # Usar Fuzzy Navigator para desvio inteligente
-                        vx_cmd, vy_cmd, omega_cmd = self.navigator.compute(
-                            has_target=True,
-                            target_distance=distance,
-                            target_angle=angle,
-                            obs_front=obs_front,
-                            obs_left=obs_left,
-                            obs_right=obs_right,
-                            pose=self.pose
-                        )
-                        # Reduzir velocidade durante desvio
-                        vx_cmd *= 0.7
-                        vy_cmd *= 0.9
+                        # Avançar lentamente + strafe na direção do goal
+                        vx_cmd = 0.04
+                        omega_cmd = -angle * 0.3  # Correção leve de heading
+                        omega_cmd = max(-0.15, min(0.15, omega_cmd))
+
+                        # Strafe na direção preferida
+                        if prefer_left and obs_left > 0.35:
+                            vy_cmd = 0.08
+                        elif not prefer_left and obs_right > 0.35:
+                            vy_cmd = -0.08
+                        elif obs_left > obs_right:
+                            vy_cmd = 0.06
+                        else:
+                            vy_cmd = -0.06
+
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
@@ -1250,14 +1318,14 @@ class YouBotController:
 
                     if abs(angle) > angle_threshold:
                         # Rotacionar para alinhar com o box
-                        omega_cmd = angle * 0.5
+                        omega_cmd = -angle * 0.5
                         omega_cmd = max(-0.35, min(0.35, omega_cmd))
                         vx_cmd = 0.0
                         vy_cmd = 0.0
                     else:
                         # Avançar em direção ao box
                         vx_cmd = min(0.10, distance * 0.12)
-                        omega_cmd = angle * 0.6
+                        omega_cmd = -angle * 0.6
                         omega_cmd = max(-0.25, min(0.25, omega_cmd))
 
                         # Correção lateral se obstáculo lateral
