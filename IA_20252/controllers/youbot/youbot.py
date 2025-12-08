@@ -287,22 +287,48 @@ class FuzzyNavigator:
 
         return min_dist_front, min_dist_left, min_dist_right
 
-    def check_rear_clearance(self, omega, obs_front, obs_left, obs_right):
-        """Check if rotation will cause rear collision. Robot body ~0.58m long."""
-        ROBOT_HALF_LENGTH = 0.30  # 30cm from center to rear
-        SAFETY_MARGIN = 0.20
-        MIN_CLEARANCE = ROBOT_HALF_LENGTH + SAFETY_MARGIN  # 0.50m
+    def check_rear_clearance(self, omega, obs_front, obs_left, obs_right,
+                               rear_sensors=None):
+        """Check if rotation will cause rear collision using real rear sensors.
 
-        # If rotating left (omega > 0), rear swings right - check right clearance
-        # If rotating right (omega < 0), rear swings left - check left clearance
-        if omega > 0.05:  # Rotating left
-            if obs_right < MIN_CLEARANCE:
+        Args:
+            omega: Rotação desejada (positivo = esquerda, negativo = direita)
+            obs_front, obs_left, obs_right: Distâncias do LIDAR frontal
+            rear_sensors: Dict com 'rear', 'rear_left', 'rear_right' em metros (opcional)
+        """
+        MIN_REAR_CLEARANCE = 0.35  # 35cm mínimo atrás para girar
+        MIN_SIDE_CLEARANCE = 0.40  # 40cm mínimo nas diagonais traseiras
+
+        # Se temos sensores traseiros reais, usar eles
+        if rear_sensors:
+            rear = rear_sensors.get("rear", 2.0)
+            rear_left = rear_sensors.get("rear_left", 2.0)
+            rear_right = rear_sensors.get("rear_right", 2.0)
+
+            # Obstáculo direto atrás - não pode dar ré
+            if rear < MIN_REAR_CLEARANCE:
+                return False, "rear_blocked"
+
+            # Rotação para esquerda (omega > 0) -> traseira vai para direita
+            if omega > 0.05:
+                if rear_right < MIN_SIDE_CLEARANCE:
+                    return False, "rear_right"
+            # Rotação para direita (omega < 0) -> traseira vai para esquerda
+            elif omega < -0.05:
+                if rear_left < MIN_SIDE_CLEARANCE:
+                    return False, "rear_left"
+        else:
+            # Fallback: usar LIDAR lateral como estimativa (comportamento antigo)
+            ROBOT_HALF_LENGTH = 0.30
+            SAFETY_MARGIN = 0.20
+            MIN_CLEARANCE = ROBOT_HALF_LENGTH + SAFETY_MARGIN
+
+            if omega > 0.05 and obs_right < MIN_CLEARANCE:
                 return False, "rear_right"
-        elif omega < -0.05:  # Rotating right
-            if obs_left < MIN_CLEARANCE:
+            elif omega < -0.05 and obs_left < MIN_CLEARANCE:
                 return False, "rear_left"
 
-        # Also check if front is too close for any rotation
+        # Frente muito perto para qualquer rotação
         if obs_front < 0.35:
             return False, "front_blocked"
 
@@ -407,6 +433,15 @@ class YouBotController:
         if self.lidar:
             self.lidar.enable(self.time_step)
             self.lidar.enablePointCloud()
+
+        # Sensores de distância traseiros para detecção de colisão
+        self.ds_rear = self.robot.getDevice("ds_rear")
+        self.ds_rear_left = self.robot.getDevice("ds_rear_left")
+        self.ds_rear_right = self.robot.getDevice("ds_rear_right")
+
+        for ds in [self.ds_rear, self.ds_rear_left, self.ds_rear_right]:
+            if ds:
+                ds.enable(self.time_step)
 
         self.navigator = FuzzyNavigator()
 
@@ -737,6 +772,34 @@ class YouBotController:
 
         return {"front": front, "left": left, "right": right, "points": points}
 
+    def _process_rear_sensors(self):
+        """Processa sensores de distância traseiros.
+
+        Converte valor bruto do sensor (0-1000) para distância em metros.
+        Lookup table: 0->0m, 50->0.05m, 1000->1.0m (linear)
+
+        Returns:
+            dict com rear, rear_left, rear_right em metros
+        """
+        def raw_to_meters(raw_value):
+            if raw_value is None or math.isnan(raw_value):
+                return 2.0  # Default seguro
+            # Inverso da lookup table: raw 0-1000 -> dist 0-1.0m
+            return max(0.05, min(2.0, raw_value / 1000.0))
+
+        rear = 2.0
+        rear_left = 2.0
+        rear_right = 2.0
+
+        if self.ds_rear:
+            rear = raw_to_meters(self.ds_rear.getValue())
+        if self.ds_rear_left:
+            rear_left = raw_to_meters(self.ds_rear_left.getValue())
+        if self.ds_rear_right:
+            rear_right = raw_to_meters(self.ds_rear_right.getValue())
+
+        return {"rear": rear, "rear_left": rear_left, "rear_right": rear_right}
+
     def _check_obstacle_ahead(self, lidar_front, threshold=0.5):
         if lidar_front < threshold:
             return True
@@ -898,15 +961,17 @@ class YouBotController:
 
         elif self.stage == 2:
             # Avançar LENTAMENTE pelo tempo calculado
-            # Com correção de ângulo em tempo real para rastrear o cubo
+            # Com correção de ângulo em tempo real para rastrear o cubo CORRETO
             omega_cmd = 0.0
 
-            # Usar câmera para correção de trajetória durante avanço
-            objects = self.camera.getRecognitionObjects()
-            if objects:
-                obj = objects[0]
-                pos = obj.getPosition()
-                cam_angle = math.atan2(pos[1], pos[0])
+            # CRÍTICO: Usar _process_recognition com filtros para rastrear cubo locked
+            # Evita rastrear cubos errados durante avanço
+            locked_recognition = self._process_recognition(
+                lock_color=self.current_color,
+                lock_angle=self.locked_cube_angle
+            )
+            if locked_recognition:
+                cam_angle = locked_recognition["angle"]
                 # Correção suave: P-controller no ângulo
                 omega_cmd = -cam_angle * 0.8
                 omega_cmd = max(-0.3, min(0.3, omega_cmd))
@@ -1026,47 +1091,81 @@ class YouBotController:
                 self._path_dirty = True
 
     def _handle_drop(self, dt):
+        """Sequência de depósito do cubo no box.
+
+        Stage 0: Estender braço de RESET para FRONT_CARDBOARD_BOX (posição alta sobre box)
+        Stage 1: Avançar lentamente até ficar sobre o box
+        Stage 2: Baixar braço para FRONT_PLATE (posição de soltura)
+        Stage 3: Soltar cubo (abrir gripper)
+        Stage 4: Levantar braço para RESET
+        Stage 5: Recuar para longe do box
+        Stage 6: Girar para evitar re-detectar cubo
+        Stage 7: Finalizar e voltar ao search
+        """
         self.stage_timer += dt
+
         if self.stage == 0:
-            self.arm.set_height(Arm.FRONT_FLOOR)
-            if self.stage_timer >= 1.5:
+            # Primeiro: estender braço para posição alta sobre o box
+            # FRONT_CARDBOARD_BOX é ideal - braço estendido para frente em altura média
+            self.arm.set_height(Arm.FRONT_CARDBOARD_BOX)
+            self.gripper.grip()  # Manter fechado
+            if self.stage_timer >= 2.0:  # Tempo para braço mover
                 self.stage += 1
                 self.stage_timer = 0.0
+                print("[DROP] Braço estendido, avançando sobre box...")
+
         elif self.stage == 1:
-            # Avançar até ficar bem próximo do box para depositar dentro
-            # Velocidade 0.05 m/s × 2.5s = 12.5cm de avanço
-            self._safe_move(0.05, 0.0, 0.0)
-            if self.stage_timer >= 2.5:
+            # Avançar até ficar sobre o box
+            # PlasticFruitBox tem ~0.60m x 0.40m, precisamos chegar bem perto
+            self._safe_move(0.06, 0.0, 0.0)
+            self.gripper.grip()
+            if self.stage_timer >= 2.0:  # 0.06 m/s × 2.0s = 12cm
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
+                print("[DROP] Sobre o box, baixando braço...")
+
         elif self.stage == 2:
+            # Baixar braço para posição de soltura
+            self.arm.set_height(Arm.FRONT_PLATE)
+            self.gripper.grip()
+            if self.stage_timer >= 1.5:
+                self.stage += 1
+                self.stage_timer = 0.0
+                print("[DROP] Soltando cubo...")
+
+        elif self.stage == 3:
+            # Soltar o cubo
             self.gripper.release()
             if self.stage_timer >= 1.0:
                 self.stage += 1
                 self.stage_timer = 0.0
-        elif self.stage == 3:
-            self.arm.set_height(Arm.FRONT_PLATE)
-            if self.stage_timer >= 1.0:
-                self.stage += 1
-                self.stage_timer = 0.0
+
         elif self.stage == 4:
-            # Recuar após soltar para não re-detectar o mesmo cubo
-            self._safe_move(-0.10, 0.0, 0.0)
-            if self.stage_timer >= 2.5:  # Recuar por 2.5s = ~25cm
-                self.base.reset()
+            # Levantar braço para não bater no box ao recuar
+            self.arm.set_height(Arm.RESET)
+            if self.stage_timer >= 1.5:
                 self.stage += 1
                 self.stage_timer = 0.0
+                print("[DROP] Recuando...")
 
         elif self.stage == 5:
-            # Girar ~120° para afastar da área do box
-            self._safe_move(0.0, 0.0, 0.4)
-            if self.stage_timer >= 2.0:  # ~80° de rotação
+            # Recuar para longe do box
+            self._safe_move(-0.10, 0.0, 0.0)
+            if self.stage_timer >= 2.0:  # -0.10 m/s × 2.0s = -20cm
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
 
         elif self.stage == 6:
+            # Girar para evitar re-detectar o cubo depositado
+            self._safe_move(0.0, 0.0, 0.4)
+            if self.stage_timer >= 1.5:  # ~60° de rotação
+                self.base.reset()
+                self.stage += 1
+                self.stage_timer = 0.0
+
+        elif self.stage == 7:
             print(f"[DROP] Cubo depositado na caixa {self.current_color}")
             self.mode = "search"
             self.current_target = None
@@ -1074,6 +1173,8 @@ class YouBotController:
             self._waypoints = []
             self._path_dirty = True
             self.current_color = None
+            self.locked_cube_angle = None
+            self.locked_cube_distance = None
             self.base.reset()
             self.stage = 0
 
@@ -1135,6 +1236,7 @@ class YouBotController:
 
             # Sensores
             lidar_info = self._process_lidar()
+            rear_info = self._process_rear_sensors()
             self._update_grid_from_lidar(lidar_info)
 
             # Lock na cor e ângulo durante approach
@@ -1251,9 +1353,10 @@ class YouBotController:
 
             # ===== MODO TO_BOX =====
             if self.mode == "to_box":
-                # MANTER gripper fechado e braço levantado durante transporte!
+                # MANTER gripper fechado e braço RECOLHIDO (RESET = posição alta)
+                # Isso evita colisões do braço com obstáculos durante navegação
                 self.gripper.grip()
-                self.arm.set_height(Arm.FRONT_PLATE)
+                self.arm.set_height(Arm.RESET)
 
                 # Navegação com A* waypoints + LIDAR para desvio de obstáculos
                 if self.active_goal:
@@ -1348,9 +1451,9 @@ class YouBotController:
                         # Calcular rotação desejada para escape
                         desired_omega = 0.45 if escape_left else -0.45
 
-                        # Verificar rear clearance mesmo em emergência
+                        # Verificar rear clearance com sensores traseiros reais
                         rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                            desired_omega, obs_front, obs_left, obs_right
+                            desired_omega, obs_front, obs_left, obs_right, rear_info
                         )
 
                         # Se preso por muito tempo (>25 ciclos), manobra agressiva de escape
@@ -1392,9 +1495,9 @@ class YouBotController:
                         # Calcular rotação desejada
                         desired_omega = 0.35 if escape_left else -0.35
 
-                        # CRÍTICO: Verificar clearance traseira antes de rotacionar
+                        # CRÍTICO: Verificar clearance traseira com sensores reais
                         rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                            desired_omega, obs_front, obs_left, obs_right
+                            desired_omega, obs_front, obs_left, obs_right, rear_info
                         )
 
                         if rear_safe:
@@ -1432,9 +1535,9 @@ class YouBotController:
                     omega_cmd = -angle * 0.6
                     omega_cmd = max(-0.40, min(0.40, omega_cmd))
 
-                    # Check rear clearance before rotating
+                    # Check rear clearance with real sensors before rotating
                     rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                        omega_cmd, obs_front, obs_left, obs_right
+                        omega_cmd, obs_front, obs_left, obs_right, rear_info
                     )
 
                     if not rear_safe:
