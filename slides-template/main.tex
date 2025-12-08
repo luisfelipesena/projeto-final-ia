@@ -1,0 +1,675 @@
+\documentclass[aspectratio=169,xcolor=table]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{csquotes}
+\usepackage{xcolor}
+\usepackage[portuguese]{babel}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, calc, mindmap, shadows}
+
+% ------------------------------------------------
+% Tema e Configurações do Beamer
+% ------------------------------------------------
+\usetheme{DCC}
+
+% Ajuste de espaçamento entre itens
+\setbeamertemplate{itemize items}[circle]
+\setbeamertemplate{itemize subitem}[circle]
+\setlength{\itemsep}{0.6em}
+\setlength{\parskip}{0.4em}
+
+\graphicspath{{imgs/}{./imgs/}}
+
+\author[Luis Felipe]{%
+  \textbf{Luis Felipe Sena}
+}
+\title{Robô Autônomo para Coleta de Cubos}
+\subtitle{Integração de Redes Neurais, Lógica Fuzzy e Planejamento A*}
+\institute{Universidade Federal da Bahia \\ Instituto de Computação \\ MATA64 - Inteligência Artificial}
+\date{Dezembro de 2025}
+
+\begin{document}
+
+%-------------------------------------------------
+%  SLIDE DE TÍTULO
+%-------------------------------------------------
+\begin{frame}[plain,noframenumbering]
+    \titlepage
+\end{frame}
+
+%-------------------------------------------------
+%  SLIDE DE AGENDA
+%-------------------------------------------------
+\begin{frame}{Agenda}
+    \begin{table}
+        \begin{tabularx}{\textwidth}{|l|X|}
+            \hline
+            \textbf{Tempo} & \textbf{Conteúdo} \\
+            \hline
+            0--3 min  & \textbf{Problema e Desafios} -- Definição da tarefa e restrições \\
+            \hline
+            3--6 min  & \textbf{Percepção} -- LIDAR, Câmera RGB e Rede Neural (MobileNetV3) \\
+            \hline
+            6--9 min  & \textbf{Navegação Fuzzy} -- Regras linguísticas e funções de pertinência \\
+            \hline
+            9--12 min & \textbf{Planejamento A*} -- Grade de ocupação e busca de caminhos \\
+            \hline
+            12--15 min & \textbf{Arquitetura e Demo} -- Máquina de estados e demonstração \\
+            \hline
+        \end{tabularx}
+    \end{table}
+\end{frame}
+
+\setlength{\parskip}{0.8em}
+
+%=================================================
+\section{Problema e Desafios}
+%=================================================
+
+\begin{frame}{O Problema}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{itemize}
+                \item \textbf{Objetivo:} Coletar 15 cubos coloridos (vermelho, verde, azul)
+                \item \textbf{Ação:} Depositar cada cubo na caixa de cor correspondente
+                \item \textbf{Plataforma:} KUKA YouBot com rodas Mecanum (omnidirecional)
+                \item \textbf{Ambiente:} Arena 7m $\times$ 4m com obstáculos fixos
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \centering
+            % Placeholder for arena image
+            \begin{tikzpicture}[scale=0.45]
+                % Arena
+                \draw[thick] (-3.5,-2) rectangle (3.5,2);
+                % Robot
+                \draw[fill=blue!30] (-2.5,0) rectangle (-2,0.4);
+                \node[below] at (-2.25,-0.1) {\tiny YouBot};
+                % Boxes
+                \draw[fill=green!50] (2.8,1.3) rectangle (3.3,1.7);
+                \draw[fill=blue!50] (2.8,-1.7) rectangle (3.3,-1.3);
+                \draw[fill=red!50] (3.2,-0.2) rectangle (3.5,0.2);
+                % Obstacles
+                \foreach \x/\y in {0/0, 1.5/-1, 1.5/1, -1.8/1.2, -0.8/0.6, -0.8/-0.6, -1.8/-1.2} {
+                    \draw[fill=brown!60] (\x-0.15,\y-0.15) rectangle (\x+0.15,\y+0.15);
+                }
+                % Cubes (small)
+                \foreach \x/\y in {-1,0.5, 0.5,0.8, -0.3,-0.5, 1,-0.3} {
+                    \draw[fill=red!80] (\x,\y) rectangle ++(0.08,0.08);
+                }
+                \foreach \x/\y in {-2,1, 0.2,0.3, -1.5,-0.8} {
+                    \draw[fill=green!80] (\x,\y) rectangle ++(0.08,0.08);
+                }
+                \foreach \x/\y in {-0.5,1.2, 1.2,0.5, -1.2,-0.3} {
+                    \draw[fill=blue!80] (\x,\y) rectangle ++(0.08,0.08);
+                }
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Restrições do Projeto}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Obrigatórios:}
+            \begin{itemize}
+                \item Usar \textbf{Rede Neural} (MLP ou CNN) para classificação
+                \item Usar \textbf{Lógica Fuzzy} para controle de navegação
+                \item Sensores: \textbf{LIDAR} + \textbf{Câmera RGB}
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Proibidos:}
+            \begin{itemize}
+                \item \textcolor{red}{GPS} -- Robô deve usar odometria
+                \item \textcolor{red}{Teleoperação} -- Completamente autônomo
+                \item \textcolor{red}{Informações privilegiadas} -- Sem acesso direto à posição dos cubos
+            \end{itemize}
+        \end{column}
+    \end{columns}
+
+    \vspace{1em}
+    \centering
+    \begin{tikzpicture}
+        \node[draw, rounded corners, fill=yellow!20, text width=10cm, align=center] {
+            \textbf{Desafio Principal:} Navegação autônoma em ambiente com obstáculos dinâmicos (cubos podem ser empurrados) usando apenas sensores locais
+        };
+    \end{tikzpicture}
+\end{frame}
+
+%=================================================
+\section{Sistema de Percepção}
+%=================================================
+
+\begin{frame}{Sensores do YouBot}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{LIDAR (180° FOV)}
+            \begin{itemize}
+                \item 180 feixes de laser
+                \item Alcance: 0.1m -- 5.0m
+                \item Atualização: 32Hz
+                \item \textbf{Uso:} Detecção de obstáculos
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Câmera RGB}
+            \begin{itemize}
+                \item Resolução: 320$\times$240
+                \item API de Reconhecimento Webots
+                \item \textbf{Uso:} Detecção e classificação de cubos
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.45\textwidth}
+            \centering
+            % Robot sensor diagram
+            \begin{tikzpicture}[scale=0.8]
+                % Robot body
+                \draw[fill=gray!30, thick] (-1,-1.5) rectangle (1,1.5);
+                \node at (0,0) {\small YouBot};
+
+                % LIDAR rays
+                \foreach \a in {-90,-75,...,90} {
+                    \draw[red!50, ->] (0,1.5) -- ++(\a:2);
+                }
+                \node[above, red] at (0,3.5) {\small LIDAR 180°};
+
+                % Camera FOV
+                \draw[blue!50, fill=blue!10] (0,1.5) -- ++(45:1.5) arc (45:135:1.5) -- cycle;
+                \node[above, blue] at (0,2.5) {\small Câmera};
+
+                % Distance sensors
+                \draw[green!70, thick, ->] (-1,0) -- ++(-0.8,0);
+                \draw[green!70, thick, ->] (1,0) -- ++(0.8,0);
+                \draw[green!70, thick, ->] (0,-1.5) -- ++(0,-0.8);
+                \node[below, green!70] at (0,-2.5) {\small Dist. Sensors};
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Rede Neural -- MobileNetV3-Small}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \textbf{Arquitetura CNN}
+            \begin{itemize}
+                \item Backbone: MobileNetV3-Small (pré-treinado ImageNet)
+                \item Classificador customizado: 256 $\rightarrow$ 3 classes
+                \item Entrada: 64$\times$64 RGB normalizada
+                \item Saída: Probabilidades (vermelho/verde/azul)
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Treinamento (Transfer Learning)}
+            \begin{itemize}
+                \item Fase 1: Congelar backbone, treinar apenas classificador
+                \item Fase 2: Fine-tuning com learning rate reduzido
+                \item Acurácia validação: \textbf{99.4\%}
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \centering
+            % CNN diagram
+            \begin{tikzpicture}[scale=0.6, every node/.style={scale=0.8}]
+                % Input
+                \draw[fill=blue!20] (0,0) rectangle (1,2);
+                \node[below] at (0.5,-0.2) {\tiny 64x64x3};
+
+                % Conv layers
+                \draw[fill=orange!30] (2,0.2) rectangle (2.8,1.8);
+                \draw[fill=orange!30] (3.2,0.4) rectangle (3.8,1.6);
+                \draw[fill=orange!30] (4.2,0.5) rectangle (4.6,1.5);
+                \node[below] at (3.4,-0.2) {\tiny MobileNetV3};
+
+                % FC layers
+                \draw[fill=green!30] (5.5,0.6) rectangle (6,1.4);
+                \draw[fill=green!30] (6.5,0.7) rectangle (6.8,1.3);
+
+                % Output
+                \draw[fill=red!30] (7.5,0.7) rectangle (8,1.3);
+                \node[below] at (7.75,-0.2) {\tiny 3 classes};
+
+                % Arrows
+                \draw[->, thick] (1.1,1) -- (1.9,1);
+                \draw[->, thick] (4.7,1) -- (5.4,1);
+                \draw[->, thick] (6.9,1) -- (7.4,1);
+            \end{tikzpicture}
+
+            \vspace{1em}
+            \begin{tikzpicture}
+                \node[draw, rounded corners, fill=green!20, text width=4cm, align=center, font=\small] {
+                    Fallback: Heurísticas HSV quando confiança $<$ 0.5
+                };
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%=================================================
+\section{Navegação Fuzzy}
+%=================================================
+
+\begin{frame}{Lógica Fuzzy -- Conceito}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{Por que Fuzzy?}
+            \begin{itemize}
+                \item Controle suave e contínuo (sem transições bruscas)
+                \item Lida com incerteza dos sensores
+                \item Regras linguísticas intuitivas
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Variáveis Linguísticas}
+            \begin{itemize}
+                \item \textbf{Distância:} muito\_perto, perto, longe
+                \item \textbf{Ângulo:} pequeno, médio, grande
+                \item \textbf{Velocidade:} reverso, lento, normal, rápido
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.45\textwidth}
+            \centering
+            % Membership function diagram
+            \begin{tikzpicture}[scale=0.7]
+                % Axes
+                \draw[->] (0,0) -- (5,0) node[right] {\small dist(m)};
+                \draw[->] (0,0) -- (0,2.5) node[above] {\small $\mu$};
+
+                % muito_perto (triangular)
+                \draw[thick, red] (0,2) -- (0.5,2) -- (1.5,0);
+                \node[red, above] at (0.5,2) {\tiny muito\_perto};
+
+                % perto (triangular)
+                \draw[thick, orange] (0.5,0) -- (1.5,2) -- (2.5,0);
+                \node[orange, above] at (1.5,2) {\tiny perto};
+
+                % longe (trapezoidal)
+                \draw[thick, green!70!black] (2,0) -- (3,2) -- (5,2);
+                \node[green!70!black, above] at (4,2) {\tiny longe};
+
+                % Ticks
+                \foreach \x/\label in {0.5/0.25, 1.5/0.45, 3/1.0} {
+                    \draw (\x,0) -- (\x,-0.1) node[below] {\tiny \label};
+                }
+            \end{tikzpicture}
+
+            \vspace{0.5em}
+            {\small Funções de pertinência para distância ao obstáculo}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Regras Fuzzy de Navegação}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Regras de Desvio}
+            \begin{itemize}
+                \item SE obstáculo\_muito\_perto ENTÃO reverso + strafe
+                \item SE obstáculo\_perto ENTÃO reduzir\_velocidade
+                \item SE lateral\_bloqueado ENTÃO strafe\_oposto
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Regras de Alinhamento}
+            \begin{itemize}
+                \item SE ângulo\_grande ENTÃO apenas\_rotacionar
+                \item SE ângulo\_médio ENTÃO avançar\_lento + rotacionar
+                \item SE ângulo\_pequeno ENTÃO avançar\_rápido
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            % Fuzzy inference diagram
+            \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.8}]
+                % Input
+                \node[draw, rectangle, fill=blue!20] (input) at (0,2) {Sensores};
+
+                % Fuzzification
+                \node[draw, rectangle, fill=orange!20] (fuzz) at (0,0) {Fuzzificação};
+
+                % Rules
+                \node[draw, rectangle, fill=yellow!20] (rules) at (3,0) {Regras};
+
+                % Defuzzification
+                \node[draw, rectangle, fill=green!20] (defuzz) at (6,0) {Defuzzificação};
+
+                % Output
+                \node[draw, rectangle, fill=red!20] (output) at (6,2) {vx, vy, $\omega$};
+
+                % Arrows
+                \draw[->, thick] (input) -- (fuzz);
+                \draw[->, thick] (fuzz) -- (rules);
+                \draw[->, thick] (rules) -- (defuzz);
+                \draw[->, thick] (defuzz) -- (output);
+            \end{tikzpicture}
+
+            \vspace{0.8em}
+            \textbf{Defuzzificação:} Centróide ponderado
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%=================================================
+\section{Planejamento A*}
+%=================================================
+
+\begin{frame}{Algoritmo A* -- Visão Geral}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{Função de Custo}
+            \[ f(n) = g(n) + h(n) \]
+            \begin{itemize}
+                \item $g(n)$: Custo do início até $n$
+                \item $h(n)$: Heurística (Manhattan) até objetivo
+                \item $f(n)$: Custo total estimado
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Grade de Ocupação}
+            \begin{itemize}
+                \item Célula: 12cm $\times$ 12cm
+                \item Arena: 58 $\times$ 33 células
+                \item Atualizada por raycasting (LIDAR)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.45\textwidth}
+            \centering
+            % A* grid visualization
+            \begin{tikzpicture}[scale=0.5]
+                % Grid
+                \foreach \x in {0,1,...,8} {
+                    \draw[gray!30] (\x,0) -- (\x,6);
+                }
+                \foreach \y in {0,1,...,6} {
+                    \draw[gray!30] (0,\y) -- (8,\y);
+                }
+
+                % Obstacles (inflated)
+                \fill[brown!60] (3,2) rectangle (5,4);
+
+                % Start
+                \fill[green!70] (1,1) rectangle (2,2);
+                \node at (1.5,1.5) {\tiny S};
+
+                % Goal
+                \fill[red!70] (7,5) rectangle (8,6);
+                \node at (7.5,5.5) {\tiny G};
+
+                % Path
+                \draw[blue!70, line width=2pt, ->] (1.5,1.5) -- (1.5,2.5) -- (2.5,3.5) -- (2.5,4.5) -- (3.5,5.5) -- (5.5,5.5) -- (7.5,5.5);
+
+                % Legend
+                \node[below] at (4,-0.5) {\tiny Caminho A*};
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Inflação de Obstáculos}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{Por que inflar?}
+            \begin{itemize}
+                \item Robô não é um ponto
+                \item YouBot: 58cm $\times$ 38cm
+                \item Margem de segurança: \textbf{30cm}
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Obstáculos Conhecidos}
+            \begin{itemize}
+                \item 7 caixas de madeira (fixas)
+                \item 3 caixas de depósito (destinos)
+                \item Paredes da arena
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.45\textwidth}
+            \centering
+            % Inflation visualization
+            \begin{tikzpicture}[scale=0.8]
+                % Original obstacle
+                \fill[brown!70] (0,0) rectangle (1,1);
+                \node at (0.5,0.5) {\tiny Obs};
+
+                % Inflated area
+                \draw[red!50, dashed, thick] (-0.5,-0.5) rectangle (1.5,1.5);
+
+                % Robot
+                \draw[blue!50, fill=blue!20] (2.2,0.2) rectangle (2.8,0.8);
+                \node[right] at (2.9,0.5) {\tiny Robô};
+
+                % Arrow showing safe path
+                \draw[->, thick, green!70] (2.5,-0.5) -- (2.5,1.5);
+
+                % Labels
+                \node[below] at (0.5,-0.8) {\small Real};
+                \node[below, red] at (0.5,-1.3) {\small Inflado};
+            \end{tikzpicture}
+
+            \vspace{0.5em}
+            {\small A inflação garante que o centro do robô nunca colida}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%=================================================
+\section{Arquitetura do Sistema}
+%=================================================
+
+\begin{frame}{Máquina de Estados Finita}
+    \centering
+    \begin{tikzpicture}[
+        scale=0.75,
+        state/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=1cm, fill=blue!20},
+        arrow/.style={->, thick, >=stealth}
+    ]
+        % States
+        \node[state, fill=yellow!30] (search) at (0,0) {SEARCH};
+        \node[state, fill=orange!30] (approach) at (4,0) {APPROACH};
+        \node[state, fill=green!30] (grasp) at (8,0) {GRASP};
+        \node[state, fill=purple!30] (tobox) at (8,-3) {TO\_BOX};
+        \node[state, fill=red!30] (drop) at (4,-3) {DROP};
+
+        % Transitions
+        \draw[arrow] (search) -- node[above] {\tiny cubo detectado} (approach);
+        \draw[arrow] (approach) -- node[above] {\tiny dist $<$ 0.32m} (grasp);
+        \draw[arrow] (grasp) -- node[right] {\tiny objeto agarrado} (tobox);
+        \draw[arrow] (tobox) -- node[above] {\tiny chegou à caixa} (drop);
+        \draw[arrow] (drop) -- node[left] {\tiny completado} (search);
+
+        % Self-loop for search
+        \draw[arrow] (approach.north) .. controls (2,1.5) and (-2,1.5) .. node[above] {\tiny cubo perdido} (search.north);
+
+        % Legend
+        \node[below] at (4,-4.5) {\small Fluxo principal de execução};
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Hierarquia de Prioridades}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \textbf{Regras de Segurança (Top $\rightarrow$ Bottom)}
+            \begin{enumerate}
+                \item \textbf{NUNCA} colidir com paredes ou obstáculos de madeira
+                \item Evitar empurrar cubos pequenos (podem ficar inacessíveis)
+                \item Manter progresso em direção ao objetivo
+            \end{enumerate}
+
+            \vspace{0.5em}
+            \textbf{Recuperação de Travamento}
+            \begin{itemize}
+                \item Detecção de oscilação (posição fixa por 12s)
+                \item Escape em 4 fases: strafe puro, diagonal
+                \item Rota via corredores seguros (bordas da arena)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \centering
+            % Priority pyramid
+            \begin{tikzpicture}[scale=0.6]
+                % Pyramid
+                \fill[red!60] (0,0) -- (2,0) -- (1,1) -- cycle;
+                \fill[orange!60] (-0.5,-1) -- (2.5,-1) -- (2,0) -- (0,0) -- cycle;
+                \fill[yellow!60] (-1,-2) -- (3,-2) -- (2.5,-1) -- (-0.5,-1) -- cycle;
+
+                % Labels
+                \node at (1,0.4) {\tiny Paredes};
+                \node at (1,-0.5) {\tiny Obstáculos};
+                \node at (1,-1.5) {\tiny Cubos};
+
+                % Priority arrow
+                \draw[->, thick] (4,0.5) -- (4,-1.5) node[midway, right] {\tiny Prioridade};
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Integração dos Componentes}
+    \centering
+    \begin{tikzpicture}[
+        scale=0.7,
+        box/.style={draw, rectangle, rounded corners, minimum width=2.5cm, minimum height=0.8cm},
+        arrow/.style={->, thick}
+    ]
+        % Sensors
+        \node[box, fill=blue!20] (lidar) at (0,3) {LIDAR};
+        \node[box, fill=blue!20] (camera) at (0,1.5) {Câmera};
+        \node[box, fill=blue!20] (dist) at (0,0) {Dist. Sensors};
+
+        % Processing
+        \node[box, fill=orange!20] (grid) at (4,3) {Grade Ocupação};
+        \node[box, fill=orange!20] (cnn) at (4,1.5) {CNN (cor)};
+        \node[box, fill=orange!20] (fuzzy) at (4,0) {Fuzzy Nav};
+
+        % Planning
+        \node[box, fill=green!20] (astar) at (8,2.25) {A* Planner};
+        \node[box, fill=green!20] (fsm) at (8,0.75) {FSM};
+
+        % Output
+        \node[box, fill=red!20] (motor) at (12,1.5) {Motores};
+
+        % Arrows
+        \draw[arrow] (lidar) -- (grid);
+        \draw[arrow] (camera) -- (cnn);
+        \draw[arrow] (dist) -- (fuzzy);
+        \draw[arrow] (grid) -- (astar);
+        \draw[arrow] (cnn) -- (fsm);
+        \draw[arrow] (fuzzy) -- (fsm);
+        \draw[arrow] (astar) -- (fsm);
+        \draw[arrow] (fsm) -- (motor);
+    \end{tikzpicture}
+
+    \vspace{1em}
+    {\small Pipeline completo: Sensores $\rightarrow$ Processamento $\rightarrow$ Planejamento $\rightarrow$ Atuação}
+\end{frame}
+
+%=================================================
+\section{Resultados e Demo}
+%=================================================
+
+\begin{frame}{Resultados}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{Métricas da Rede Neural}
+            \begin{itemize}
+                \item Acurácia: 99.4\%
+                \item Formato: ONNX (portável)
+                \item Inferência: $<$ 10ms por frame
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Navegação}
+            \begin{itemize}
+                \item A* encontra caminhos válidos consistentemente
+                \item Fuzzy evita colisões em tempo real
+                \item Recuperação de travamento funcional
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.45\textwidth}
+            \textbf{Desafios Encontrados}
+            \begin{itemize}
+                \item Drift de odometria ao longo do tempo
+                \item Cubos empurrados bloqueando caminhos
+                \item Coordenação braço-navegação
+            \end{itemize}
+
+            \vspace{0.5em}
+            \textbf{Soluções}
+            \begin{itemize}
+                \item Sincronização periódica com ground truth
+                \item Rotas via corredores seguros
+                \item Máquina de estados bem definida
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Demonstração}
+    \centering
+    \vspace{2em}
+
+    \begin{tikzpicture}
+        \node[draw, rounded corners, fill=blue!10, text width=12cm, align=center, minimum height=5cm] {
+            \Huge \textbf{DEMO}
+
+            \vspace{1em}
+            \large Execução do robô coletando cubos no Webots
+        };
+    \end{tikzpicture}
+\end{frame}
+
+%=================================================
+\section{Conclusão}
+%=================================================
+
+\begin{frame}{Conclusão}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Contribuições}
+            \begin{itemize}
+                \item Integração bem-sucedida de CNN + Fuzzy + A*
+                \item Sistema de navegação robusto e reativo
+                \item Arquitetura modular e extensível
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Trabalhos Futuros}
+            \begin{itemize}
+                \item SLAM para melhor localização
+                \item Planejamento com obstáculos dinâmicos
+                \item Otimização da ordem de coleta
+            \end{itemize}
+        \end{column}
+    \end{columns}
+
+    \vspace{1.5em}
+    \centering
+    \begin{tikzpicture}
+        \node[draw, rounded corners, fill=green!20, text width=10cm, align=center] {
+            \large \textbf{Obrigado!}
+
+            \vspace{0.3em}
+            Perguntas?
+        };
+    \end{tikzpicture}
+\end{frame}
+
+%-------------------------------------------------
+%  SLIDE DE REFERÊNCIAS
+%-------------------------------------------------
+\begin{frame}{Referências}
+    \small
+    \begin{itemize}
+        \item Hart, P. E., Nilsson, N. J., \& Raphael, B. (1968). \textit{A Formal Basis for the Heuristic Determination of Minimum Cost Paths}
+        \item Zadeh, L. A. (1965). \textit{Fuzzy Sets} -- Information and Control
+        \item Howard, A., et al. (2019). \textit{Searching for MobileNetV3}
+        \item Elfes, A. (1989). \textit{Using Occupancy Grids for Mobile Robot Perception and Navigation}
+    \end{itemize}
+\end{frame}
+
+\end{document}

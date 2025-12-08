@@ -1,0 +1,326 @@
+# FALAS PARA APRESENTACAO - 15 MINUTOS
+# Luis Felipe Sena
+# MATA64 - Inteligencia Artificial - UFBA
+# Dezembro 2025
+
+================================================================================
+SLIDE 1: TITULO (30 segundos)
+================================================================================
+
+Bom dia/boa tarde a todos. Meu nome e Luis Felipe e vou apresentar o projeto
+final da disciplina de Inteligencia Artificial: um robo autonomo para coleta
+de cubos coloridos.
+
+O projeto integra tres tecnicas fundamentais de IA: redes neurais convolucionais
+para classificacao de cores, logica fuzzy para navegacao reativa, e o algoritmo
+A* para planejamento de trajetorias.
+
+================================================================================
+SLIDE 2: AGENDA (30 segundos)
+================================================================================
+
+A apresentacao esta dividida em cinco partes:
+
+Primeiro, vou definir o problema e os desafios enfrentados.
+Em seguida, apresento o sistema de percepcao - LIDAR, camera e rede neural.
+Depois, explico como a logica fuzzy controla a navegacao.
+Na quarta parte, mostro o planejamento de caminhos com A*.
+Por fim, apresento a arquitetura do sistema e uma demonstracao.
+
+================================================================================
+SLIDE 3: O PROBLEMA (1 minuto)
+================================================================================
+
+O objetivo e coletar 15 cubos coloridos - vermelhos, verdes e azuis - e
+depositar cada um na caixa de cor correspondente.
+
+Usamos o KUKA YouBot, um robo com rodas Mecanum que permite movimento
+omnidirecional - ou seja, ele pode se mover para frente, para os lados e
+rotacionar simultaneamente.
+
+A arena tem 7 metros por 4 metros, com 7 obstaculos fixos de madeira
+posicionados estrategicamente. Os cubos estao espalhados aleatoriamente
+pela arena no inicio da simulacao.
+
+Como podem ver no diagrama, as caixas de deposito estao nas extremidades:
+verde em cima, azul embaixo, e vermelho a direita.
+
+================================================================================
+SLIDE 4: RESTRICOES DO PROJETO (1 minuto)
+================================================================================
+
+O projeto tem requisitos obrigatorios e proibicoes importantes.
+
+Obrigatoriamente, precisamos usar uma rede neural - seja MLP ou CNN - para
+alguma tarefa de classificacao. Tambem precisamos usar logica fuzzy para
+controle. E os sensores disponiveis sao LIDAR e camera RGB.
+
+Por outro lado, e proibido usar GPS. O robo deve estimar sua posicao usando
+apenas odometria - integrando as velocidades das rodas ao longo do tempo.
+Tambem e proibida teleoperacao - o robo deve ser completamente autonomo.
+E nao podemos acessar diretamente a posicao dos cubos no simulador.
+
+O grande desafio e navegar de forma autonoma em um ambiente onde os cubos
+podem ser empurrados acidentalmente, mudando a configuracao do ambiente.
+
+================================================================================
+SLIDE 5: SENSORES DO YOUBOT (1 minuto 30 segundos)
+================================================================================
+
+O YouBot possui dois sensores principais: LIDAR e camera RGB.
+
+O LIDAR tem campo de visao de 180 graus, com 180 feixes de laser. O alcance
+vai de 10 centimetros ate 5 metros, e atualiza a 32 Hz. Usamos o LIDAR
+principalmente para detectar obstaculos e construir um mapa de ocupacao.
+
+A camera RGB tem resolucao de 320 por 240 pixels. Usamos a API de
+reconhecimento do Webots, que retorna a posicao relativa dos objetos
+detectados. A camera e responsavel por detectar os cubos e fornecer imagens
+para a rede neural classificar a cor.
+
+Alem disso, temos 6 sensores infravermelhos de distancia - 3 na frente e 3
+atras - que complementam o LIDAR para deteccao em curta distancia,
+especialmente quando o robo esta muito proximo de um obstaculo.
+
+================================================================================
+SLIDE 6: REDE NEURAL - MOBILENETV3 (2 minutos)
+================================================================================
+
+Para classificacao de cores, usamos uma rede neural convolucional baseada na
+arquitetura MobileNetV3-Small.
+
+A MobileNetV3 e uma CNN otimizada para dispositivos moveis e embarcados,
+desenvolvida pelo Google em 2019. Usamos a versao pre-treinada no ImageNet
+como backbone, e adicionamos um classificador customizado com uma camada
+oculta de 256 neuronios e saida para 3 classes.
+
+A entrada da rede e uma imagem 64 por 64 pixels, normalizada com a media e
+desvio padrao do ImageNet. A saida sao as probabilidades para cada cor:
+vermelho, verde e azul.
+
+O treinamento usou transfer learning em duas fases. Primeiro, congelamos o
+backbone e treinamos apenas o classificador. Depois, descongelamos toda a
+rede e fizemos fine-tuning com learning rate reduzido.
+
+O resultado foi uma acuracia de 99.4% no conjunto de validacao. O dataset
+foi gerado sinteticamente com augmentacoes de brilho, ruido e blur.
+
+Para inferencia, exportamos o modelo para o formato ONNX, que e portavel e
+eficiente. Como fallback, quando a confianca do modelo e menor que 0.5,
+usamos heuristicas baseadas no espaco de cor HSV.
+
+================================================================================
+SLIDE 7: LOGICA FUZZY - CONCEITO (1 minuto 30 segundos)
+================================================================================
+
+A logica fuzzy e fundamental para o controle de navegacao. Mas por que fuzzy?
+
+Primeiro, ela permite controle suave e continuo, sem transicoes bruscas entre
+estados. Segundo, lida bem com a incerteza inerente aos sensores. E terceiro,
+as regras sao expressas em linguagem natural, faceis de entender e ajustar.
+
+Definimos variaveis linguisticas para distancia, angulo e velocidade. Por
+exemplo, a distancia pode ser "muito perto", "perto" ou "longe". O angulo
+pode ser "pequeno", "medio" ou "grande".
+
+No grafico, vemos as funcoes de pertinencia para distancia ao obstaculo. A
+funcao "muito perto" tem pertinencia maxima de 0 a 25 centimetros. A funcao
+"perto" e maxima em 45 centimetros. E a funcao "longe" comeca a subir apos
+40 centimetros e atinge o maximo em 1 metro.
+
+Estas funcoes transformam valores crisp - como "0.3 metros" - em graus de
+pertinencia - como "40% perto e 60% muito perto".
+
+================================================================================
+SLIDE 8: REGRAS FUZZY DE NAVEGACAO (1 minuto 30 segundos)
+================================================================================
+
+As regras fuzzy sao divididas em dois grupos: desvio e alinhamento.
+
+As regras de desvio tratam da seguranca:
+- SE obstaculo muito perto, ENTAO reverso mais strafe lateral
+- SE obstaculo perto, ENTAO reduzir velocidade
+- SE lateral bloqueado, ENTAO strafe na direcao oposta
+
+As regras de alinhamento tratam do direcionamento ao objetivo:
+- SE angulo grande, ENTAO apenas rotacionar, sem avancar
+- SE angulo medio, ENTAO avancar lento enquanto rotaciona
+- SE angulo pequeno, ENTAO avancar rapido
+
+O processo completo tem quatro etapas. Primeiro, os valores dos sensores
+passam pela fuzzificacao, calculando os graus de pertinencia. Depois, as
+regras sao avaliadas. Entao, a defuzzificacao calcula os comandos de
+velocidade. Usamos o metodo do centroide ponderado para obter valores
+continuos de velocidade linear, lateral e angular.
+
+================================================================================
+SLIDE 9: ALGORITMO A* - VISAO GERAL (1 minuto 30 segundos)
+================================================================================
+
+Para planejamento global de trajetorias, usamos o algoritmo A*, publicado
+por Hart, Nilsson e Raphael em 1968.
+
+O A* encontra o caminho de menor custo usando a funcao f de n igual a g de n
+mais h de n. Onde g de n e o custo do inicio ate o no atual, e h de n e uma
+heuristica que estima o custo restante ate o objetivo. Usamos a distancia
+de Manhattan como heuristica.
+
+A grade de ocupacao divide a arena em celulas de 12 por 12 centimetros,
+resultando em 58 por 33 celulas. Esta grade e atualizada continuamente pelo
+LIDAR usando o algoritmo de Bresenham para raycasting.
+
+No diagrama, o ponto S e a posicao inicial do robo, e G e o objetivo. Os
+quadrados marrons sao obstaculos. A linha azul mostra o caminho encontrado
+pelo A*, contornando o obstaculo pelo caminho de menor custo.
+
+================================================================================
+SLIDE 10: INFLACAO DE OBSTACULOS (1 minuto)
+================================================================================
+
+Um ponto crucial do A* e a inflacao de obstaculos. O robo nao e um ponto -
+o YouBot tem 58 por 38 centimetros.
+
+Para garantir que o caminho planejado seja seguro, inflamos todos os
+obstaculos por 30 centimetros - aproximadamente a metade da largura do robo
+mais uma margem de seguranca.
+
+No diagrama, o quadrado marrom e o obstaculo real. A area pontilhada
+vermelha e a zona inflada. O A* planeja considerando esta zona maior,
+garantindo que o centro do robo nunca passe perto demais de um obstaculo.
+
+Os obstaculos conhecidos incluem as 7 caixas de madeira - que sao fixas -
+as 3 caixas de deposito - que sao os destinos - e as paredes da arena.
+
+================================================================================
+SLIDE 11: MAQUINA DE ESTADOS (1 minuto)
+================================================================================
+
+A arquitetura de controle e uma maquina de estados finita com 5 estados.
+
+No estado SEARCH, o robo explora a arena procurando cubos. Quando detecta
+um cubo, transita para APPROACH.
+
+Em APPROACH, o robo alinha e se aproxima do cubo. Quando esta a menos de
+32 centimetros e bem alinhado, transita para GRASP.
+
+Em GRASP, o braco desce, a garra fecha, e verificamos se realmente
+agarramos o cubo usando sensores de posicao dos dedos.
+
+Se confirmado, transitamos para TO_BOX, onde o robo navega ate a caixa de
+cor correspondente usando o A*.
+
+Ao chegar na caixa, entramos em DROP, onde soltamos o cubo e voltamos ao
+estado SEARCH para repetir o ciclo.
+
+================================================================================
+SLIDE 12: HIERARQUIA DE PRIORIDADES (1 minuto)
+================================================================================
+
+A navegacao segue uma hierarquia estrita de prioridades.
+
+Prioridade maxima: NUNCA colidir com paredes ou obstaculos de madeira.
+Estas colisoes podem travar o robo irreversivelmente.
+
+Segunda prioridade: evitar empurrar os cubos pequenos. Se empurrarmos um
+cubo para uma posicao inacessivel, nao conseguiremos coleta-lo depois.
+
+Terceira prioridade: manter progresso em direcao ao objetivo.
+
+Para recuperacao de travamento, temos um sistema de deteccao de oscilacao.
+Se o robo fica na mesma posicao por mais de 12 segundos, ativamos um escape
+em 4 fases - strafe puro para esquerda, strafe puro para direita, diagonal
+esquerda, diagonal direita. Se ainda assim ficar preso, ativamos uma rota
+via corredores seguros nas bordas da arena, onde os cubos nao sao gerados.
+
+================================================================================
+SLIDE 13: INTEGRACAO DOS COMPONENTES (45 segundos)
+================================================================================
+
+Este diagrama mostra como os componentes se integram.
+
+Os sensores - LIDAR, camera e sensores de distancia - alimentam o
+processamento. O LIDAR atualiza a grade de ocupacao. A camera alimenta a
+CNN para classificacao de cor. Os sensores de distancia alimentam a
+navegacao fuzzy.
+
+O planejamento recebe a grade de ocupacao para o A* e todas as informacoes
+convergem na maquina de estados, que decide os comandos para os motores.
+
+E um pipeline completo: sensores para processamento, processamento para
+planejamento, planejamento para atuacao.
+
+================================================================================
+SLIDE 14: RESULTADOS (1 minuto)
+================================================================================
+
+Quanto aos resultados:
+
+A rede neural atingiu 99.4% de acuracia, com inferencia abaixo de 10
+milissegundos por frame. O formato ONNX garante portabilidade.
+
+Na navegacao, o A* encontra caminhos validos consistentemente. A logica
+fuzzy evita colisoes em tempo real. E o sistema de recuperacao de
+travamento funciona quando o robo fica preso.
+
+Os principais desafios foram: drift de odometria ao longo do tempo, cubos
+empurrados bloqueando caminhos, e a coordenacao entre o braco e a navegacao.
+
+As solucoes incluiram: sincronizacao periodica com ground truth do Webots
+para corrigir odometria, rotas via corredores seguros quando ha
+travamentos, e uma maquina de estados bem definida para coordenacao.
+
+================================================================================
+SLIDE 15: DEMONSTRACAO (2 minutos)
+================================================================================
+
+Agora vou mostrar uma demonstracao do robo em acao no Webots.
+
+[INICIAR VIDEO/SIMULACAO]
+
+Observem como o robo:
+- Explora a arena no modo SEARCH
+- Detecta um cubo e se aproxima
+- Agarra o cubo com o braco
+- Navega ate a caixa correspondente desviando de obstaculos
+- Deposita o cubo e retorna a buscar outro
+
+Prestem atencao na navegacao fuzzy - como ela suaviza os movimentos quando
+ha obstaculos proximos. E notem o A* recalculando a rota quando necessario.
+
+[ENCERRAR VIDEO/SIMULACAO]
+
+================================================================================
+SLIDE 16: CONCLUSAO (30 segundos)
+================================================================================
+
+Em conclusao, conseguimos integrar com sucesso tres tecnicas de IA: CNN
+para classificacao, fuzzy para controle reativo, e A* para planejamento.
+
+O sistema de navegacao se mostrou robusto, capaz de lidar com obstaculos
+dinamicos e se recuperar de travamentos.
+
+Como trabalhos futuros, poderiamos implementar SLAM para melhor
+localizacao, planejamento considerando obstaculos dinamicos, e otimizacao
+da ordem de coleta para minimizar o tempo total.
+
+================================================================================
+SLIDE 17: REFERENCIAS E PERGUNTAS (30 segundos)
+================================================================================
+
+As principais referencias sao o artigo original do A* de 1968, o artigo
+de Zadeh sobre conjuntos fuzzy de 1965, o paper da MobileNetV3 de 2019,
+e o trabalho de Elfes sobre grades de ocupacao.
+
+Obrigado pela atencao. Estou a disposicao para perguntas.
+
+================================================================================
+FIM - TEMPO TOTAL ESTIMADO: 15 MINUTOS
+================================================================================
+
+DICAS PARA APRESENTACAO:
+- Manter ritmo fluido, ~1 min por slide em media
+- Usar os diagramas TikZ nos slides para apoio visual
+- Enfatizar a hierarquia de prioridades (paredes > obstaculos > cubos)
+- Referenciar autores principais: Hart/Nilsson/Raphael (A*), Zadeh (Fuzzy), Howard (MobileNetV3)
+- Conectar teoria com exemplos praticos da simulacao
+- Ressaltar que a integracao das tecnicas e o ponto chave do projeto
