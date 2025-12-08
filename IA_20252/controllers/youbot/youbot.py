@@ -439,7 +439,13 @@ class YouBotController:
         self.ds_rear_left = self.robot.getDevice("ds_rear_left")
         self.ds_rear_right = self.robot.getDevice("ds_rear_right")
 
-        for ds in [self.ds_rear, self.ds_rear_left, self.ds_rear_right]:
+        # Sensores de distância frontais para detecção durante APPROACH
+        self.ds_front = self.robot.getDevice("ds_front")
+        self.ds_front_left = self.robot.getDevice("ds_front_left")
+        self.ds_front_right = self.robot.getDevice("ds_front_right")
+
+        for ds in [self.ds_rear, self.ds_rear_left, self.ds_rear_right,
+                   self.ds_front, self.ds_front_left, self.ds_front_right]:
             if ds:
                 ds.enable(self.time_step)
 
@@ -800,6 +806,30 @@ class YouBotController:
 
         return {"rear": rear, "rear_left": rear_left, "rear_right": rear_right}
 
+    def _process_front_sensors(self):
+        """Processa sensores de distância frontais.
+
+        Returns:
+            dict com front, front_left, front_right em metros
+        """
+        def raw_to_meters(raw_value):
+            if raw_value is None or math.isnan(raw_value):
+                return 2.0
+            return max(0.05, min(2.0, raw_value / 1000.0))
+
+        front = 2.0
+        front_left = 2.0
+        front_right = 2.0
+
+        if self.ds_front:
+            front = raw_to_meters(self.ds_front.getValue())
+        if self.ds_front_left:
+            front_left = raw_to_meters(self.ds_front_left.getValue())
+        if self.ds_front_right:
+            front_right = raw_to_meters(self.ds_front_right.getValue())
+
+        return {"front": front, "front_left": front_left, "front_right": front_right}
+
     def _check_obstacle_ahead(self, lidar_front, threshold=0.5):
         if lidar_front < threshold:
             return True
@@ -1093,56 +1123,55 @@ class YouBotController:
     def _handle_drop(self, dt):
         """Sequência de depósito do cubo no box.
 
-        Stage 0: Estender braço de RESET para FRONT_CARDBOARD_BOX (posição alta sobre box)
-        Stage 1: Avançar lentamente até ficar sobre o box
-        Stage 2: Baixar braço para FRONT_PLATE (posição de soltura)
-        Stage 3: Soltar cubo (abrir gripper)
+        Stage 0: Baixar braço de RESET para FRONT_FLOOR (posição sobre box)
+        Stage 1: Avançar até ficar DENTRO do box
+        Stage 2: Soltar cubo (abrir gripper)
+        Stage 3: Recuar um pouco ainda com braço baixo
         Stage 4: Levantar braço para RESET
-        Stage 5: Recuar para longe do box
+        Stage 5: Recuar mais para longe do box
         Stage 6: Girar para evitar re-detectar cubo
         Stage 7: Finalizar e voltar ao search
         """
         self.stage_timer += dt
 
         if self.stage == 0:
-            # Primeiro: estender braço para posição alta sobre o box
-            # FRONT_CARDBOARD_BOX é ideal - braço estendido para frente em altura média
-            self.arm.set_height(Arm.FRONT_CARDBOARD_BOX)
-            self.gripper.grip()  # Manter fechado
-            if self.stage_timer >= 2.0:  # Tempo para braço mover
+            # Baixar braço para posição de depósito (FRONT_FLOOR)
+            # Esta posição coloca o gripper na altura do box
+            self.arm.set_height(Arm.FRONT_FLOOR)
+            self.gripper.grip()
+            if self.stage_timer >= 2.0:
                 self.stage += 1
                 self.stage_timer = 0.0
-                print("[DROP] Braço estendido, avançando sobre box...")
+                print("[DROP] Braço baixo, avançando sobre box...")
 
         elif self.stage == 1:
-            # Avançar até ficar sobre o box
-            # PlasticFruitBox tem ~0.60m x 0.40m, precisamos chegar bem perto
-            self._safe_move(0.06, 0.0, 0.0)
+            # Avançar até ficar BEM sobre o box
+            # Já estamos a ~0.20m (lidar), precisamos avançar mais ~10cm
+            self._safe_move(0.04, 0.0, 0.0)
             self.gripper.grip()
-            if self.stage_timer >= 2.0:  # 0.06 m/s × 2.0s = 12cm
+            if self.stage_timer >= 2.5:  # 0.04 m/s × 2.5s = 10cm
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
-                print("[DROP] Sobre o box, baixando braço...")
+                print("[DROP] Sobre o box, soltando cubo...")
 
         elif self.stage == 2:
-            # Baixar braço para posição de soltura
-            self.arm.set_height(Arm.FRONT_PLATE)
-            self.gripper.grip()
-            if self.stage_timer >= 1.5:
-                self.stage += 1
-                self.stage_timer = 0.0
-                print("[DROP] Soltando cubo...")
-
-        elif self.stage == 3:
-            # Soltar o cubo
+            # Soltar o cubo - já estamos sobre o box
             self.gripper.release()
             if self.stage_timer >= 1.0:
                 self.stage += 1
                 self.stage_timer = 0.0
 
+        elif self.stage == 3:
+            # Recuar um pouco ainda com braço baixo
+            self._safe_move(-0.06, 0.0, 0.0)
+            if self.stage_timer >= 1.0:  # ~6cm de ré
+                self.base.reset()
+                self.stage += 1
+                self.stage_timer = 0.0
+
         elif self.stage == 4:
-            # Levantar braço para não bater no box ao recuar
+            # Levantar braço para não bater no box ao recuar mais
             self.arm.set_height(Arm.RESET)
             if self.stage_timer >= 1.5:
                 self.stage += 1
@@ -1237,6 +1266,7 @@ class YouBotController:
             # Sensores
             lidar_info = self._process_lidar()
             rear_info = self._process_rear_sensors()
+            front_info = self._process_front_sensors()
             self._update_grid_from_lidar(lidar_info)
 
             # Lock na cor e ângulo durante approach
@@ -1267,6 +1297,48 @@ class YouBotController:
 
             # ===== MODO APPROACH =====
             if self.mode == "approach":
+                # PRIMEIRO: Verificar obstáculo frontal com sensores de distância
+                # Isso detecta obstáculos que LIDAR pode não ver bem de perto
+                front_obstacle = min(
+                    front_info["front"],
+                    front_info["front_left"],
+                    front_info["front_right"],
+                    lidar_info["front"]
+                )
+
+                # Obstáculo detectado - PARAR e desviar
+                if front_obstacle < 0.20:
+                    # Obstáculo muito perto - recuar e tentar contornar
+                    print(f"[APPROACH] OBSTÁCULO FRONTAL! dist={front_obstacle:.2f}m, desviando...")
+
+                    # Determinar direção de escape
+                    if front_info["front_left"] > front_info["front_right"]:
+                        vy_cmd = 0.08  # Strafe esquerda
+                        omega_cmd = 0.2
+                    else:
+                        vy_cmd = -0.08  # Strafe direita
+                        omega_cmd = -0.2
+
+                    self._safe_move(-0.04, vy_cmd, omega_cmd)
+
+                    # Após alguns ciclos, abortar approach se não conseguir
+                    if not hasattr(self, '_approach_obstacle_count'):
+                        self._approach_obstacle_count = 0
+                    self._approach_obstacle_count += 1
+
+                    if self._approach_obstacle_count > 30:  # ~0.5s
+                        print("[APPROACH] Não conseguiu desviar, voltando ao search")
+                        self.mode = "search"
+                        self.locked_cube_angle = None
+                        self.locked_cube_distance = None
+                        self.current_color = None
+                        self._approach_obstacle_count = 0
+                    continue
+                else:
+                    # Reset contador quando não há obstáculo
+                    if hasattr(self, '_approach_obstacle_count'):
+                        self._approach_obstacle_count = 0
+
                 if recognition:
                     self.lost_cube_timer = 0.0
                     cam_dist = recognition["distance"]
@@ -1277,16 +1349,14 @@ class YouBotController:
                     self.locked_cube_angle = cam_angle
 
                     # Chegou perto o suficiente E alinhado -> grasp
-                    # IMPORTANTE: Só iniciar grasp se estiver ALINHADO (< 10°)
-                    grasp_distance = 0.32  # Trigger mais cedo para dar margem ao buffer
-                    grasp_angle_max = math.radians(10)  # Máximo 10° de desvio
+                    grasp_distance = 0.32
+                    grasp_angle_max = math.radians(10)
 
                     if cam_dist < grasp_distance and abs(cam_angle) < grasp_angle_max:
                         print(f"[APPROACH] Cubo a {cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°, iniciando grasp")
                         self._start_grasp()
                         continue
                     elif cam_dist < grasp_distance and abs(cam_angle) >= grasp_angle_max:
-                        # Perto mas desalinhado - apenas rotacionar
                         omega_cmd = -cam_angle * 1.0
                         omega_cmd = max(-0.4, min(0.4, omega_cmd))
                         self._safe_move(0.0, 0.0, omega_cmd)
@@ -1294,36 +1364,26 @@ class YouBotController:
                         continue
 
                     # ESTRATÉGIA: Primeiro ALINHAR, depois AVANÇAR
-                    # Threshold mais baixo para garantir alinhamento preciso
-                    angle_threshold = math.radians(5)  # 5 graus
+                    angle_threshold = math.radians(5)
 
                     if abs(cam_angle) > angle_threshold:
-                        # Fase 1: APENAS ROTACIONAR para alinhar
-                        # SINAL NEGATIVO: se ângulo positivo (cubo à esquerda), girar para esquerda (omega negativo)
                         omega_cmd = -cam_angle * 0.8
                         omega_cmd = max(-0.3, min(0.3, omega_cmd))
-                        vx_cmd = 0.0  # Não avança enquanto não alinhado
+                        vx_cmd = 0.0
                         self._log_throttled("approach_align", f"[APPROACH] Alinhando: ângulo={math.degrees(cam_angle):.1f}°, dist={cam_dist:.2f}m", 1.0)
                     else:
-                        # Fase 2: AVANÇAR RETO com correção de ângulo
-                        vx_cmd = 0.08  # Velocidade mais lenta para manter alinhamento
-                        omega_cmd = -cam_angle * 1.2  # SINAL NEGATIVO
+                        vx_cmd = 0.08
+                        omega_cmd = -cam_angle * 1.2
                         omega_cmd = max(-0.2, min(0.2, omega_cmd))
                         self._log_throttled("approach_advance", f"[APPROACH] Avançando: dist={cam_dist:.2f}m, ângulo={math.degrees(cam_angle):.1f}°", 1.0)
-
-                    # Se obstáculo na frente, parar
-                    if lidar_info["front"] < 0.25:
-                        vx_cmd = 0.0
-                        print(f"[APPROACH] Obstáculo frontal a {lidar_info['front']:.2f}m")
 
                     self._safe_move(vx_cmd, 0.0, omega_cmd)
                     continue
                 else:
                     self.lost_cube_timer += dt
 
-                    # Se temos distância conhecida e estamos perto, iniciar grasp mesmo sem ver
                     if self.locked_cube_distance is not None and self.locked_cube_distance < 0.35:
-                        if self.lost_cube_timer > 0.3:  # Perdeu de vista mas estava perto
+                        if self.lost_cube_timer > 0.3:
                             print(f"[APPROACH] Cubo perdido a {self.locked_cube_distance:.2f}m, iniciando grasp")
                             self._start_grasp()
                             continue
@@ -1337,9 +1397,8 @@ class YouBotController:
                         self.lost_cube_timer = 0.0
                         continue
 
-                    # Continuar movendo devagar na direção do último ângulo conhecido
                     if self.locked_cube_angle is not None:
-                        omega_recovery = -self.locked_cube_angle * 0.3  # SINAL NEGATIVO
+                        omega_recovery = -self.locked_cube_angle * 0.3
                         omega_recovery = max(-0.2, min(0.2, omega_recovery))
                     else:
                         omega_recovery = 0.0
@@ -1398,10 +1457,10 @@ class YouBotController:
                         self._tobox_log_timer = 0.0
 
                     # === DROP TRIGGER ===
-                    # Use LIDAR for precise box detection
-                    # Box must be CLOSE (lidar < 0.35m) to ensure cube lands inside
-                    # PlasticFruitBox is ~0.60m x 0.40m, we need to be almost over it
-                    if in_final_approach and 0.15 < lidar_front < 0.35:
+                    # Aproximar BEM PERTO do box antes de depositar
+                    # lidar < 0.25m garante que estamos quase encostando no box
+                    # PlasticFruitBox é ~0.60m x 0.40m x 0.22m de altura
+                    if in_final_approach and 0.10 < lidar_front < 0.25:
                         print(f"[TO_BOX] DROP TRIGGER! lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m, ang={math.degrees(final_angle):.1f}°")
                         if hasattr(self, '_tobox_log_timer'):
                             del self._tobox_log_timer
@@ -1409,12 +1468,19 @@ class YouBotController:
                         continue
 
                     # === FINAL APPROACH MODE ===
-                    # Bypass obstacle avoidance - slowly approach the box
+                    # Continuar aproximando até LIDAR < 0.25m
                     if in_final_approach:
-                        # Align with goal and approach slowly
-                        omega_cmd = -final_angle * 0.6
+                        # Alinhar com o goal e aproximar devagar
+                        omega_cmd = -final_angle * 0.8
                         omega_cmd = max(-0.3, min(0.3, omega_cmd))
-                        vx_cmd = 0.06  # Slow approach
+
+                        # Velocidade proporcional à distância do box
+                        # Mais perto = mais devagar
+                        if lidar_front < 0.40:
+                            vx_cmd = 0.03  # Bem devagar quando perto
+                        else:
+                            vx_cmd = 0.06
+
                         vy_cmd = 0.0
                         self._log_throttled("tobox_final", f"[TO_BOX] Final approach: lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m", 0.8)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)

@@ -125,7 +125,7 @@ Youbot {
         0.05 50 0
         1.0 1000 0
       ]
-      type "infrared"
+      type "infra-red"
       numberOfRays 2
       aperture 0.3
     }
@@ -138,7 +138,7 @@ Youbot {
         0.05 50 0
         1.0 1000 0
       ]
-      type "infrared"
+      type "infra-red"
       numberOfRays 2
       aperture 0.3
     }
@@ -151,7 +151,46 @@ Youbot {
         0.05 50 0
         1.0 1000 0
       ]
-      type "infrared"
+      type "infra-red"
+      numberOfRays 2
+      aperture 0.3
+    }
+    DistanceSensor {
+      name "ds_front"
+      translation 0.29 0 0.05
+      rotation 0 0 1 0
+      lookupTable [
+        0 0 0
+        0.05 50 0
+        1.0 1000 0
+      ]
+      type "infra-red"
+      numberOfRays 2
+      aperture 0.3
+    }
+    DistanceSensor {
+      name "ds_front_left"
+      translation 0.25 0.12 0.05
+      rotation 0 0 1 0.4
+      lookupTable [
+        0 0 0
+        0.05 50 0
+        1.0 1000 0
+      ]
+      type "infra-red"
+      numberOfRays 2
+      aperture 0.3
+    }
+    DistanceSensor {
+      name "ds_front_right"
+      translation 0.25 -0.12 0.05
+      rotation 0 0 1 -0.4
+      lookupTable [
+        0 0 0
+        0.05 50 0
+        1.0 1000 0
+      ]
+      type "infra-red"
       numberOfRays 2
       aperture 0.3
     }

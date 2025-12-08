@@ -262,16 +262,24 @@ YouBot Layout:
           Mecanum Wheels (omnidirectional)
 ```
 
-### Rear Distance Sensors (NEW)
-Three infrared distance sensors positioned at the rear for collision detection:
+### Distance Sensors
+Six infrared distance sensors for 360° collision detection:
 
+**Rear Sensors (collision avoidance during rotation/reverse):**
 | Sensor | Position | Orientation | Range |
 |--------|----------|-------------|-------|
 | ds_rear | (-0.29, 0, 0.05) | 180° (backward) | 0.05-1.0m |
 | ds_rear_left | (-0.25, 0.15, 0.05) | 135° (back-left) | 0.05-1.0m |
 | ds_rear_right | (-0.25, -0.15, 0.05) | -135° (back-right) | 0.05-1.0m |
 
-These sensors provide real-time rear obstacle detection to prevent collisions when the robot rotates or reverses.
+**Front Sensors (obstacle detection during APPROACH):**
+| Sensor | Position | Orientation | Range |
+|--------|----------|-------------|-------|
+| ds_front | (0.29, 0, 0.05) | 0° (forward) | 0.05-1.0m |
+| ds_front_left | (0.25, 0.12, 0.05) | 23° (front-left) | 0.05-1.0m |
+| ds_front_right | (0.25, -0.12, 0.05) | -23° (front-right) | 0.05-1.0m |
+
+These sensors complement the LIDAR for close-range obstacle detection, especially during APPROACH when the robot needs to stop before colliding with obstacles blocking the path to a cube.
 
 ---
 
