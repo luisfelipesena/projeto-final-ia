@@ -1256,7 +1256,7 @@ class YouBotController:
                                 print(f"[TO_BOX] LIDAR não vê box (front={lidar_front:.2f}m), sem ground truth")
                             # Não iniciar drop, continuar navegando
 
-                    # ===== DESVIO DE OBSTÁCULOS - PRIORIZAR STRAFE, NÃO ROTAÇÃO =====
+                    # ===== DESVIO DE OBSTÁCULOS - ROTAÇÃO + STRAFE =====
                     obs_front = lidar_info["front"]
                     obs_left = lidar_info["left"]
                     obs_right = lidar_info["right"]
@@ -1267,48 +1267,52 @@ class YouBotController:
                     obs_left = min(obs_left, known_left)
                     obs_right = min(obs_right, known_right)
 
-                    # Determinar lado preferido para desvio baseado no ângulo do goal
-                    # Se goal está à esquerda (angle > 0), preferir strafe esquerda
-                    # Se goal está à direita (angle < 0), preferir strafe direita
-                    prefer_left = angle > 0
+                    # Determinar lado de escape baseado no espaço disponível
+                    # Prioriza o lado com MAIS espaço para contornar o obstáculo
+                    escape_left = obs_left > obs_right
+
+                    # Stuck detection - contador de emergências consecutivas
+                    if not hasattr(self, '_emergency_counter'):
+                        self._emergency_counter = 0
+                        self._last_emergency_pose = None
 
                     # PARADA DE EMERGÊNCIA: obstáculo muito perto
                     if obs_front < 0.25:
-                        vx_cmd = -0.02  # Recuar minimamente
-                        omega_cmd = 0.0  # NÃO ROTACIONAR - apenas strafe
+                        self._emergency_counter += 1
 
-                        # Strafe na direção do goal, se livre
-                        if prefer_left and obs_left > 0.30:
-                            vy_cmd = 0.12
-                        elif not prefer_left and obs_right > 0.30:
-                            vy_cmd = -0.12
-                        elif obs_left > obs_right:
-                            vy_cmd = 0.12
+                        # Se preso por muito tempo (>30 ciclos), manobra agressiva de escape
+                        if self._emergency_counter > 30:
+                            vx_cmd = -0.08  # Ré mais forte
+                            omega_cmd = 0.5 if escape_left else -0.5  # Rotação forte
+                            vy_cmd = 0.15 if escape_left else -0.15  # Strafe forte
+                            self._log_throttled("tobox_stuck", f"[TO_BOX] PRESO! Escape agressivo: ré + rotação {'L' if escape_left else 'R'}", 0.5)
                         else:
-                            vy_cmd = -0.12
+                            # Escape normal: ré + rotação + strafe
+                            vx_cmd = -0.05  # Recuar
+                            # ROTACIONAR para virar na direção do escape
+                            omega_cmd = 0.35 if escape_left else -0.35
+                            vy_cmd = 0.12 if escape_left else -0.12
+                            self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, escape={'L' if escape_left else 'R'}", 1.0)
 
-                        self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, strafe={'L' if vy_cmd > 0 else 'R'}", 1.0)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
+                    else:
+                        # Reset contador quando não está em emergência
+                        self._emergency_counter = 0
 
                     # DESVIO PREVENTIVO: obstáculo próximo mas não crítico
-                    if obs_front < 0.45:
-                        # Avançar lentamente + strafe na direção do goal
-                        vx_cmd = 0.04
-                        omega_cmd = -angle * 0.3  # Correção leve de heading
-                        omega_cmd = max(-0.15, min(0.15, omega_cmd))
+                    if obs_front < 0.50:
+                        # Velocidade reduzida + rotação para contornar
+                        vx_cmd = 0.03
 
-                        # Strafe na direção preferida
-                        if prefer_left and obs_left > 0.35:
-                            vy_cmd = 0.08
-                        elif not prefer_left and obs_right > 0.35:
-                            vy_cmd = -0.08
-                        elif obs_left > obs_right:
-                            vy_cmd = 0.06
-                        else:
-                            vy_cmd = -0.06
+                        # Rotacionar na direção do escape (lado mais livre)
+                        omega_cmd = 0.25 if escape_left else -0.25
 
+                        # Strafe na direção do escape
+                        vy_cmd = 0.10 if escape_left else -0.10
+
+                        self._log_throttled("tobox_preventive", f"[TO_BOX] Preventivo: obs_front={obs_front:.2f}m, contornando {'L' if escape_left else 'R'}", 1.5)
                         vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
                         self._safe_move(vx_cmd, vy_cmd, omega_cmd)
                         continue
