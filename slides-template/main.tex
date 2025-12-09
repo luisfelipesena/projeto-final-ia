@@ -44,26 +44,29 @@
 \end{frame}
 
 %-------------------------------------------------
-%  SLIDE DE AGENDA
+%  SLIDE DE AGENDA (visual)
 %-------------------------------------------------
 \begin{frame}{Agenda}
-    \begin{table}
-        \begin{tabularx}{\textwidth}{|l|X|}
-            \hline
-            \textbf{Tempo} & \textbf{Conteúdo} \\
-            \hline
-            0--3 min  & \textbf{Problema e Desafios} -- Definição da tarefa e restrições \\
-            \hline
-            3--6 min  & \textbf{Percepção} -- LIDAR, Câmera RGB e Rede Neural (MobileNetV3) \\
-            \hline
-            6--9 min  & \textbf{Navegação Fuzzy} -- Regras linguísticas e funções de pertinência \\
-            \hline
-            9--12 min & \textbf{Planejamento A*} -- Grade de ocupação e busca de caminhos \\
-            \hline
-            12--15 min & \textbf{Arquitetura e Demo} -- Máquina de estados e demonstração \\
-            \hline
-        \end{tabularx}
-    \end{table}
+    \centering
+    \begin{tikzpicture}[scale=0.9]
+        % Timeline visual
+        \foreach \i/\t/\c/\lab in {
+            0/0--3min/blue!60/Problema,
+            1/3--6min/orange!60/Percepção,
+            2/6--9min/green!60/Fuzzy,
+            3/9--12min/purple!60/A*,
+            4/12--15min/red!60/Demo%
+        } {
+            \node[draw, rectangle, rounded corners, fill=\c, minimum width=2.2cm, minimum height=1.2cm, font=\small\bfseries] 
+                at (\i*2.8, 0) {\lab};
+            \node[font=\tiny, below] at (\i*2.8, -0.9) {\t};
+        }
+        % Arrows
+        \foreach \i in {0,...,3} {
+            \pgfmathsetmacro{\next}{\i+1}
+            \draw[->, thick, gray] (\i*2.8+1.15, 0) -- (\next*2.8-1.15, 0);
+        }
+    \end{tikzpicture}
 \end{frame}
 
 \setlength{\parskip}{0.8em}
@@ -73,79 +76,89 @@
 %=================================================
 
 \begin{frame}{O Problema}
-    \begin{columns}[T]
-        \begin{column}{0.55\textwidth}
-            \begin{itemize}
-                \item \textbf{Objetivo:} Coletar 15 cubos coloridos (vermelho, verde, azul)
-                \item \textbf{Ação:} Depositar cada cubo na caixa de cor correspondente
-                \item \textbf{Plataforma:} KUKA YouBot com rodas Mecanum (omnidirecional)
-                \item \textbf{Ambiente:} Arena 7m $\times$ 4m com obstáculos fixos
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.42\textwidth}
-            \centering
-            % Placeholder for arena image
-            \begin{tikzpicture}[scale=0.45]
-                % Arena
-                \draw[thick] (-3.5,-2) rectangle (3.5,2);
-                % Robot
-                \draw[fill=blue!30] (-2.5,0) rectangle (-2,0.4);
-                \node[below] at (-2.25,-0.1) {\tiny YouBot};
-                % Boxes
-                \draw[fill=green!50] (2.8,1.3) rectangle (3.3,1.7);
-                \draw[fill=blue!50] (2.8,-1.7) rectangle (3.3,-1.3);
-                \draw[fill=red!50] (3.2,-0.2) rectangle (3.5,0.2);
-                % Obstacles
-                \foreach \x/\y in {0/0, 1.5/-1, 1.5/1, -1.8/1.2, -0.8/0.6, -0.8/-0.6, -1.8/-1.2} {
-                    \draw[fill=brown!60] (\x-0.15,\y-0.15) rectangle (\x+0.15,\y+0.15);
-                }
-                % Cubes (small)
-                \foreach \x/\y in {-1,0.5, 0.5,0.8, -0.3,-0.5, 1,-0.3} {
-                    \draw[fill=red!80] (\x,\y) rectangle ++(0.08,0.08);
-                }
-                \foreach \x/\y in {-2,1, 0.2,0.3, -1.5,-0.8} {
-                    \draw[fill=green!80] (\x,\y) rectangle ++(0.08,0.08);
-                }
-                \foreach \x/\y in {-0.5,1.2, 1.2,0.5, -1.2,-0.3} {
-                    \draw[fill=blue!80] (\x,\y) rectangle ++(0.08,0.08);
-                }
-            \end{tikzpicture}
-        \end{column}
-    \end{columns}
+    \centering
+    \begin{tikzpicture}[scale=0.65]
+        % Arena grande
+        \draw[thick, fill=gray!10] (-4.5,-2.5) rectangle (4.5,2.5);
+        \node[font=\tiny] at (-3.8,2.2) {7m × 4m};
+        
+        % Robot
+        \draw[fill=blue!40, thick] (-3.5,-0.2) rectangle (-2.8,0.4);
+        \node[below, font=\tiny\bfseries] at (-3.15,-0.3) {YouBot};
+        
+        % Deposit boxes (large, prominent)
+        \draw[fill=green!60, thick] (3.5,1.4) rectangle (4.2,2.1);
+        \node[font=\scriptsize\bfseries, white] at (3.85,1.75) {G};
+        \draw[fill=blue!60, thick] (3.5,-2.1) rectangle (4.2,-1.4);
+        \node[font=\scriptsize\bfseries, white] at (3.85,-1.75) {B};
+        \draw[fill=red!60, thick] (4.0,-0.35) rectangle (4.4,0.35);
+        \node[font=\scriptsize\bfseries, white] at (4.2,0) {R};
+        
+        % Obstacles (wooden boxes)
+        \foreach \x/\y in {0.5/0, 2/-1.2, 2/1.2, -2.3/1.4, -1/0.7, -1/-0.7, -2.3/-1.4} {
+            \draw[fill=brown!60, thick] (\x-0.2,\y-0.2) rectangle (\x+0.2,\y+0.2);
+        }
+        
+        % Cubes scattered (small colored squares)
+        \foreach \x/\y in {-1.5,0.3, 0.8,0.9, -0.5,-0.8, 1.5,-0.5, -2.0,-0.5} {
+            \draw[fill=red!80] (\x,\y) rectangle ++(0.12,0.12);
+        }
+        \foreach \x/\y in {-0.3,1.5, 1.2,0.2, -1.8,0.8, 0.3,-1.2, -0.8,0.3} {
+            \draw[fill=green!80] (\x,\y) rectangle ++(0.12,0.12);
+        }
+        \foreach \x/\y in {0.5,1.6, -1.2,-1.3, 1.8,0.8, -0.1,0.7, 0.9,-0.9} {
+            \draw[fill=blue!80] (\x,\y) rectangle ++(0.12,0.12);
+        }
+        
+        % Arrows showing the task
+        \draw[->, ultra thick, green!60!black, dashed] (-2.0,0.8) .. controls (0,1.5) .. (3.4,1.75);
+        \draw[->, ultra thick, blue!60!black, dashed] (-1.2,-1.3) .. controls (1,-1.8) .. (3.4,-1.75);
+        \draw[->, ultra thick, red!60!black, dashed] (1.5,-0.5) .. controls (2.5,0) .. (3.9,0);
+        
+        % Legend
+        \node[draw, fill=white, rounded corners, font=\scriptsize, text width=2.5cm] at (-3.3,-1.8) {
+            \textcolor{brown!60}{$\blacksquare$} Obstáculos\\
+            \textcolor{red!80}{$\blacksquare$}\textcolor{green!80}{$\blacksquare$}\textcolor{blue!80}{$\blacksquare$} 15 Cubos
+        };
+    \end{tikzpicture}
+    
+    \vspace{0.5em}
+    {\Large \textbf{15 cubos} $\rightarrow$ \textbf{3 caixas} por cor}
 \end{frame}
 
-\begin{frame}{Restrições do Projeto}
+\begin{frame}{Restrições}
     \centering
     \begin{tikzpicture}[scale=0.85]
         % Center: YouBot
-        \node[draw, circle, fill=blue!30, minimum size=2.2cm, thick] (robot) at (0,0) {\small YouBot};
+        \node[draw, circle, fill=blue!30, minimum size=2.5cm, thick, font=\bfseries] (robot) at (0,0) {YouBot};
 
-        % Required (green boxes around robot)
-        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
-            (nn) at (-4,1.8) {\small Rede\\Neural};
-        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
-            (fuzzy) at (4,1.8) {\small Lógica\\Fuzzy};
-        \node[draw, rectangle, fill=green!30, rounded corners, text width=2.2cm, align=center, thick]
-            (sensors) at (0,3.5) {\small LIDAR +\\Câmera};
+        % Required (green boxes)
+        \node[draw, rectangle, fill=green!40, rounded corners, text width=2cm, align=center, thick, font=\small\bfseries]
+            (nn) at (-4.5,1.5) {CNN};
+        \node[draw, rectangle, fill=green!40, rounded corners, text width=2cm, align=center, thick, font=\small\bfseries]
+            (fuzzy) at (4.5,1.5) {Fuzzy};
+        \node[draw, rectangle, fill=green!40, rounded corners, text width=2cm, align=center, thick, font=\small\bfseries]
+            (sensors) at (0,3) {LIDAR};
 
         % Prohibited (red boxes, crossed out)
-        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
-            (gps) at (-4,-1.8) {\small \sout{GPS}};
-        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
-            (tele) at (0,-3) {\small \sout{Teleop}};
-        \node[draw, rectangle, fill=red!30, rounded corners, text width=2cm, align=center, thick]
-            (priv) at (4,-1.8) {\small \sout{Info Priv.}};
+        \node[draw, rectangle, fill=red!40, rounded corners, text width=1.8cm, align=center, thick, font=\small]
+            (gps) at (-4.5,-1.5) {\sout{GPS}};
+        \node[draw, rectangle, fill=red!40, rounded corners, text width=1.8cm, align=center, thick, font=\small]
+            (tele) at (0,-3) {\sout{Teleop}};
+        \node[draw, rectangle, fill=red!40, rounded corners, text width=1.8cm, align=center, thick, font=\small]
+            (priv) at (4.5,-1.5) {\sout{Posições}};
 
         % Arrows
-        \draw[->, thick, green!70!black, line width=1.5pt] (nn) -- (robot);
-        \draw[->, thick, green!70!black, line width=1.5pt] (fuzzy) -- (robot);
-        \draw[->, thick, green!70!black, line width=1.5pt] (sensors) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=1.5pt] (gps) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=1.5pt] (tele) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=1.5pt] (priv) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (nn) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (fuzzy) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (sensors) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=2pt] (gps) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=2pt] (tele) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=2pt] (priv) -- (robot);
 
-        % Legend
-        \node[below] at (0,-4.2) {\small \textcolor{green!70!black}{Verde = Obrigatório} \quad \textcolor{red!70}{Vermelho = Proibido}};
+        % Labels
+        \node[font=\scriptsize, green!70!black] at (-2.5,1.8) {obrigatório};
+        \node[font=\scriptsize, red!70] at (-2.5,-2) {proibido};
     \end{tikzpicture}
 \end{frame}
 
@@ -153,245 +166,211 @@
 \section{Sistema de Percepção}
 %=================================================
 
-\begin{frame}{Sensores do YouBot}
+\begin{frame}{Sensores}
     \centering
-    \begin{tikzpicture}[scale=0.75]
-        % Robot body
-        \draw[fill=gray!30, thick, rounded corners=3pt] (-1.3,-1.8) rectangle (1.3,1.8);
-        \node at (0,0) {YouBot};
+    \begin{tikzpicture}[scale=0.85]
+        % Robot body (top view)
+        \draw[fill=gray!20, thick, rounded corners=5pt] (-1.5,-2.2) rectangle (1.5,2.2);
+        \node[font=\small\bfseries] at (0,-0.5) {YouBot};
 
-        % LIDAR rays
-        \foreach \a in {-90,-72,...,90} {
-            \draw[red!60, ->, line width=0.7pt] (0,1.8) -- ++(\a:2.5);
+        % LIDAR rays (180 degrees from front)
+        \foreach \a in {-85,-70,-55,-40,-25,-10,5,20,35,50,65,80} {
+            \draw[red!60, ->, line width=1pt] (0,2.2) -- ++(\a+90:3);
         }
-        \node[red, font=\small\bfseries] at (0,4.6) {LIDAR 180°};
-        \node[red, font=\scriptsize] at (0,4.1) {(0.1--5.0m)};
+        \node[red!80, font=\bfseries] at (0,5.8) {LIDAR 180°};
+        \node[red!60, font=\scriptsize] at (0,5.3) {5m range};
 
-        % Camera FOV
-        \draw[blue!60, fill=blue!15, line width=1pt] (0,1.8) -- ++(55:2) arc (55:125:2) -- cycle;
-        \node[blue, font=\small\bfseries] at (0,3.3) {Câmera RGB};
+        % Camera FOV cone
+        \draw[blue!60, fill=blue!15, line width=1.5pt] (0,2.2) -- ++(55:2.5) arc (55:125:2.5) -- cycle;
+        \node[blue!80, font=\bfseries] at (0,4) {Câmera RGB};
 
-        % Distance sensors (front + rear)
-        \draw[green!70!black, thick, ->] (-0.8,1.8) -- ++(0,0.7);
-        \draw[green!70!black, thick, ->] (0,1.8) -- ++(0,0.7);
-        \draw[green!70!black, thick, ->] (0.8,1.8) -- ++(0,0.7);
-        \draw[green!70!black, thick, ->] (-0.8,-1.8) -- ++(0,-0.7);
-        \draw[green!70!black, thick, ->] (0,-1.8) -- ++(0,-0.7);
-        \draw[green!70!black, thick, ->] (0.8,-1.8) -- ++(0,-0.7);
-        \node[green!70!black, font=\small\bfseries] at (0,-3) {6 Dist. Sensors};
+        % Distance sensors (6 dots)
+        \foreach \x in {-0.8,0,0.8} {
+            \fill[green!70!black] (\x,2.2) circle (0.12);
+            \fill[green!70!black] (\x,-2.2) circle (0.12);
+        }
+        \node[green!70!black, font=\bfseries] at (0,-3) {6 Dist. Sensors};
 
-        % Legend box
-        \node[draw, rounded corners, fill=yellow!10, font=\scriptsize, text width=5cm, align=center] at (5,0) {
-            \textbf{Função}\\[0.2em]
-            \textcolor{red!70}{LIDAR} $\rightarrow$ Obstáculos\\
-            \textcolor{blue!70}{Câmera} $\rightarrow$ Cubos + CNN\\
-            \textcolor{green!60!black}{Dist.} $\rightarrow$ Colisão
+        % Legend box (right side)
+        \node[draw, rounded corners, fill=yellow!10, font=\scriptsize, text width=4cm, align=left] at (5.5,0) {
+            \textbf{Função:}\\[0.3em]
+            \textcolor{red!70}{$\bullet$ LIDAR} $\rightarrow$ Obstáculos\\[0.2em]
+            \textcolor{blue!70}{$\bullet$ Câmera} $\rightarrow$ Cubos + CNN\\[0.2em]
+            \textcolor{green!60!black}{$\bullet$ Dist.} $\rightarrow$ Colisão
         };
     \end{tikzpicture}
 \end{frame}
 
-\begin{frame}{Rede Neural -- MobileNetV3-Small}
-    \begin{columns}[T]
-        \begin{column}{0.55\textwidth}
-            \textbf{Arquitetura CNN}
-            \begin{itemize}
-                \item Backbone: MobileNetV3-Small (pré-treinado ImageNet)
-                \item Classificador customizado: 256 $\rightarrow$ 3 classes
-                \item Entrada: 64$\times$64 RGB normalizada
-                \item Saída: Probabilidades (vermelho/verde/azul)
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Treinamento (Transfer Learning)}
-            \begin{itemize}
-                \item Fase 1: Congelar backbone, treinar apenas classificador
-                \item Fase 2: Fine-tuning com learning rate reduzido
-                \item Acurácia validação: \textbf{99.4\%}
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.42\textwidth}
-            \centering
-            % CNN diagram
-            \begin{tikzpicture}[scale=0.6, every node/.style={scale=0.8}]
-                % Input
-                \draw[fill=blue!20] (0,0) rectangle (1,2);
-                \node[below] at (0.5,-0.2) {\tiny 64x64x3};
-
-                % Conv layers
-                \draw[fill=orange!30] (2,0.2) rectangle (2.8,1.8);
-                \draw[fill=orange!30] (3.2,0.4) rectangle (3.8,1.6);
-                \draw[fill=orange!30] (4.2,0.5) rectangle (4.6,1.5);
-                \node[below] at (3.4,-0.2) {\tiny MobileNetV3};
-
-                % FC layers
-                \draw[fill=green!30] (5.5,0.6) rectangle (6,1.4);
-                \draw[fill=green!30] (6.5,0.7) rectangle (6.8,1.3);
-
-                % Output
-                \draw[fill=red!30] (7.5,0.7) rectangle (8,1.3);
-                \node[below] at (7.75,-0.2) {\tiny 3 classes};
-
-                % Arrows
-                \draw[->, thick] (1.1,1) -- (1.9,1);
-                \draw[->, thick] (4.7,1) -- (5.4,1);
-                \draw[->, thick] (6.9,1) -- (7.4,1);
-            \end{tikzpicture}
-
-            \vspace{1em}
-            \begin{tikzpicture}
-                \node[draw, rounded corners, fill=green!20, text width=4cm, align=center, font=\small] {
-                    Fallback: Heurísticas HSV quando confiança $<$ 0.5
-                };
-            \end{tikzpicture}
-        \end{column}
-    \end{columns}
+\begin{frame}{CNN -- MobileNetV3}
+    \centering
+    \begin{tikzpicture}[scale=0.8]
+        % Pipeline visual
+        % Input image
+        \node[draw, rectangle, fill=blue!20, minimum width=1.5cm, minimum height=1.5cm] (input) at (0,0) {};
+        \draw[step=0.3, gray!50, thin] (-0.75,-0.75) grid (0.75,0.75);
+        \node[below, font=\scriptsize] at (0,-1) {64x64 RGB};
+        
+        % Arrow
+        \draw[->, ultra thick] (1.2,0) -- (2.3,0);
+        
+        % CNN block
+        \node[draw, rectangle, fill=orange!30, rounded corners, minimum width=2.5cm, minimum height=2cm, font=\small\bfseries, align=center] (cnn) at (4,0) {MobileNetV3\\Small};
+        \node[below, font=\scriptsize] at (4,-1.3) {pre-treinado};
+        
+        % Arrow
+        \draw[->, ultra thick] (5.7,0) -- (6.8,0);
+        
+        % Classifier
+        \node[draw, rectangle, fill=green!30, rounded corners, minimum width=1.8cm, minimum height=1.5cm, font=\small\bfseries] (class) at (8.2,0) {256-3};
+        \node[below, font=\scriptsize] at (8.2,-1) {Classificador};
+        
+        % Arrow
+        \draw[->, ultra thick] (9.5,0) -- (10.6,0);
+        
+        % Output - colored bars instead of nested tikz
+        \fill[red!70] (11.5,0.4) rectangle (12.5,0.7);
+        \fill[green!70] (11.5,-0.15) rectangle (12.5,0.15);
+        \fill[blue!70] (11.5,-0.7) rectangle (12.5,-0.4);
+        \draw[thick, rounded corners] (11.3,-0.9) rectangle (12.7,0.9);
+        \node[below, font=\scriptsize] at (12,-1.3) {Cor};
+        
+        % Accuracy badge
+        \node[draw, circle, fill=green!50, minimum size=1.5cm, font=\bfseries] at (8.2,2.5) {99.4\%};
+        \node[font=\scriptsize] at (8.2,1.5) {Acuracia};
+    \end{tikzpicture}
 \end{frame}
 
 %=================================================
 \section{Navegação Fuzzy}
 %=================================================
 
-\begin{frame}{Lógica Fuzzy -- Conceito}
+\begin{frame}{Lógica Fuzzy}
     \centering
-    \begin{columns}[T]
+    \begin{columns}[c]
         \begin{column}{0.48\textwidth}
             \centering
-            % Membership function diagram (larger)
-            \begin{tikzpicture}[scale=0.95]
+            % Membership functions (large, clear)
+            \begin{tikzpicture}[scale=1.1]
                 % Axes
-                \draw[->, thick] (0,0) -- (5.5,0) node[right] {dist(m)};
-                \draw[->, thick] (0,0) -- (0,2.8) node[above] {$\mu$};
+                \draw[->, thick] (0,0) -- (5,0) node[right, font=\small] {dist(m)};
+                \draw[->, thick] (0,0) -- (0,2.5) node[above, font=\small] {$\mu$};
 
-                % muito_perto
-                \draw[line width=2pt, red] (0,2.3) -- (0.5,2.3) -- (1.5,0);
-                \node[red, font=\scriptsize] at (0.7,2.6) {muito\_perto};
+                % muito_perto (red)
+                \draw[line width=3pt, red!70] (0,2) -- (0.5,2) -- (1.5,0);
+                \node[red!70, font=\scriptsize\bfseries] at (0.7,2.3) {muito\_perto};
 
-                % perto
-                \draw[line width=2pt, orange] (0.5,0) -- (1.5,2.3) -- (2.5,0);
-                \node[orange, font=\scriptsize] at (1.5,2.6) {perto};
+                % perto (orange)
+                \draw[line width=3pt, orange!80] (0.5,0) -- (1.5,2) -- (2.5,0);
+                \node[orange!80, font=\scriptsize\bfseries] at (1.5,2.3) {perto};
 
-                % longe
-                \draw[line width=2pt, green!70!black] (2,0) -- (3,2.3) -- (5.2,2.3);
-                \node[green!70!black, font=\scriptsize] at (4.2,2.6) {longe};
+                % longe (green)
+                \draw[line width=3pt, green!70!black] (2,0) -- (3,2) -- (4.8,2);
+                \node[green!70!black, font=\scriptsize\bfseries] at (4,2.3) {longe};
 
                 % Ticks
-                \foreach \x/\l in {0.8/0.25, 1.7/0.45, 3.2/1.0} {
-                    \draw (\x,0) -- (\x,-0.15) node[below, font=\tiny] {\l m};
-                }
+                \node[below, font=\tiny] at (0.8,-0.1) {0.25};
+                \node[below, font=\tiny] at (1.7,-0.1) {0.45};
+                \node[below, font=\tiny] at (3.2,-0.1) {1.0};
             \end{tikzpicture}
-
-            \vspace{0.3em}
-            {\footnotesize Funções de pertinência}
         \end{column}
         \begin{column}{0.48\textwidth}
             \centering
-            % Why Fuzzy - visual
-            \begin{tikzpicture}[scale=0.8]
-                % Crisp vs Fuzzy comparison
-                \node[draw, rectangle, fill=gray!20, minimum width=3cm, minimum height=1cm] (crisp) at (0,2) {Crisp};
-                \node[draw, rectangle, fill=blue!20, minimum width=3cm, minimum height=1cm, rounded corners] (fuzzy) at (0,0) {Fuzzy};
-
-                % Labels
-                \node[right, font=\scriptsize] at (1.8,2) {0 ou 1};
-                \node[right, font=\scriptsize] at (1.8,0) {0.0 -- 1.0};
-
-                % Arrow
-                \draw[->, thick, green!60!black] (0,1.3) -- (0,0.7) node[midway, right, font=\scriptsize] {suave};
+            % Why Fuzzy - big icons
+            \begin{tikzpicture}[scale=0.9]
+                % Smooth transitions
+                \node[draw, circle, fill=blue!30, minimum size=1.8cm, font=\scriptsize\bfseries, align=center] at (0,2) {Suave};
+                
+                % Handles uncertainty
+                \node[draw, circle, fill=orange!30, minimum size=1.8cm, font=\scriptsize\bfseries, align=center] at (2.5,2) {Incerteza};
+                
+                % Intuitive rules
+                \node[draw, circle, fill=green!30, minimum size=1.8cm, font=\scriptsize\bfseries, align=center] at (1.25,0) {Intuitivo};
+                
+                % Connecting lines
+                \draw[thick, gray!50] (0,1.1) -- (1.25,0.9);
+                \draw[thick, gray!50] (2.5,1.1) -- (1.25,0.9);
+                \draw[thick, gray!50] (0.9,2) -- (1.6,2);
             \end{tikzpicture}
-
-            \vspace{0.5em}
-            \footnotesize
-            \textbf{Vantagens:}\\
-            $\bullet$ Transições suaves\\
-            $\bullet$ Lida com incerteza\\
-            $\bullet$ Regras intuitivas
         \end{column}
     \end{columns}
 \end{frame}
 
-\begin{frame}{Regras Fuzzy de Navegação}
+\begin{frame}{Regras Fuzzy}
     \centering
-    \begin{tikzpicture}[scale=0.75]
-        % Scenario 1: Obstacle front - Reverse + Strafe
+    \begin{tikzpicture}[scale=0.85]
+        % 4 scenarios side by side
+        
+        % Scenario 1: Emergency - reverse + strafe
         \begin{scope}[shift={(0,0)}]
-            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
-            \node[font=\tiny] at (0.4,0.7) {R};
-            \draw[fill=red!50, thick] (0.2,1.8) rectangle (0.6,2.2);
-            \draw[->, ultra thick, red!70] (0.4,0) -- (0.4,-0.7);
-            \draw[->, thick, green!60!black] (0.8,0.7) -- (1.4,0.7);
-            \node[below, font=\scriptsize] at (0.4,-1) {Ré + Strafe};
+            \draw[thick, gray!50, rounded corners] (-1.2,-1.2) rectangle (1.2,1.8);
+            \draw[fill=blue!30, thick] (-0.3,-0.3) rectangle (0.3,0.5);
+            \node[font=\tiny] at (0,0.1) {R};
+            \draw[fill=red!60, thick] (-0.2,1) rectangle (0.2,1.4);
+            \draw[->, ultra thick, red!70] (0,-0.3) -- (0,-0.9);
+            \draw[->, thick, green!60!black] (0.3,0.1) -- (0.9,0.1);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.4) {Ré + Strafe};
+            \node[above, font=\tiny, red!70] at (0,1.6) {muito perto};
         \end{scope}
 
-        % Scenario 2: Obstacle left - Strafe right
+        % Scenario 2: Side obstacle - strafe away
         \begin{scope}[shift={(4,0)}]
-            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
-            \node[font=\tiny] at (0.4,0.7) {R};
-            \draw[fill=orange!50, thick] (-0.6,0.4) rectangle (-0.2,1);
-            \draw[->, thick, green!60!black] (0.8,0.7) -- (1.4,0.7);
-            \node[below, font=\scriptsize] at (0.4,-1) {Strafe direita};
+            \draw[thick, gray!50, rounded corners] (-1.2,-1.2) rectangle (1.2,1.8);
+            \draw[fill=blue!30, thick] (-0.3,-0.3) rectangle (0.3,0.5);
+            \node[font=\tiny] at (0,0.1) {R};
+            \draw[fill=orange!60, thick] (-1,0) rectangle (-0.6,0.6);
+            \draw[->, thick, green!60!black] (0.3,0.1) -- (0.9,0.1);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.4) {Strafe};
+            \node[above, font=\tiny, orange!70] at (0,1.6) {lateral};
         \end{scope}
 
-        % Scenario 3: Aligned with target - Forward
+        % Scenario 3: Aligned - forward fast
         \begin{scope}[shift={(8,0)}]
-            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
-            \node[font=\tiny] at (0.4,0.7) {R};
-            \draw[fill=green!50, thick] (0.2,2.5) rectangle (0.6,2.9);
-            \draw[->, ultra thick, green!60!black] (0.4,1.4) -- (0.4,2.3);
-            \node[below, font=\scriptsize] at (0.4,-1) {Avançar};
+            \draw[thick, gray!50, rounded corners] (-1.2,-1.2) rectangle (1.2,1.8);
+            \draw[fill=blue!30, thick] (-0.3,-0.3) rectangle (0.3,0.5);
+            \node[font=\tiny] at (0,0.1) {R};
+            \draw[fill=green!60, thick] (-0.15,1.2) rectangle (0.15,1.5);
+            \draw[->, ultra thick, green!60!black] (0,0.5) -- (0,1.1);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.4) {Avançar};
+            \node[above, font=\tiny, green!70!black] at (0,1.6) {alinhado};
         \end{scope}
 
-        % Scenario 4: Angle big - Rotate only
+        % Scenario 4: Big angle - rotate only
         \begin{scope}[shift={(12,0)}]
-            \draw[fill=blue!20, thick] (0,0) rectangle (0.8,1.4);
-            \node[font=\tiny] at (0.4,0.7) {R};
-            \draw[fill=green!50, thick] (1.8,2) rectangle (2.2,2.4);
-            \draw[->, thick, orange, rotate around={30:(0.4,0.7)}] (0.4,1.4) -- (0.4,2);
-            \node[below, font=\scriptsize] at (0.4,-1) {Rotacionar};
+            \draw[thick, gray!50, rounded corners] (-1.2,-1.2) rectangle (1.2,1.8);
+            \draw[fill=blue!30, thick] (-0.3,-0.3) rectangle (0.3,0.5);
+            \node[font=\tiny] at (0,0.1) {R};
+            \draw[fill=green!60, thick] (0.8,1) rectangle (1.1,1.3);
+            \draw[->, thick, orange!70] (0,0.5) arc (90:45:0.7);
+            \node[below, font=\scriptsize\bfseries] at (0,-1.4) {Rotacionar};
+            \node[above, font=\tiny, orange!70] at (0,1.6) {ângulo grande};
         \end{scope}
     \end{tikzpicture}
-
-    \vspace{0.5em}
-
-    % Rules table (compact)
-    \footnotesize
-    \begin{tabular}{|c|c|}
-    \hline
-    \textbf{SE} & \textbf{ENTÃO} \\
-    \hline
-    obstáculo muito perto & reverso + strafe \\
-    lateral bloqueado & strafe oposto \\
-    ângulo pequeno & avançar rápido \\
-    \hline
-    \end{tabular}
 \end{frame}
 
 %=================================================
 \section{Planejamento A*}
 %=================================================
 
-\begin{frame}{Algoritmo A* -- Visão Geral}
-    \begin{columns}[T]
-        \begin{column}{0.5\textwidth}
-            \textbf{Função de Custo}
-            \[ f(n) = g(n) + h(n) \]
-            \begin{itemize}
-                \item $g(n)$: Custo do início até $n$
-                \item $h(n)$: Heurística (Manhattan) até objetivo
-                \item $f(n)$: Custo total estimado
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Grade de Ocupação}
-            \begin{itemize}
-                \item Célula: 12cm $\times$ 12cm
-                \item Arena: 58 $\times$ 33 células
-                \item Atualizada por raycasting (LIDAR)
-            \end{itemize}
-        \end{column}
+\begin{frame}{Algoritmo A*}
+    \centering
+    \begin{columns}[c]
         \begin{column}{0.45\textwidth}
             \centering
-            % A* grid visualization
-            \begin{tikzpicture}[scale=0.5]
+            % Formula big and clear
+            {\Huge $f(n) = g(n) + h(n)$}
+            
+            \vspace{1em}
+            
+            \begin{tikzpicture}
+                \node[draw, rectangle, fill=blue!20, rounded corners, minimum width=3cm, minimum height=0.8cm] at (0,1) {$g$ = custo até aqui};
+                \node[draw, rectangle, fill=orange!20, rounded corners, minimum width=3cm, minimum height=0.8cm] at (0,0) {$h$ = heurística};
+                \node[draw, rectangle, fill=green!20, rounded corners, minimum width=3cm, minimum height=0.8cm] at (0,-1) {$f$ = total};
+            \end{tikzpicture}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \centering
+            % A* grid visualization (larger)
+            \begin{tikzpicture}[scale=0.7]
                 % Grid
                 \foreach \x in {0,1,...,8} {
                     \draw[gray!30] (\x,0) -- (\x,6);
@@ -400,163 +379,119 @@
                     \draw[gray!30] (0,\y) -- (8,\y);
                 }
 
-                % Obstacles (inflated)
-                \fill[brown!60] (3,2) rectangle (5,4);
+                % Obstacles
+                \fill[brown!50] (3,2) rectangle (5,4);
 
                 % Start
                 \fill[green!70] (1,1) rectangle (2,2);
-                \node at (1.5,1.5) {\tiny S};
+                \node[font=\bfseries] at (1.5,1.5) {S};
 
                 % Goal
                 \fill[red!70] (7,5) rectangle (8,6);
-                \node at (7.5,5.5) {\tiny G};
+                \node[font=\bfseries, white] at (7.5,5.5) {G};
 
                 % Path
-                \draw[blue!70, line width=2pt, ->] (1.5,1.5) -- (1.5,2.5) -- (2.5,3.5) -- (2.5,4.5) -- (3.5,5.5) -- (5.5,5.5) -- (7.5,5.5);
+                \draw[blue!70, line width=3pt, ->] (1.5,1.5) -- (1.5,2.5) -- (2.5,3.5) -- (2.5,4.5) -- (3.5,5.5) -- (5.5,5.5) -- (7.5,5.5);
 
-                % Legend
-                \node[below] at (4,-0.5) {\tiny Caminho A*};
+                % Waypoints
+                \foreach \x/\y in {1.5/2.5, 2.5/3.5, 2.5/4.5, 3.5/5.5, 5.5/5.5} {
+                    \fill[blue!70] (\x,\y) circle (0.15);
+                }
             \end{tikzpicture}
         \end{column}
     \end{columns}
 \end{frame}
 
 \begin{frame}{Inflação de Obstáculos}
-    \begin{columns}[T]
-        \begin{column}{0.5\textwidth}
-            \textbf{Por que inflar?}
-            \begin{itemize}
-                \item Robô não é um ponto
-                \item YouBot: 58cm $\times$ 38cm
-                \item Margem de segurança: \textbf{30cm}
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Obstáculos Conhecidos}
-            \begin{itemize}
-                \item 7 caixas de madeira (fixas)
-                \item 3 caixas de depósito (destinos)
-                \item Paredes da arena
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.45\textwidth}
-            \centering
-            % Inflation visualization
-            \begin{tikzpicture}[scale=0.8]
-                % Original obstacle
-                \fill[brown!70] (0,0) rectangle (1,1);
-                \node at (0.5,0.5) {\tiny Obs};
-
-                % Inflated area
-                \draw[red!50, dashed, thick] (-0.5,-0.5) rectangle (1.5,1.5);
-
-                % Robot
-                \draw[blue!50, fill=blue!20] (2.2,0.2) rectangle (2.8,0.8);
-                \node[right] at (2.9,0.5) {\tiny Robô};
-
-                % Arrow showing safe path
-                \draw[->, thick, green!70] (2.5,-0.5) -- (2.5,1.5);
-
-                % Labels
-                \node[below] at (0.5,-0.8) {\small Real};
-                \node[below, red] at (0.5,-1.3) {\small Inflado};
-            \end{tikzpicture}
-
-            \vspace{0.5em}
-            {\small A inflação garante que o centro do robô nunca colida}
-        \end{column}
-    \end{columns}
+    \centering
+    \begin{tikzpicture}[scale=1.2]
+        % Original obstacle
+        \fill[brown!70] (0,0) rectangle (1.5,1.5);
+        \node[font=\small\bfseries, white] at (0.75,0.75) {30cm};
+        
+        % Inflated area
+        \draw[red!50, dashed, line width=2pt] (-0.6,-0.6) rectangle (2.1,2.1);
+        \fill[red!20, opacity=0.5] (-0.6,-0.6) rectangle (2.1,2.1);
+        \fill[brown!70] (0,0) rectangle (1.5,1.5);
+        
+        % Robot showing why
+        \draw[blue!60, fill=blue!30, thick] (3.5,0.3) rectangle (4.5,1.2);
+        \node[font=\tiny\bfseries] at (4,0.75) {YouBot};
+        \node[font=\scriptsize] at (4,-0.2) {58×38cm};
+        
+        % Arrow showing safe path
+        \draw[->, ultra thick, green!60!black] (4,-1) -- (4,2.3);
+        \node[font=\scriptsize, green!60!black] at (4,2.6) {caminho seguro};
+        
+        % Dimension arrow
+        \draw[<->, thick] (-0.6,-1) -- (2.1,-1);
+        \node[font=\scriptsize, below] at (0.75,-1.1) {+30cm margem};
+        
+        % Label
+        \node[draw, rounded corners, fill=yellow!20, font=\scriptsize, text width=3cm, align=center] at (-2,0.75) {
+            Inflação = \\[0.2em]
+            \textbf{meia-diagonal}\\do robô
+        };
+    \end{tikzpicture}
 \end{frame}
 
 %=================================================
 \section{Arquitetura do Sistema}
 %=================================================
 
-\begin{frame}{Máquina de Estados Finita}
+\begin{frame}{Máquina de Estados}
     \centering
     \begin{tikzpicture}[
-        scale=0.9,
-        state/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=0.9cm, fill=blue!20, font=\small},
+        scale=1.1,
+        state/.style={draw, rectangle, rounded corners, minimum width=2.2cm, minimum height=1cm, thick, font=\small\bfseries},
         arrow/.style={->, thick, >=stealth}
     ]
-        % States
-        \node[state, fill=yellow!30] (search) at (0,0) {SEARCH};
-        \node[state, fill=orange!30] (approach) at (4,0) {APPROACH};
-        \node[state, fill=green!30] (grasp) at (8,0) {GRASP};
-        \node[state, fill=purple!30] (tobox) at (8,-2.5) {TO\_BOX};
-        \node[state, fill=red!30] (drop) at (4,-2.5) {DROP};
+        % States (circular layout)
+        \node[state, fill=yellow!40] (search) at (0,2) {SEARCH};
+        \node[state, fill=orange!40] (approach) at (4,2) {APPROACH};
+        \node[state, fill=green!40] (grasp) at (6,0) {GRASP};
+        \node[state, fill=purple!40] (tobox) at (4,-2) {TO\_BOX};
+        \node[state, fill=red!40] (drop) at (0,-2) {DROP};
 
-        % Transitions
-        \draw[arrow] (search) -- node[above, font=\scriptsize] {detectado} (approach);
-        \draw[arrow] (approach) -- node[above, font=\scriptsize] {perto} (grasp);
-        \draw[arrow] (grasp) -- node[right, font=\scriptsize] {agarrado} (tobox);
-        \draw[arrow] (tobox) -- node[above, font=\scriptsize] {chegou} (drop);
-        \draw[arrow] (drop) -- node[left, font=\scriptsize] {ok} (search);
+        % Transitions with icons
+        \draw[arrow, blue!70, line width=1.5pt] (search) -- node[above, font=\tiny] {detectado} (approach);
+        \draw[arrow, blue!70, line width=1.5pt] (approach) -- node[right, font=\tiny, pos=0.3] {perto} (grasp);
+        \draw[arrow, blue!70, line width=1.5pt] (grasp) -- node[right, font=\tiny] {ok} (tobox);
+        \draw[arrow, blue!70, line width=1.5pt] (tobox) -- node[below, font=\tiny] {chegou} (drop);
+        \draw[arrow, blue!70, line width=1.5pt] (drop) -- node[left, font=\tiny] {$\times$15} (search);
 
-        % Self-loop
-        \draw[arrow] (approach.north) .. controls (2,1.3) and (-2,1.3) .. node[above, font=\scriptsize] {perdido} (search.north);
+        % Self-loop (lost)
+        \draw[arrow, red!60, dashed] (approach.north) .. controls (2,3.5) and (-2,3.5) .. node[above, font=\tiny] {perdido} (search.north);
     \end{tikzpicture}
 \end{frame}
 
-\begin{frame}{Hierarquia de Prioridades}
-    \centering
-    \begin{columns}[c]
-        \begin{column}{0.45\textwidth}
-            \centering
-            % Priority pyramid (larger)
-            \begin{tikzpicture}[scale=1.0]
-                % Pyramid layers
-                \fill[red!70] (0,0) -- (2.5,0) -- (1.25,1.2) -- cycle;
-                \fill[orange!60] (-0.6,-1.2) -- (3.1,-1.2) -- (2.5,0) -- (0,0) -- cycle;
-                \fill[yellow!50] (-1.2,-2.4) -- (3.7,-2.4) -- (3.1,-1.2) -- (-0.6,-1.2) -- cycle;
-
-                % Labels
-                \node[font=\small\bfseries, white] at (1.25,0.4) {Paredes};
-                \node[font=\small\bfseries] at (1.25,-0.6) {Obstáculos};
-                \node[font=\small\bfseries] at (1.25,-1.8) {Cubos};
-
-                % Priority arrow
-                \draw[->, ultra thick] (4.5,1) -- (4.5,-2.2);
-                \node[right, font=\scriptsize, rotate=-90] at (4.8,-0.6) {Prioridade};
-            \end{tikzpicture}
-        \end{column}
-        \begin{column}{0.5\textwidth}
-            \footnotesize
-            \textbf{Segurança:}\\
-            1. Nunca colidir com paredes\\
-            2. Evitar empurrar cubos\\
-            3. Manter progresso
-
-            \vspace{0.5em}
-            \textbf{Recuperação (stuck $>$ 3s):}\\
-            $\rightarrow$ Escape para corredor seguro
-        \end{column}
-    \end{columns}
-\end{frame}
-
-\begin{frame}{Integração dos Componentes}
+\begin{frame}{Pipeline Completo}
     \centering
     \begin{tikzpicture}[
-        scale=0.7,
-        box/.style={draw, rectangle, rounded corners, minimum width=2.5cm, minimum height=0.8cm},
+        scale=0.8,
+        box/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=0.9cm, thick},
         arrow/.style={->, thick}
     ]
-        % Sensors
-        \node[box, fill=blue!20] (lidar) at (0,3) {LIDAR};
-        \node[box, fill=blue!20] (camera) at (0,1.5) {Câmera};
-        \node[box, fill=blue!20] (dist) at (0,0) {Dist. Sensors};
+        % Sensors (left)
+        \node[box, fill=blue!30, font=\scriptsize\bfseries] (lidar) at (0,2) {LIDAR};
+        \node[box, fill=blue!30, font=\scriptsize\bfseries] (camera) at (0,0) {Câmera};
+        \node[box, fill=blue!30, font=\scriptsize\bfseries] (dist) at (0,-2) {Dist. Sens.};
+        \node[above, font=\small\bfseries, blue!70] at (0,3) {SENSORES};
 
-        % Processing
-        \node[box, fill=orange!20] (grid) at (4,3) {Grade Ocupação};
-        \node[box, fill=orange!20] (cnn) at (4,1.5) {CNN (cor)};
-        \node[box, fill=orange!20] (fuzzy) at (4,0) {Fuzzy Nav};
+        % Processing (middle)
+        \node[box, fill=orange!30, font=\scriptsize\bfseries] (grid) at (5,2) {Grade};
+        \node[box, fill=orange!30, font=\scriptsize\bfseries] (cnn) at (5,0) {CNN};
+        \node[box, fill=orange!30, font=\scriptsize\bfseries] (fuzzy) at (5,-2) {Fuzzy};
+        \node[above, font=\small\bfseries, orange!70] at (5,3) {PROCESSO};
 
-        % Planning
-        \node[box, fill=green!20] (astar) at (8,2.25) {A* Planner};
-        \node[box, fill=green!20] (fsm) at (8,0.75) {FSM};
+        % Planning (right-middle)
+        \node[box, fill=green!30, font=\scriptsize\bfseries] (astar) at (10,1) {A*};
+        \node[box, fill=green!30, font=\scriptsize\bfseries] (fsm) at (10,-1) {FSM};
+        \node[above, font=\small\bfseries, green!70!black] at (10,3) {DECISÃO};
 
-        % Output
-        \node[box, fill=red!20] (motor) at (12,1.5) {Motores};
+        % Output (far right)
+        \node[box, fill=red!30, font=\scriptsize\bfseries] (motor) at (14,0) {Motores};
+        \node[above, font=\small\bfseries, red!70] at (14,3) {AÇÃO};
 
         % Arrows
         \draw[arrow] (lidar) -- (grid);
@@ -568,9 +503,6 @@
         \draw[arrow] (astar) -- (fsm);
         \draw[arrow] (fsm) -- (motor);
     \end{tikzpicture}
-
-    \vspace{1em}
-    {\small Pipeline completo: Sensores $\rightarrow$ Processamento $\rightarrow$ Planejamento $\rightarrow$ Atuação}
 \end{frame}
 
 %=================================================
@@ -579,230 +511,146 @@
 
 \begin{frame}{Sequência de Coleta}
     \centering
-    \begin{tikzpicture}[scale=0.65]
+    \begin{tikzpicture}[scale=0.55]
         % Step 1: Search
         \begin{scope}[shift={(0,0)}]
-            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
-            \draw[fill=blue!30] (-0.3,-0.5) rectangle (0.3,0.1);
-            \draw[red!60, dashed] (0,0.1) -- ++(30:1.5);
-            \draw[red!60, dashed] (0,0.1) -- ++(-30:1.5);
-            \draw[fill=red!70] (0.8,0.8) rectangle (1,1);
-            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {1. SEARCH};
-            \draw[->, thick, blue!60] (-0.5,-0.2) arc (180:90:0.3);
+            \draw[thick, gray!40, rounded corners] (-1.8,-1.3) rectangle (1.8,1.8);
+            \draw[fill=blue!40, thick] (-0.4,-0.4) rectangle (0.4,0.4);
+            % Scanning rays
+            \draw[red!50, thick] (0,0.4) -- (30:1.4);
+            \draw[red!50, thick] (0,0.4) -- (60:1.4);
+            \draw[red!50, thick] (0,0.4) -- (90:1.4);
+            \draw[red!50, thick] (0,0.4) -- (120:1.4);
+            \draw[red!50, thick] (0,0.4) -- (150:1.4);
+            \draw[fill=red!70] (1,1.2) rectangle (1.25,1.45);
+            \node[below, font=\small\bfseries] at (0,-1.6) {1. SEARCH};
         \end{scope}
 
         % Arrow
-        \draw[->, ultra thick, green!60!black] (2,0.3) -- (3,0.3);
+        \draw[->, ultra thick, green!60!black] (2.3,0.3) -- (3.2,0.3);
 
         % Step 2: Approach
-        \begin{scope}[shift={(5,0)}]
-            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
-            \draw[fill=blue!30] (-0.3,-0.3) rectangle (0.3,0.3);
-            \draw[fill=red!70] (0.6,0.5) rectangle (0.8,0.7);
-            \draw[->, thick, green!60!black] (0,0.3) -- (0.5,0.5);
-            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {2. APPROACH};
+        \begin{scope}[shift={(5.5,0)}]
+            \draw[thick, gray!40, rounded corners] (-1.8,-1.3) rectangle (1.8,1.8);
+            \draw[fill=blue!40, thick] (-0.4,-0.2) rectangle (0.4,0.6);
+            \draw[fill=red!70] (0.8,0.8) rectangle (1.05,1.05);
+            \draw[->, ultra thick, green!60!black] (0,0.6) -- (0.7,0.9);
+            \node[below, font=\small\bfseries] at (0,-1.6) {2. APPROACH};
         \end{scope}
 
         % Arrow
-        \draw[->, ultra thick, green!60!black] (7,0.3) -- (8,0.3);
+        \draw[->, ultra thick, green!60!black] (7.8,0.3) -- (8.7,0.3);
 
         % Step 3: Grasp
-        \begin{scope}[shift={(10,0)}]
-            \draw[thick, gray] (-1.5,-1) rectangle (1.5,1.5);
-            \draw[fill=blue!30] (-0.3,-0.1) rectangle (0.3,0.5);
-            % Arm extended
-            \draw[fill=gray!50, thick] (0,0.5) rectangle (0.15,1.1);
-            % Gripper
-            \draw[fill=orange!60, thick] (-0.1,1.1) rectangle (0.25,1.25);
-            \draw[fill=red!70] (0,0.85) rectangle (0.15,1);
-            \node[below, font=\scriptsize\bfseries] at (0,-1.3) {3. GRASP};
+        \begin{scope}[shift={(11,0)}]
+            \draw[thick, gray!40, rounded corners] (-1.8,-1.3) rectangle (1.8,1.8);
+            \draw[fill=blue!40, thick] (-0.4,0) rectangle (0.4,0.8);
+            % Arm
+            \draw[fill=gray!50, thick] (-0.1,0.8) rectangle (0.1,1.4);
+            % Gripper with cube
+            \draw[fill=orange!60] (-0.2,1.4) rectangle (0.2,1.55);
+            \draw[fill=red!70] (-0.08,1.2) rectangle (0.08,1.38);
+            \node[below, font=\small\bfseries] at (0,-1.6) {3. GRASP};
         \end{scope}
     \end{tikzpicture}
 
-    \vspace{0.8em}
+    \vspace{0.5em}
 
-    \begin{tikzpicture}[scale=0.65]
+    \begin{tikzpicture}[scale=0.55]
         % Step 4: TO_BOX
         \begin{scope}[shift={(0,0)}]
-            \draw[thick, gray] (-1.8,-1.2) rectangle (1.8,1.5);
-            \draw[fill=blue!30] (-1.2,0) rectangle (-0.6,0.6);
+            \draw[thick, gray!40, rounded corners] (-2,-1.5) rectangle (2,1.8);
+            \draw[fill=blue!40, thick] (-1.4,0) rectangle (-0.6,0.8);
             % Cube on robot
-            \draw[fill=red!70] (-1,0.6) rectangle (-0.8,0.8);
+            \draw[fill=red!70] (-1.1,0.8) rectangle (-0.9,1);
             % Target box
-            \draw[fill=red!40, thick] (1,0.2) rectangle (1.5,0.7);
+            \draw[fill=red!40, thick] (1.2,0.2) rectangle (1.8,0.8);
             % A* path
-            \draw[blue!60, thick, dashed, ->] (-0.9,0.3) -- (-0.2,0.3) -- (0.3,0.6) -- (0.9,0.45);
-            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {4. TO\_BOX (A*)};
+            \draw[blue!60, thick, dashed, ->] (-1,0.4) -- (0,0.4) -- (0.5,0.8) -- (1.1,0.5);
+            \node[below, font=\small\bfseries] at (0,-1.8) {4. TO\_BOX};
         \end{scope}
 
         % Arrow
-        \draw[->, ultra thick, green!60!black] (2.3,0.3) -- (3.3,0.3);
+        \draw[->, ultra thick, green!60!black] (2.5,0.3) -- (3.4,0.3);
 
         % Step 5: Drop
-        \begin{scope}[shift={(5.5,0)}]
-            \draw[thick, gray] (-1.5,-1.2) rectangle (1.5,1.5);
-            \draw[fill=blue!30] (-0.3,0) rectangle (0.3,0.6);
+        \begin{scope}[shift={(5.8,0)}]
+            \draw[thick, gray!40, rounded corners] (-1.8,-1.5) rectangle (1.8,1.8);
+            \draw[fill=blue!40, thick] (-0.4,0) rectangle (0.4,0.8);
             % Box
-            \draw[fill=red!40, thick] (0.5,-0.3) rectangle (1.2,0.5);
+            \draw[fill=red!40, thick] (0.6,-0.2) rectangle (1.4,0.6);
             % Cube dropping
-            \draw[fill=red!70] (0.7,0.1) rectangle (0.9,0.3);
-            \draw[->, thick, orange] (0.1,0.6) -- (0.65,0.2);
-            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {5. DROP};
+            \draw[fill=red!70] (0.85,0.15) rectangle (1.15,0.45);
+            \draw[->, thick, orange!70] (0.1,0.8) -- (0.8,0.3);
+            \node[below, font=\small\bfseries] at (0,-1.8) {5. DROP};
         \end{scope}
 
-        % Arrow (loop back)
-        \draw[->, ultra thick, green!60!black] (7.5,0.3) -- (8.5,0.3);
+        % Arrow
+        \draw[->, ultra thick, green!60!black] (8.1,0.3) -- (9,0.3);
 
         % Step 6: Repeat
-        \begin{scope}[shift={(10.5,0)}]
-            \draw[thick, gray] (-1.5,-1.2) rectangle (1.5,1.5);
-            \draw[fill=blue!30] (-0.3,-0.3) rectangle (0.3,0.3);
-            \draw[->, thick, blue!60] (0,0.3) arc (90:450:0.4);
-            \node[font=\scriptsize] at (0,0) {\tiny $\times$15};
-            \node[below, font=\scriptsize\bfseries] at (0,-1.5) {6. REPETIR};
+        \begin{scope}[shift={(11.3,0)}]
+            \draw[thick, gray!40, rounded corners] (-1.8,-1.5) rectangle (1.8,1.8);
+            \draw[fill=blue!40, thick] (-0.4,-0.2) rectangle (0.4,0.6);
+            \draw[->, thick, blue!60] (0,0.6) arc (90:450:0.5);
+            \node[font=\Large\bfseries] at (0,0.2) {$\times$15};
+            \node[below, font=\small\bfseries] at (0,-1.8) {6. REPETIR};
         \end{scope}
-    \end{tikzpicture}
-\end{frame}
-
-\begin{frame}{Visualização LIDAR + Câmera}
-    \centering
-    \begin{tikzpicture}[scale=0.8]
-        % Arena
-        \draw[thick] (-4,-2.5) rectangle (4,2.5);
-
-        % Robot at center
-        \draw[fill=blue!40, thick] (-0.4,-0.25) rectangle (0.4,0.25);
-        \node[font=\tiny] at (0,0) {YouBot};
-
-        % LIDAR rays (180 degrees)
-        \foreach \a in {-85,-70,-55,-40,-25,-10,5,20,35,50,65,80} {
-            \pgfmathsetmacro{\len}{1.5+rand*0.5}
-            \draw[red!50, thick] (0,0.25) -- ++(\a+90:\len);
-        }
-
-        % Obstacle detected by LIDAR
-        \draw[fill=brown!60] (1.2,1) rectangle (1.8,1.6);
-        \draw[red!80, ultra thick] (0,0.25) -- (1.3,1);
-
-        % Camera FOV cone
-        \draw[blue!40, fill=blue!10, thick] (0,0.25) -- ++(60:2.5) arc (60:120:2.5) -- cycle;
-
-        % Cube in camera view
-        \draw[fill=green!70] (-0.8,1.8) rectangle (-0.5,2.1);
-        \node[green!70!black, font=\scriptsize] at (-0.65,2.4) {Detectado!};
-
-        % Distance to cube
-        \draw[<->, thick, green!60!black] (0,0.25) -- (-0.65,1.8);
-        \node[green!60!black, font=\tiny, right] at (-0.3,1) {1.6m};
-
-        % Legend
-        \node[draw, fill=white, rounded corners, font=\scriptsize, text width=2.8cm, align=left] at (-2.8,-1.5) {
-            \textcolor{red!70}{---} LIDAR\\[0.1em]
-            \textcolor{blue!50}{$\triangle$} Câmera FOV\\[0.1em]
-            \textcolor{green!60!black}{$\bullet$} Cubo detectado
-        };
-
-        % Recognition box
-        \node[draw, fill=yellow!20, rounded corners, font=\scriptsize, text width=1.8cm, align=center] at (2.5,-1.5) {
-            CNN: Verde\\[0.1em]
-            Conf: 0.97
-        };
     \end{tikzpicture}
 \end{frame}
 
 \begin{frame}{Navegação A* em Ação}
     \centering
-    \begin{tikzpicture}[scale=0.55]
+    \begin{tikzpicture}[scale=0.7]
         % Arena grid
-        \draw[step=0.5, gray!20, thin] (-4,-2.5) grid (4,2.5);
-        \draw[thick] (-4,-2.5) rectangle (4,2.5);
+        \draw[step=0.5, gray!20, thin] (-4.5,-2.8) grid (4.5,2.8);
+        \draw[thick] (-4.5,-2.8) rectangle (4.5,2.8);
 
-        % Obstacles (wooden boxes) with inflation shown
+        % Obstacles with inflation
         \foreach \x/\y in {0.5/0, 2/-1.2, 2/1.2, -2.3/1.5, -1/-0.7, -1/0.7, -2.3/-1.5} {
-            \fill[brown!40, opacity=0.5] (\x-0.4,\y-0.4) rectangle (\x+0.4,\y+0.4);
-            \fill[brown!70] (\x-0.2,\y-0.2) rectangle (\x+0.2,\y+0.2);
+            \fill[brown!30, opacity=0.6] (\x-0.5,\y-0.5) rectangle (\x+0.5,\y+0.5);
+            \fill[brown!70] (\x-0.25,\y-0.25) rectangle (\x+0.25,\y+0.25);
         }
 
         % Deposit boxes
-        \draw[fill=green!50, thick] (3.2,1.3) rectangle (3.8,1.8);
-        \node[font=\tiny] at (3.5,1.55) {G};
-        \draw[fill=blue!50, thick] (3.2,-1.8) rectangle (3.8,-1.3);
-        \node[font=\tiny] at (3.5,-1.55) {B};
-        \draw[fill=red!50, thick] (3.5,-0.25) rectangle (4,0.25);
-        \node[font=\tiny] at (3.75,0) {R};
+        \draw[fill=green!60, thick] (3.5,1.5) rectangle (4.2,2.2);
+        \draw[fill=blue!60, thick] (3.5,-2.2) rectangle (4.2,-1.5);
+        \draw[fill=red!60, thick] (3.9,-0.35) rectangle (4.4,0.35);
 
-        % Robot position
-        \draw[fill=blue!60, thick] (-3.2,-0.2) rectangle (-2.6,0.2);
-        \node[font=\tiny, white] at (-2.9,0) {R};
+        % Robot
+        \draw[fill=blue!60, thick] (-3.5,-0.25) rectangle (-2.7,0.25);
+        \node[font=\tiny\bfseries, white] at (-3.1,0) {R};
 
-        % A* path to red box (avoiding obstacles)
-        \draw[blue!70, line width=2.5pt, ->]
-            (-2.6,0) -- (-1.5,0) -- (-1.5,1.5) -- (0.8,1.5) -- (0.8,0.5) -- (1.5,0.5) -- (2.5,0) -- (3.5,0);
+        % A* path to red box
+        \draw[blue!70, line width=3pt, ->]
+            (-2.7,0) -- (-1.6,0) -- (-1.6,1.7) -- (0.8,1.7) -- (0.8,0.6) -- (1.6,0.6) -- (2.8,0) -- (3.9,0);
 
         % Waypoints
-        \foreach \x/\y in {-1.5/0, -1.5/1.5, 0.8/1.5, 0.8/0.5, 1.5/0.5, 2.5/0} {
-            \fill[blue!70] (\x,\y) circle (0.1);
+        \foreach \x/\y in {-1.6/0, -1.6/1.7, 0.8/1.7, 0.8/0.6, 1.6/0.6, 2.8/0} {
+            \fill[blue!70] (\x,\y) circle (0.12);
         }
 
         % Legend
-        \node[draw, fill=white, rounded corners, font=\scriptsize, text width=2cm, align=left] at (-2.8,-2) {
-            \textcolor{brown!70}{$\blacksquare$} Obstáculo\\[0.1em]
-            \textcolor{brown!40}{$\square$} Inflação\\[0.1em]
-            \textcolor{blue!70}{---} A* path
+        \node[draw, fill=white, rounded corners, font=\scriptsize] at (-3,-2.2) {
+            \textcolor{brown!50}{$\square$} Inflação \quad
+            \textcolor{blue!70}{$\bullet$} Waypoints
         };
-
-        % Label
-        \node[font=\small\bfseries] at (0,3) {Caminho calculado evitando obstáculos};
     \end{tikzpicture}
-\end{frame}
-
-\begin{frame}{Resultados}
-    \begin{columns}[T]
-        \begin{column}{0.5\textwidth}
-            \textbf{Métricas da Rede Neural}
-            \begin{itemize}
-                \item Acurácia: 99.4\%
-                \item Formato: ONNX (portável)
-                \item Inferência: $<$ 10ms por frame
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Navegação}
-            \begin{itemize}
-                \item A* encontra caminhos válidos consistentemente
-                \item Fuzzy evita colisões em tempo real
-                \item Recuperação de travamento funcional
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.45\textwidth}
-            \textbf{Desafios Encontrados}
-            \begin{itemize}
-                \item Drift de odometria ao longo do tempo
-                \item Cubos empurrados bloqueando caminhos
-                \item Coordenação braço-navegação
-            \end{itemize}
-
-            \vspace{0.5em}
-            \textbf{Soluções}
-            \begin{itemize}
-                \item Sincronização periódica com ground truth
-                \item Rotas via corredores seguros
-                \item Máquina de estados bem definida
-            \end{itemize}
-        \end{column}
-    \end{columns}
 \end{frame}
 
 \begin{frame}{Demonstração}
     \centering
-    \vspace{2em}
+    \vspace{1em}
 
     \begin{tikzpicture}
-        \node[draw, rounded corners, fill=blue!10, text width=12cm, align=center, minimum height=5cm] {
-            \Huge \textbf{DEMO}
+        \node[draw, rounded corners, fill=blue!10, text width=14cm, align=center, minimum height=6cm] {
+            {\Huge \textbf{DEMO}}
 
+            \vspace{1.5em}
+            {\Large Execução do robô coletando cubos}
+            
             \vspace{1em}
-            \large Execução do robô coletando cubos no Webots
+            {\large Webots Simulator}
         };
     \end{tikzpicture}
 \end{frame}
@@ -812,48 +660,48 @@
 %=================================================
 
 \begin{frame}{Conclusão}
-    \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \textbf{Contribuições}
-            \begin{itemize}
-                \item Integração bem-sucedida de CNN + Fuzzy + A*
-                \item Sistema de navegação robusto e reativo
-                \item Arquitetura modular e extensível
-            \end{itemize}
-        \end{column}
-        \begin{column}{0.48\textwidth}
-            \textbf{Trabalhos Futuros}
-            \begin{itemize}
-                \item SLAM para melhor localização
-                \item Planejamento com obstáculos dinâmicos
-                \item Otimização da ordem de coleta
-            \end{itemize}
-        \end{column}
-    \end{columns}
-
-    \vspace{1.5em}
     \centering
-    \begin{tikzpicture}
-        \node[draw, rounded corners, fill=green!20, text width=10cm, align=center] {
-            \large \textbf{Obrigado!}
-
-            \vspace{0.3em}
-            Perguntas?
+    \begin{tikzpicture}[scale=0.9]
+        % Three pillars
+        \node[draw, rectangle, rounded corners, fill=blue!30, minimum width=3.5cm, minimum height=2.5cm, font=\small\bfseries, align=center] (cnn) at (0,0) {CNN\\[0.3em]\small 99.4\% acc};
+        
+        \node[draw, rectangle, rounded corners, fill=orange!30, minimum width=3.5cm, minimum height=2.5cm, font=\small\bfseries, align=center] (fuzzy) at (5,0) {Fuzzy\\[0.3em]\small Navegação\\reativa};
+        
+        \node[draw, rectangle, rounded corners, fill=green!30, minimum width=3.5cm, minimum height=2.5cm, font=\small\bfseries, align=center] (astar) at (10,0) {A*\\[0.3em]\small Planejamento\\global};
+        
+        % Integration arrow
+        \draw[->, ultra thick, purple!70] (1.8,0) -- (3.2,0);
+        \draw[->, ultra thick, purple!70] (6.8,0) -- (8.2,0);
+        
+        % Result
+        \node[draw, rectangle, rounded corners, fill=purple!20, minimum width=12cm, minimum height=1.5cm, font=\large\bfseries] at (5,-3) {
+            Integração bem-sucedida $\rightarrow$ Robô autônomo funcional
         };
+        
+        \draw[->, ultra thick, purple!70] (5,-1.5) -- (5,-2.2);
     \end{tikzpicture}
 \end{frame}
 
-%-------------------------------------------------
-%  SLIDE DE REFERÊNCIAS
-%-------------------------------------------------
-\begin{frame}{Referências}
-    \small
-    \begin{itemize}
-        \item Hart, P. E., Nilsson, N. J., \& Raphael, B. (1968). \textit{A Formal Basis for the Heuristic Determination of Minimum Cost Paths}
-        \item Zadeh, L. A. (1965). \textit{Fuzzy Sets} -- Information and Control
-        \item Howard, A., et al. (2019). \textit{Searching for MobileNetV3}
-        \item Elfes, A. (1989). \textit{Using Occupancy Grids for Mobile Robot Perception and Navigation}
-    \end{itemize}
+\begin{frame}[plain]
+    \centering
+    \vspace{3em}
+    
+    {\Huge \textbf{Obrigado!}}
+    
+    \vspace{2em}
+    
+    {\Large Perguntas?}
+    
+    \vspace{3em}
+    
+    \begin{tikzpicture}
+        \node[draw, rounded corners, fill=gray!10, text width=8cm, align=center, font=\small] {
+            \textbf{Referências Principais}\\[0.5em]
+            Hart et al. (1968) -- A*\\
+            Zadeh (1965) -- Fuzzy Sets\\
+            Howard et al. (2019) -- MobileNetV3
+        };
+    \end{tikzpicture}
 \end{frame}
 
 \end{document}
