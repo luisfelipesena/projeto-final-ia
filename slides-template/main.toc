@@ -1,8 +1,9 @@
 \babel@toc {portuguese}{}\relax 
 \beamer@sectionintoc {1}{Problema e Desafios}{3}{0}{1}
 \beamer@sectionintoc {2}{Sistema de Percepção}{5}{0}{2}
-\beamer@sectionintoc {3}{Navegação Fuzzy}{7}{0}{3}
-\beamer@sectionintoc {4}{Planejamento A*}{9}{0}{4}
-\beamer@sectionintoc {5}{Arquitetura do Sistema}{11}{0}{5}
-\beamer@sectionintoc {6}{Resultados e Demo}{13}{0}{6}
-\beamer@sectionintoc {7}{Conclusão}{16}{0}{7}
+\beamer@sectionintoc {3}{Navegação Fuzzy}{8}{0}{3}
+\beamer@sectionintoc {4}{Planejamento A*}{10}{0}{4}
+\beamer@sectionintoc {5}{Arquitetura do Sistema}{12}{0}{5}
+\beamer@sectionintoc {6}{Resultados e Demo}{14}{0}{6}
+\beamer@sectionintoc {7}{Limitações}{17}{0}{7}
+\beamer@sectionintoc {8}{Conclusão}{18}{0}{8}

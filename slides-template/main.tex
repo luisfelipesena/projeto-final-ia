@@ -166,37 +166,137 @@
 \section{Sistema de Percepção}
 %=================================================
 
-\begin{frame}{Sensores}
+\begin{frame}{Sensores do YouBot}
     \centering
-    \begin{tikzpicture}[scale=0.85]
-        % Robot body (top view)
-        \draw[fill=gray!20, thick, rounded corners=5pt] (-1.5,-2.2) rectangle (1.5,2.2);
-        \node[font=\small\bfseries] at (0,-0.5) {YouBot};
+    \begin{columns}[c]
+        \begin{column}{0.55\textwidth}
+            \centering
+            \begin{tikzpicture}[scale=0.75]
+                % Robot body (top view) - more detailed
+                \draw[fill=gray!20, thick, rounded corners=5pt] (-1.8,-2.5) rectangle (1.8,2.5);
+                \node[font=\small\bfseries] at (0,0) {YouBot};
+                \node[font=\tiny] at (0,-0.5) {58×38cm};
 
-        % LIDAR rays (180 degrees from front)
-        \foreach \a in {-85,-70,-55,-40,-25,-10,5,20,35,50,65,80} {
-            \draw[red!60, ->, line width=1pt] (0,2.2) -- ++(\a+90:3);
-        }
-        \node[red!80, font=\bfseries] at (0,5.8) {LIDAR 180°};
-        \node[red!60, font=\scriptsize] at (0,5.3) {5m range};
+                % Wheels (mecanum)
+                \draw[fill=gray!50, thick] (-2,-2) rectangle (-1.8,-1);
+                \draw[fill=gray!50, thick] (-2,1) rectangle (-1.8,2);
+                \draw[fill=gray!50, thick] (1.8,-2) rectangle (2,-1);
+                \draw[fill=gray!50, thick] (1.8,1) rectangle (2,2);
 
-        % Camera FOV cone
-        \draw[blue!60, fill=blue!15, line width=1.5pt] (0,2.2) -- ++(55:2.5) arc (55:125:2.5) -- cycle;
-        \node[blue!80, font=\bfseries] at (0,4) {Câmera RGB};
+                % LIDAR rays (180 degrees from front)
+                \foreach \a in {-85,-70,-55,-40,-25,-10,5,20,35,50,65,80} {
+                    \draw[red!50, ->, line width=0.8pt] (0,2.5) -- ++(\a+90:2.8);
+                }
+                \node[red!80, font=\scriptsize\bfseries] at (0,5.8) {LIDAR 180°};
+                \node[red!60, font=\tiny] at (0,5.4) {180 raios | 5m};
 
-        % Distance sensors (6 dots)
-        \foreach \x in {-0.8,0,0.8} {
-            \fill[green!70!black] (\x,2.2) circle (0.12);
-            \fill[green!70!black] (\x,-2.2) circle (0.12);
-        }
-        \node[green!70!black, font=\bfseries] at (0,-3) {6 Dist. Sensors};
+                % Camera FOV cone
+                \draw[blue!50, fill=blue!10, line width=1pt] (0,2.5) -- ++(60:2) arc (60:120:2) -- cycle;
+                \node[blue!70, font=\scriptsize\bfseries] at (0,4.2) {Câmera};
 
-        % Legend box (right side)
-        \node[draw, rounded corners, fill=yellow!10, font=\scriptsize, text width=4cm, align=left] at (5.5,0) {
-            \textbf{Função:}\\[0.3em]
-            \textcolor{red!70}{$\bullet$ LIDAR} $\rightarrow$ Obstáculos\\[0.2em]
-            \textcolor{blue!70}{$\bullet$ Câmera} $\rightarrow$ Cubos + CNN\\[0.2em]
-            \textcolor{green!60!black}{$\bullet$ Dist.} $\rightarrow$ Colisão
+                % Front distance sensors (3)
+                \fill[green!70!black] (-0.9,2.5) circle (0.1);
+                \fill[green!70!black] (0,2.5) circle (0.1);
+                \fill[green!70!black] (0.9,2.5) circle (0.1);
+
+                % Rear distance sensors (3)
+                \fill[green!70!black] (-0.9,-2.5) circle (0.1);
+                \fill[green!70!black] (0,-2.5) circle (0.1);
+                \fill[green!70!black] (0.9,-2.5) circle (0.1);
+
+                % Lateral sensors (NEW)
+                \fill[purple!70] (-1.8,0) circle (0.1);
+                \fill[purple!70] (1.8,0) circle (0.1);
+                \draw[purple!50, ->, line width=0.8pt] (-1.8,0) -- (-3,0);
+                \draw[purple!50, ->, line width=0.8pt] (1.8,0) -- (3,0);
+
+                % Labels
+                \node[green!60!black, font=\tiny] at (0,3) {3 front};
+                \node[green!60!black, font=\tiny] at (0,-3) {3 rear};
+                \node[purple!60, font=\tiny, rotate=90] at (-2.5,0) {lateral};
+                \node[purple!60, font=\tiny, rotate=-90] at (2.5,0) {lateral};
+            \end{tikzpicture}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \begin{tikzpicture}[scale=0.9]
+                % LIDAR specs
+                \node[draw, rounded corners, fill=red!10, font=\scriptsize, text width=4.5cm, align=left] at (0,3) {
+                    \textbf{\textcolor{red!70}{LIDAR}}\\[0.2em]
+                    $\bullet$ 180 raios, FOV 180°\\
+                    $\bullet$ Range: 0.1--5.0m\\
+                    $\bullet$ Atualiza: 32Hz\\
+                    $\bullet$ Constrói grade ocupação
+                };
+
+                % Camera specs
+                \node[draw, rounded corners, fill=blue!10, font=\scriptsize, text width=4.5cm, align=left] at (0,0.8) {
+                    \textbf{\textcolor{blue!70}{Câmera RGB}}\\[0.2em]
+                    $\bullet$ 320×240 pixels\\
+                    $\bullet$ Recognition API\\
+                    $\bullet$ Entrada para CNN
+                };
+
+                % Distance sensors specs
+                \node[draw, rounded corners, fill=green!10, font=\scriptsize, text width=4.5cm, align=left] at (0,-1.3) {
+                    \textbf{\textcolor{green!60!black}{Dist. Sensors}}\\[0.2em]
+                    $\bullet$ 6 frontais/traseiros\\
+                    $\bullet$ 2 laterais (novos)\\
+                    $\bullet$ Range: 5cm--2m
+                };
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Recognition API do Webots}
+    \centering
+    \begin{tikzpicture}[scale=0.75]
+        % Camera sensor
+        \node[draw, rectangle, fill=blue!30, rounded corners, minimum width=2cm, minimum height=1.5cm, font=\small\bfseries] (cam) at (0,0) {Câmera};
+
+        % Arrow
+        \draw[->, ultra thick] (1.3,0) -- (2.5,0);
+
+        % Recognition module
+        \node[draw, rectangle, fill=orange!30, rounded corners, minimum width=3cm, minimum height=2cm, font=\small\bfseries, align=center] (recog) at (4.5,0) {Recognition\\API};
+
+        % Arrow
+        \draw[->, ultra thick] (6.3,0) -- (7.5,0);
+
+        % Output structure
+        \node[draw, rectangle, fill=green!20, rounded corners, minimum width=4cm, minimum height=3cm, font=\scriptsize, align=left, text width=3.5cm] (output) at (10,0) {
+            \textbf{WbCameraRecognitionObject:}\\[0.3em]
+            $\bullet$ \texttt{position[3]} (x,y,z)\\
+            $\bullet$ \texttt{size[2]} (w,h)\\
+            $\bullet$ \texttt{colors[]} (RGB)\\
+            $\bullet$ \texttt{model} (nome)
+        };
+
+        % Explanation boxes below
+        \node[draw, rounded corners, fill=yellow!15, font=\scriptsize, text width=4cm, align=center] at (0,-2.5) {
+            \textbf{Entrada:}\\
+            Imagem RGB da cena\\
+            (320×240 pixels)
+        };
+
+        \node[draw, rounded corners, fill=yellow!15, font=\scriptsize, text width=4cm, align=center] at (4.5,-2.5) {
+            \textbf{Processo:}\\
+            Segmentação por\\
+            \texttt{recognitionColors}\\
+            definidos nos objetos
+        };
+
+        \node[draw, rounded corners, fill=yellow!15, font=\scriptsize, text width=4cm, align=center] at (10,-2.5) {
+            \textbf{Saída:}\\
+            Posição relativa,\\
+            cor e bounding box\\
+            de cada objeto
+        };
+
+        % Note
+        \node[draw, rounded corners, fill=red!10, font=\scriptsize, text width=10cm, align=center] at (5,-4.5) {
+            \textbf{Nota:} A Recognition API do Webots usa informação do simulador (ground truth),\\
+            por isso usamos CNN própria para classificação de cor -- requisito do projeto
         };
     \end{tikzpicture}
 \end{frame}
@@ -209,31 +309,31 @@
         \node[draw, rectangle, fill=blue!20, minimum width=1.5cm, minimum height=1.5cm] (input) at (0,0) {};
         \draw[step=0.3, gray!50, thin] (-0.75,-0.75) grid (0.75,0.75);
         \node[below, font=\scriptsize] at (0,-1) {64x64 RGB};
-        
+
         % Arrow
         \draw[->, ultra thick] (1.2,0) -- (2.3,0);
-        
+
         % CNN block
         \node[draw, rectangle, fill=orange!30, rounded corners, minimum width=2.5cm, minimum height=2cm, font=\small\bfseries, align=center] (cnn) at (4,0) {MobileNetV3\\Small};
         \node[below, font=\scriptsize] at (4,-1.3) {pre-treinado};
-        
+
         % Arrow
         \draw[->, ultra thick] (5.7,0) -- (6.8,0);
-        
+
         % Classifier
         \node[draw, rectangle, fill=green!30, rounded corners, minimum width=1.8cm, minimum height=1.5cm, font=\small\bfseries] (class) at (8.2,0) {256-3};
         \node[below, font=\scriptsize] at (8.2,-1) {Classificador};
-        
+
         % Arrow
         \draw[->, ultra thick] (9.5,0) -- (10.6,0);
-        
+
         % Output - colored bars instead of nested tikz
         \fill[red!70] (11.5,0.4) rectangle (12.5,0.7);
         \fill[green!70] (11.5,-0.15) rectangle (12.5,0.15);
         \fill[blue!70] (11.5,-0.7) rectangle (12.5,-0.4);
         \draw[thick, rounded corners] (11.3,-0.9) rectangle (12.7,0.9);
         \node[below, font=\scriptsize] at (12,-1.3) {Cor};
-        
+
         % Accuracy badge
         \node[draw, circle, fill=green!50, minimum size=1.5cm, font=\bfseries] at (8.2,2.5) {99.4\%};
         \node[font=\scriptsize] at (8.2,1.5) {Acuracia};
@@ -651,6 +751,50 @@
             
             \vspace{1em}
             {\large Webots Simulator}
+        };
+    \end{tikzpicture}
+\end{frame}
+
+%=================================================
+\section{Limitações}
+%=================================================
+
+\begin{frame}{Limitações dos Algoritmos}
+    \centering
+    \begin{tikzpicture}[scale=0.85]
+        % A* box
+        \node[draw, rectangle, rounded corners, fill=green!20, minimum width=4.5cm, minimum height=3.5cm] at (0,0) {};
+        \node[font=\bfseries, green!60!black] at (0,1.4) {A*};
+        \node[font=\scriptsize, text width=4cm, align=left] at (0,0) {
+            $\bullet$ Caminhos próximos a obstáculos\\[0.2em]
+            $\bullet$ Muitos nós redundantes\\[0.2em]
+            $\bullet$ Suavização limitada\\[0.2em]
+            $\bullet$ Lento em mapas grandes
+        };
+
+        % Fuzzy box
+        \node[draw, rectangle, rounded corners, fill=orange!20, minimum width=4.5cm, minimum height=3.5cm] at (5.5,0) {};
+        \node[font=\bfseries, orange!70] at (5.5,1.4) {Fuzzy};
+        \node[font=\scriptsize, text width=4cm, align=left] at (5.5,0) {
+            $\bullet$ Oscilações em navegação\\[0.2em]
+            $\bullet$ Mínimos locais\\[0.2em]
+            $\bullet$ Ponto cego $<$40cm\\[0.2em]
+            $\bullet$ Fraco em amb. dinâmicos
+        };
+
+        % CNN box
+        \node[draw, rectangle, rounded corners, fill=blue!20, minimum width=4.5cm, minimum height=3.5cm] at (11,0) {};
+        \node[font=\bfseries, blue!70] at (11,1.4) {CNN};
+        \node[font=\scriptsize, text width=4cm, align=left] at (11,0) {
+            $\bullet$ Trade-off precisão/latência\\[0.2em]
+            $\bullet$ Sensível a iluminação\\[0.2em]
+            $\bullet$ Requer pré-processamento\\[0.2em]
+            $\bullet$ Fallback HSV necessário
+        };
+
+        % Mitigation note
+        \node[draw, rounded corners, fill=purple!10, font=\scriptsize, text width=13cm, align=center] at (5.5,-2.8) {
+            \textbf{Mitigações:} Inflação de obstáculos (A*) | Sensores laterais + escape (Fuzzy) | HSV como fallback (CNN)
         };
     \end{tikzpicture}
 \end{frame}
