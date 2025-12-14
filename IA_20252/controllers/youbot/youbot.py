@@ -28,6 +28,171 @@ BOX_POSITIONS = {
     "red": (2.31, 0.01),
 }
 
+# ===== ROTAS BASE PARA NAVEGAÇÃO =====
+# Waypoints estratégicos para navegação segura
+# O robô deve seguir esses corredores para evitar obstáculos
+
+# Ponto inicial do robô (spawn)
+SPAWN_POSITION = (-3.91, 0.0)
+
+# Posições dos obstáculos para referência:
+# A = (0.6, 0.0)   - CENTRO (perigo principal!)
+# E = (-1.02, 0.75)  - Superior esquerdo
+# F = (-1.02, -0.74) - Inferior esquerdo
+# Corredor central entre E e F: y entre -0.5 e 0.5
+
+def get_route_to_box(current_pos, destination_color):
+    """
+    Retorna lista de waypoints para ir de current_pos até o box do destination_color.
+    
+    Estratégia CAR-LIKE com passagem COMPLETA de obstáculos:
+    - Ir RETO pelo corredor central até passar E/F
+    - INCLINAR para desviar
+    - MANTER inclinação até a RODA TRASEIRA passar o obstáculo (~30cm extra)
+    - Só então ALINHAR com o box
+    
+    Robô: ~58cm comprimento, ~38cm largura, roda traseira ~29cm do centro.
+    
+    Obstáculos:
+    - E: (-1.02, 0.75) - superior esquerdo
+    - F: (-1.02, -0.74) - inferior esquerdo  
+    - A: (0.6, 0.0) - central, raio ~0.25m
+    """
+    x, y = current_pos[0], current_pos[1]
+    waypoints = []
+    
+    box_pos = BOX_POSITIONS.get(destination_color)
+    if not box_pos:
+        return [current_pos]
+    
+    if destination_color == "blue":
+        # BLUE em (0.48, -1.62)
+        # Obstáculo F está em (-1.02, -0.74), borda direita em ~(-0.77, -0.74)
+        
+        # 1. Ir RETO pelo corredor central até PASSAR F (x > -0.5)
+        if x < -0.5:
+            waypoints.append((-0.45, 0.0))  # Passar borda de F
+        
+        # 2. Continuar RETO mais um pouco para roda traseira passar
+        waypoints.append((-0.15, 0.0))  # +30cm para roda traseira
+        
+        # 3. INCLINAR para SUL - início suave
+        waypoints.append((0.0, -0.35))
+        
+        # 4. MANTER inclinação descendo - andar RETO inclinado
+        waypoints.append((0.15, -0.70))
+        waypoints.append((0.25, -1.00))  # Continuar reto inclinado
+        
+        # 5. Agora alinhar com X do box
+        waypoints.append((0.35, -1.25))
+        waypoints.append((0.48, -1.35))  # Mesmo X do box
+        
+        # 6. Destino final
+        waypoints.append(box_pos)
+        
+    elif destination_color == "green":
+        # GREEN em (0.48, 1.58)
+        # Obstáculo E está em (-1.02, 0.75), borda direita em ~(-0.77, 0.75)
+        
+        # 1. Ir RETO pelo corredor central até PASSAR E (x > -0.5)
+        if x < -0.5:
+            waypoints.append((-0.45, 0.0))
+        
+        # 2. Continuar RETO mais um pouco para roda traseira passar
+        waypoints.append((-0.15, 0.0))
+        
+        # 3. INCLINAR para NORTE - início suave
+        waypoints.append((0.0, 0.35))
+        
+        # 4. MANTER inclinação subindo - andar RETO inclinado
+        waypoints.append((0.15, 0.70))
+        waypoints.append((0.25, 1.00))
+        
+        # 5. Agora alinhar com X do box
+        waypoints.append((0.35, 1.25))
+        waypoints.append((0.48, 1.35))
+        
+        # 6. Destino final
+        waypoints.append(box_pos)
+        
+    elif destination_color == "red":
+        # RED em (2.31, 0.01)
+        # Obstáculo A está em (0.6, 0.0), raio ~0.25m
+        # Borda: x de 0.35 a 0.85, y de -0.25 a 0.25
+        # Precisa passar x > 1.15 para roda traseira limpar
+        
+        # 1. Ir RETO pelo corredor central
+        if x < -0.5:
+            waypoints.append((-0.45, 0.0))
+        
+        # 2. Continuar RETO até perto de A
+        waypoints.append((0.0, 0.0))
+        
+        # 3. INCLINAR para desviar de A - escolher lado baseado em y
+        if y >= 0:
+            # Desviar por CIMA de A (y positivo)
+            waypoints.append((0.25, 0.45))   # Início da inclinação
+            waypoints.append((0.50, 0.55))   # MANTER inclinado passando A
+            waypoints.append((0.75, 0.55))   # Continuar RETO inclinado
+            waypoints.append((1.00, 0.50))   # Ainda inclinado
+            waypoints.append((1.25, 0.35))   # Roda traseira passou A!
+        else:
+            # Desviar por BAIXO de A (y negativo)
+            waypoints.append((0.25, -0.45))
+            waypoints.append((0.50, -0.55))
+            waypoints.append((0.75, -0.55))
+            waypoints.append((1.00, -0.50))
+            waypoints.append((1.25, -0.35))
+        
+        # 4. AGORA voltar ao centro gradualmente
+        waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
+        waypoints.append((1.85, 0.01))
+        
+        # 5. Alinhar reto com o box
+        waypoints.append((2.05, 0.01))
+        
+        # 6. Destino final
+        waypoints.append(box_pos)
+    
+    return waypoints
+
+
+def get_return_route(current_pos, from_color):
+    """
+    Retorna waypoints SIMPLES para voltar ao spawn.
+    O robô vai para FRENTE (não ré) - é mais seguro e simples.
+    
+    Estratégia: Sair do box → Centro → Spawn
+    """
+    _ = current_pos  # Não usado, mas mantido para assinatura
+    waypoints = []
+    
+    # 1. Primeiro, afastar-se do box (ir para o centro do mapa)
+    if from_color == "blue":
+        # Estava no BLUE (0.48, -1.62) - ir para norte
+        waypoints.append((0.30, -1.00))
+        waypoints.append((0.15, -0.50))
+        waypoints.append((0.0, 0.0))
+    elif from_color == "green":
+        # Estava no GREEN (0.48, 1.58) - ir para sul
+        waypoints.append((0.30, 1.00))
+        waypoints.append((0.15, 0.50))
+        waypoints.append((0.0, 0.0))
+    elif from_color == "red":
+        # Estava no RED (2.31, 0.01) - ir para oeste
+        waypoints.append((1.50, 0.0))
+        waypoints.append((1.00, 0.0))
+        waypoints.append((0.50, 0.0))
+        waypoints.append((0.0, 0.0))
+    
+    # 2. Do centro, ir para o spawn (reto para oeste)
+    waypoints.append((-0.50, 0.0))
+    waypoints.append((-1.50, 0.0))
+    waypoints.append((-2.50, 0.0))
+    waypoints.append(SPAWN_POSITION)
+    
+    return waypoints
+
 
 # Grade de ocupação para navegação baseada em odometria
 class OccupancyGrid:
@@ -148,6 +313,7 @@ class OccupancyGrid:
         return self.set(gx_hit, gy_hit, hit_state)
 
     def plan_path(self, start_world, goal_world):
+        """A* pathfinding com fallback para células bloqueadas."""
         start_cell = self.world_to_cell(*start_world)
         goal_cell = self.world_to_cell(*goal_world)
         if start_cell is None or goal_cell is None:
@@ -155,8 +321,21 @@ class OccupancyGrid:
         if start_cell == goal_cell:
             return []
 
+        # IMPORTANTE: Se a célula inicial está bloqueada, encontrar célula livre mais próxima
+        if self.get(*start_cell) == self.OBSTACLE:
+            start_cell = self._find_nearest_free_cell(start_cell)
+            if start_cell is None:
+                return []  # Não há célula livre próxima
+        
+        # Se a célula final está bloqueada (exceto BOX que é o destino), encontrar adjacente
+        goal_val = self.get(*goal_cell)
+        if goal_val == self.OBSTACLE:
+            goal_cell = self._find_nearest_free_cell(goal_cell)
+            if goal_cell is None:
+                return []
+
         def heuristic(a, b):
-            return abs(a[0] - b[0]) + abs(a[1] - b[1])
+            return math.hypot(a[0] - b[0], a[1] - b[1])  # Euclidean para 8-dir
 
         open_set = []
         heapq.heappush(open_set, (0, start_cell))
@@ -164,17 +343,41 @@ class OccupancyGrid:
         g_score = {start_cell: 0}
         goal = goal_cell
 
-        while open_set:
+        visited = set()
+        max_iterations = self.width * self.height  # Evitar loops infinitos
+        iterations = 0
+
+        while open_set and iterations < max_iterations:
+            iterations += 1
             _, current = heapq.heappop(open_set)
+            
+            if current in visited:
+                continue
+            visited.add(current)
+            
             if current == goal:
                 break
             cx, cy = current
-            for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+            # 8-directional movement for smoother paths
+            neighbors = [
+                (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1),
+                (cx + 1, cy + 1), (cx + 1, cy - 1), (cx - 1, cy + 1), (cx - 1, cy - 1)
+            ]
+            for nx, ny in neighbors:
                 if not self.in_bounds(nx, ny):
                     continue
-                if self.get(nx, ny) == self.OBSTACLE:
+                if (nx, ny) in visited:
                     continue
-                tentative_g = g_score[current] + 1
+                cell_val = self.get(nx, ny)
+                # Evitar OBSTACLE e BOX (exceto se for o goal)
+                if cell_val == self.OBSTACLE:
+                    continue
+                if cell_val == self.BOX and (nx, ny) != goal:
+                    continue
+                # Custo: 1.0 para ortogonal, 1.414 para diagonal
+                is_diag = abs(nx - cx) + abs(ny - cy) == 2
+                step_cost = 1.414 if is_diag else 1.0
+                tentative_g = g_score[current] + step_cost
                 neighbor = (nx, ny)
                 if tentative_g < g_score.get(neighbor, 1e9):
                     came_from[neighbor] = current
@@ -194,6 +397,21 @@ class OccupancyGrid:
                 break
         path_cells.reverse()
         return [self.cell_to_world(gx, gy) for gx, gy in path_cells]
+
+    def _find_nearest_free_cell(self, blocked_cell, max_radius=5):
+        """Encontra a célula FREE mais próxima de uma célula bloqueada."""
+        bx, by = blocked_cell
+        for r in range(1, max_radius + 1):
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    if abs(dx) != r and abs(dy) != r:
+                        continue  # Só borda do quadrado
+                    nx, ny = bx + dx, by + dy
+                    if self.in_bounds(nx, ny):
+                        val = self.get(nx, ny)
+                        if val != self.OBSTACLE and val != self.BOX:
+                            return (nx, ny)
+        return None
 
 
 def wrap_angle(angle):
@@ -434,17 +652,39 @@ class YouBotController:
             self.lidar.enable(self.time_step)
             self.lidar.enablePointCloud()
 
-        # Sensores de distância traseiros para detecção de colisão
+        # Lateral and Rear LiDARS
+        self.lidar_rear = self.robot.getDevice("lidar_rear")
+        if self.lidar_rear:
+            self.lidar_rear.enable(self.time_step)
+            self.lidar_rear.enablePointCloud()
+
+        self.lidar_left = self.robot.getDevice("lidar_left")
+        if self.lidar_left:
+            self.lidar_left.enable(self.time_step)
+            self.lidar_left.enablePointCloud()
+
+        self.lidar_right = self.robot.getDevice("lidar_right")
+        if self.lidar_right:
+            self.lidar_right.enable(self.time_step)
+            self.lidar_right.enablePointCloud()
+
+        # Sensores de distância traseiros
         self.ds_rear = self.robot.getDevice("ds_rear")
         self.ds_rear_left = self.robot.getDevice("ds_rear_left")
         self.ds_rear_right = self.robot.getDevice("ds_rear_right")
 
-        # Sensores de distância frontais para detecção durante APPROACH
+        # Sensores de distância laterais
+        self.ds_left = self.robot.getDevice("ds_left")
+        self.ds_right = self.robot.getDevice("ds_right")
+
+        # Sensores de distância frontais
         self.ds_front = self.robot.getDevice("ds_front")
         self.ds_front_left = self.robot.getDevice("ds_front_left")
         self.ds_front_right = self.robot.getDevice("ds_front_right")
 
+        # Habilitar todos os sensores de distância
         for ds in [self.ds_rear, self.ds_rear_left, self.ds_rear_right,
+                   self.ds_left, self.ds_right,
                    self.ds_front, self.ds_front_left, self.ds_front_right]:
             if ds:
                 ds.enable(self.time_step)
@@ -498,13 +738,15 @@ class YouBotController:
     # ===== Grid helpers =====
     def _seed_static_map(self):
         self.grid.fill_border(OccupancyGrid.OBSTACLE, static=True)
-        wall_inflate = 0.30  # Robot half-width (~0.29m) + safety margin for full body clearance
-        # Obstáculos fixos
+        # Inflação conservadora - confiamos no APF para desvio fino
+        # Robot ~0.58m x 0.38m, half-width ~0.19m, half-length ~0.29m
+        wall_inflate = 0.25  # Menor inflação = mais caminhos, APF cuida do resto
+        # Obstáculos fixos (WoodenBoxes ~0.5m x 0.5m, radius 0.25m)
         for ox, oy, radius in KNOWN_OBSTACLES:
             self.grid.fill_disk(ox, oy, radius + wall_inflate, OccupancyGrid.OBSTACLE, static=True)
-        # Caixas de depósito
+        # Caixas de depósito - marcar pequeno para A* chegar bem perto
         for pos in self.box_positions.values():
-            self.grid.fill_disk(pos[0], pos[1], 0.22, OccupancyGrid.BOX, static=True)
+            self.grid.fill_disk(pos[0], pos[1], 0.20, OccupancyGrid.BOX, static=True)
         print(
             f"[GRID] size=({self.grid.width}x{self.grid.height}) cell={self.grid.cell_size:.2f} "
             f"bounds=({self.grid.min_x:.2f},{self.grid.min_y:.2f})-({self.grid.max_x:.2f},{self.grid.max_y:.2f})"
@@ -550,7 +792,37 @@ class YouBotController:
         vy_adj = -math.sin(yaw) * dx_world + math.cos(yaw) * dy_world
         return vx_adj, vy_adj
 
+    def _move_ackermann(self, speed, steering_angle):
+        """
+        Executes an Ackermann-like movement using the omnidirectional base.
+        Constraint: vy = 0 (no strafing/skidding)
+        omega = (speed * tan(steering_angle)) / L
+        """
+        L = 0.4  # Approximate wheelbase
+        
+        # Limit steering angle
+        max_steer = math.radians(45)
+        steering_angle = max(-max_steer, min(max_steer, steering_angle))
+        
+        if abs(speed) < 0.001:
+            omega = 0.0
+        else:
+            omega = (speed * math.tan(steering_angle)) / L
+            
+        self.base.move(speed, 0.0, omega)
+
     def _safe_move(self, vx, vy, omega):
+        # Forward to ackermann if strafe is zero or negligible
+        if abs(vy) < 0.001:
+            # Reverse engineer steering angle from omega
+            # omega = speed * tan(delta) / L  => tan(delta) = omega * L / speed
+            L = 0.4
+            if abs(vx) > 0.001:
+                tan_delta = (omega * L) / vx
+                delta = math.atan(tan_delta)
+                self._move_ackermann(vx, delta)
+                return
+
         vals = [vx, vy, omega]
         safe = []
         for v in vals:
@@ -594,20 +866,75 @@ class YouBotController:
             return
         if any(math.isnan(v) for v in self.pose):
             return
-        yaw = self.pose[2]
-        origin = (self.pose[0], self.pose[1])
+            
+        robot_x, robot_y, robot_yaw = self.pose
+        origin = (robot_x, robot_y)
+        
         hit_changed = False
-        for r, angle in lidar_info["points"]:
-            local_x = r * math.cos(angle)
-            local_y = r * math.sin(angle)
-            wx = origin[0] + math.cos(yaw) * local_x - math.sin(yaw) * local_y
-            wy = origin[1] + math.sin(yaw) * local_x + math.cos(yaw) * local_y
+        
+        # Pre-calculate cos/sin for rotation
+        cy = math.cos(robot_yaw)
+        sy = math.sin(robot_yaw)
+        
+        for lx, ly in lidar_info["points"]:
+            # Transform from Robot Frame to World Frame
+            wx = robot_x + lx * cy - ly * sy
+            wy = robot_y + lx * sy + ly * cy
+            
             if math.isnan(wx) or math.isnan(wy):
                 continue
+                
+            # Raycast from robot center to hit point
             if self.grid.raycast(origin, (wx, wy), OccupancyGrid.OBSTACLE):
                 hit_changed = True
+                
         if hit_changed:
             self._path_dirty = True
+
+    def _get_pure_pursuit_point(self, lookahead=0.6):
+        """Encontra ponto no caminho atual para Pure Pursuit."""
+        if not self._waypoints:
+            return self.active_goal
+            
+        rx, ry, _ = self.pose
+        
+        # Encontrar ponto mais próximo no caminho
+        closest_dist = float('inf')
+        closest_idx = 0
+        for i, (wx, wy) in enumerate(self._waypoints):
+            d = math.hypot(wx - rx, wy - ry)
+            if d < closest_dist:
+                closest_dist = d
+                closest_idx = i
+                
+        # Procurar ponto à frente pela distância de lookahead
+        target = self._waypoints[-1] # Default: final
+        
+        for i in range(closest_idx, len(self._waypoints)):
+            wx, wy = self._waypoints[i]
+            d = math.hypot(wx - rx, wy - ry)
+            if d >= lookahead:
+                target = (wx, wy)
+                break
+                
+        return target
+
+    def _check_rear_safety(self, rear_info, margin=0.30):
+        """Verifica se a ré é segura usando LIDAR e sensores de distância."""
+        if not rear_info:
+            return True
+        
+        # Combinar leituras do LIDAR traseiro e sensores de distância
+        r = rear_info.get("rear", 2.0)
+        rl = rear_info.get("rear_left", 2.0)
+        rr = rear_info.get("rear_right", 2.0)
+        
+        # Margem mais tolerante para evitar falsos positivos
+        if r < margin * 0.8:  # Centro traseiro
+            return False
+        if rl < margin * 0.6 or rr < margin * 0.6:  # Cantos
+            return False
+        return True
 
     def _initial_pose(self):
         """Obtém pose inicial do nó do robô no Webots."""
@@ -736,67 +1063,105 @@ class YouBotController:
                 }
 
         if best:
-            self._log_throttled(
-                "recognition",
-                f"[RECOG] cor={best['color']} dist={best['distance']:.2f} ang={math.degrees(best['angle']):.1f}°",
-                interval=0.5,
-            )
+            # Reduced log frequency to avoid spam (interval 0.5 -> 10.0 or remove)
+            # Only log if specifically debugging
+            pass 
+            # self._log_throttled(
+            #    "recognition",
+            #    f"[RECOG] cor={best['color']} dist={best['distance']:.2f} ang={math.degrees(best['angle']):.1f}°",
+            #    interval=5.0,
+            # )
 
         return best
 
     def _process_lidar(self):
-        if not self.lidar:
-            return {"front": 1.0, "left": 1.0, "right": 1.0, "points": []}
+        """Process data from all LIDARs and fuse into a single point cloud in robot frame."""
+        fused_points = []
+        
+        # Helper to process single lidar
+        def process_sensor(sensor, dx, dy, dtheta):
+            if not sensor:
+                return 2.0, []
+            ranges = sensor.getRangeImage()
+            if not ranges:
+                return 2.0, []
+            
+            res = sensor.getHorizontalResolution()
+            fov = sensor.getFov()
+            angle_step = fov / max(1, res - 1)
+            min_dist = 2.0
+            sensor_points = []
+            
+            # Find minimum distance in the center of the FOV (approx 40 degrees window)
+            center_idx = len(ranges) // 2
+            fov_deg = math.degrees(fov)
+            if fov_deg > 0:
+                window = int(len(ranges) * (40.0 / fov_deg) / 2)
+            else:
+                window = 5
+            window = max(1, window)
+            
+            start = max(0, center_idx - window)
+            end = min(len(ranges), center_idx + window)
+            
+            center_vals = [r for r in ranges[start:end] if not (math.isinf(r) or math.isnan(r))]
+            if center_vals:
+                min_dist = min(center_vals)
+            
+            for i, r in enumerate(ranges):
+                if math.isinf(r) or math.isnan(r) or r <= 0.1:
+                    continue
+                
+                # Angle relative to sensor
+                alpha = -fov / 2.0 + i * angle_step
+                
+                # Sensor frame: x forward, y left
+                sx = r * math.cos(alpha)
+                sy = r * math.sin(alpha)
+                
+                # Robot frame transformation
+                rx = dx + sx * math.cos(dtheta) - sy * math.sin(dtheta)
+                ry = dy + sx * math.sin(dtheta) + sy * math.cos(dtheta)
+                
+                sensor_points.append((rx, ry))
+                
+            return min_dist, sensor_points
 
-        ranges = self.lidar.getRangeImage()
-        res = self.lidar.getHorizontalResolution()
-        fov = self.lidar.getFov()
-        angle_step = fov / max(1, res - 1)
-
-        points = []
-        front_window = []
-        left_window = []
-        right_window = []
-
-        for i, r in enumerate(ranges):
-            angle = -fov / 2.0 + i * angle_step
-            if math.isinf(r) or math.isnan(r) or r <= 0:
-                continue
-            if i % 2 == 0:
-                points.append((r, angle))
-            deg = math.degrees(angle)
-            if -20 <= deg <= 20:
-                front_window.append(r)
-            elif 20 < deg <= 90:
-                left_window.append(r)
-            elif -90 <= deg < -20:
-                right_window.append(r)
-
-        front = min(front_window) if front_window else 2.0
-        left = min(left_window) if left_window else 2.0
-        right = min(right_window) if right_window else 2.0
-
-        return {"front": front, "left": left, "right": right, "points": points}
+        # 1. Front Lidar (0.28, 0, 0)
+        front_dist, p_front = process_sensor(self.lidar, 0.28, 0.0, 0.0)
+        fused_points.extend(p_front)
+        
+        # 2. Rear Lidar (-0.29, 0, PI)
+        rear_dist, p_rear = process_sensor(self.lidar_rear, -0.29, 0.0, math.pi)
+        fused_points.extend(p_rear)
+        
+        # 3. Left Lidar (0, 0.22, PI/2)
+        left_dist, p_left = process_sensor(self.lidar_left, 0.0, 0.22, math.pi/2)
+        fused_points.extend(p_left)
+        
+        # 4. Right Lidar (0, -0.22, -PI/2)
+        right_dist, p_right = process_sensor(self.lidar_right, 0.0, -0.22, -math.pi/2)
+        fused_points.extend(p_right)
+        
+        return {
+            "front": front_dist,
+            "rear": rear_dist,
+            "left": left_dist,
+            "right": right_dist,
+            "points": fused_points # List of (x, y) in robot frame
+        }
 
     def _process_rear_sensors(self):
-        """Processa sensores de distância traseiros.
-
-        Converte valor bruto do sensor (0-1000) para distância em metros.
-        Lookup table: 0->0m, 50->0.05m, 1000->1.0m (linear)
-
-        Returns:
-            dict com rear, rear_left, rear_right em metros
-        """
+        """Processa sensores de distância traseiros."""
         def raw_to_meters(raw_value):
             if raw_value is None or math.isnan(raw_value):
-                return 2.0  # Default seguro
-            # Inverso da lookup table: raw 0-1000 -> dist 0-1.0m
+                return 2.0
             return max(0.05, min(2.0, raw_value / 1000.0))
 
         rear = 2.0
         rear_left = 2.0
         rear_right = 2.0
-
+        
         if self.ds_rear:
             rear = raw_to_meters(self.ds_rear.getValue())
         if self.ds_rear_left:
@@ -805,6 +1170,23 @@ class YouBotController:
             rear_right = raw_to_meters(self.ds_rear_right.getValue())
 
         return {"rear": rear, "rear_left": rear_left, "rear_right": rear_right}
+
+    def _process_lateral_sensors(self):
+        """Processa sensores de distância laterais."""
+        def raw_to_meters(raw_value):
+            if raw_value is None or math.isnan(raw_value):
+                return 2.0
+            return max(0.05, min(2.0, raw_value / 1000.0))
+
+        left = 2.0
+        right = 2.0
+        
+        if self.ds_left:
+            left = raw_to_meters(self.ds_left.getValue())
+        if self.ds_right:
+            right = raw_to_meters(self.ds_right.getValue())
+
+        return {"left": left, "right": right}
 
     def _process_front_sensors(self):
         """Processa sensores de distância frontais.
@@ -851,99 +1233,61 @@ class YouBotController:
         return False
 
     def _search_navigation(self, lidar_info, dt):
-        """Navegação lawnmower com proteção de parede."""
+        """Navegação lawnmower com comportamento Car-like."""
         front_dist = lidar_info["front"]
         left_dist = lidar_info["left"]
         right_dist = lidar_info["right"]
 
-        OBSTACLE_THRESHOLD = 0.40
-        WALL_PROXIMITY = 0.35
-        TURN_SPEED = 0.30  # Reduzido de 0.35 para mais controle
-        FORWARD_SPEED = 0.10
-        TURN_DURATION = math.pi / 2.5 / TURN_SPEED  # Turn ~72° ao invés de 90°
-
+        OBSTACLE_THRESHOLD = 0.50
+        FORWARD_SPEED = 0.15
+        
         # Verificar proximidade de parede
         left_wall, right_wall, bottom_wall, top_wall = self._wall_clearances()
-        near_wall = min(left_wall, right_wall, bottom_wall, top_wall) < WALL_PROXIMITY
-        very_near_wall = min(left_wall, right_wall, bottom_wall, top_wall) < 0.25
-
+        min_wall = min(left_wall, right_wall, bottom_wall, top_wall)
+        
         obstacle_ahead = self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD)
 
-        # Se muito perto da parede, usar strafe ao invés de rotação
-        if very_near_wall:
-            # Determinar direção de escape
-            if left_wall < right_wall:
-                return 0.0, -0.08, 0.0  # Strafe para direita
-            elif right_wall < left_wall:
-                return 0.0, 0.08, 0.0   # Strafe para esquerda
-            elif bottom_wall < top_wall:
-                return 0.08, 0.0, 0.0   # Avançar
-            else:
-                return -0.08, 0.0, 0.0  # Recuar
-
-        # Velocidade de rotação reduzida perto de paredes
-        actual_turn_speed = TURN_SPEED * (0.6 if near_wall else 1.0)
+        # Se muito perto da parede, dar ré
+        if min_wall < 0.25:
+            return -0.08, 0.0, 0.0
 
         if self.search_state == "forward":
             if obstacle_ahead:
                 if left_dist > right_dist:
-                    self.search_direction = 1
+                    self.search_direction = 1  # Left
                 else:
-                    self.search_direction = -1
-                self.search_state = "turn_start"
+                    self.search_direction = -1 # Right
+                self.search_state = "turn"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
             else:
-                vy_correct = 0.0
+                # Wall following / Centering
                 omega_correct = 0.0
-                # Correção lateral mais suave
-                if left_dist < 0.30:
-                    vy_correct = -0.05
-                    omega_correct = -0.08
-                elif right_dist < 0.30:
-                    vy_correct = 0.05
-                    omega_correct = 0.08
-                return FORWARD_SPEED, vy_correct, omega_correct
+                if left_dist < 0.40:
+                    omega_correct = -0.15 # Steer Right
+                elif right_dist < 0.40:
+                    omega_correct = 0.15 # Steer Left
+                
+                return FORWARD_SPEED, 0.0, omega_correct
 
-        elif self.search_state == "turn_start":
-            # Verificar se ainda é seguro girar
-            if very_near_wall:
+        elif self.search_state == "turn":
+            self.turn_progress += dt
+            # Car turn: Move forward while steering
+            if self.turn_progress >= 2.5: # Turn duration
                 self.search_state = "forward"
                 self.turn_progress = 0.0
                 return 0.0, 0.0, 0.0
+            
+            # Check if cleared
+            if not self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD + 0.2) and self.turn_progress > 1.0:
+                 self.search_state = "forward"
+                 self.turn_progress = 0.0
+                 return 0.0, 0.0, 0.0
 
-            self.turn_progress += dt
-            if self.turn_progress >= TURN_DURATION:
-                self.search_state = "turn_mid"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
-            return 0.0, 0.0, actual_turn_speed * self.search_direction
+            return 0.10, 0.0, 0.4 * self.search_direction
 
-        elif self.search_state == "turn_mid":
-            self.turn_progress += dt
-            if self.turn_progress >= 0.6:  # Reduzido de 0.8
-                self.search_state = "turn_end"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
-            if self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD):
-                self.search_state = "turn_end"
-                self.turn_progress = 0.0
-            return FORWARD_SPEED * 0.8, 0.0, 0.0  # Velocidade reduzida
-
-        elif self.search_state == "turn_end":
-            # Verificar se ainda é seguro girar
-            if very_near_wall:
-                self.search_state = "forward"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
-
-            self.turn_progress += dt
-            if self.turn_progress >= TURN_DURATION:
-                self.search_state = "forward"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
-            return 0.0, 0.0, actual_turn_speed * self.search_direction
-
+        # Fallback
+        self.search_state = "forward"
         return 0.0, 0.0, 0.0
 
     def _start_grasp(self):
@@ -1195,8 +1539,22 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 7:
-            print(f"[DROP] Cubo depositado na caixa {self.current_color}")
-            self.mode = "search"
+            print(f"[DROP] Cubo depositado na caixa {self.current_color}. Iniciando retorno ao spawn.")
+            
+            # Usar os waypoints percorridos na ida, invertidos (RÉ PURA)
+            if hasattr(self, '_last_route_taken') and self._last_route_taken:
+                # Inverter a rota (excluir o box, que é o último)
+                self._return_waypoints = list(reversed(self._last_route_taken[:-1]))
+                self._return_waypoints.append(SPAWN_POSITION)
+            else:
+                # Fallback: rota simples
+                self._return_waypoints = [SPAWN_POSITION]
+            
+            self._return_waypoint_idx = 0
+            self.mode = "return_to_spawn"
+            print(f"[RETURN] Rota: {len(self._return_waypoints)} waypoints (RÉ PURA)")
+            
+            # Limpar estado do drop
             self.current_target = None
             self.active_goal = None
             self._waypoints = []
@@ -1266,7 +1624,13 @@ class YouBotController:
             # Sensores
             lidar_info = self._process_lidar()
             rear_info = self._process_rear_sensors()
+            lateral_info = self._process_lateral_sensors()
             front_info = self._process_front_sensors()
+            
+            # Consolidar informação de sensores com LIDAR (usar o menor valor)
+            if "rear" in lidar_info:
+                rear_info["rear"] = min(rear_info["rear"], lidar_info["rear"])
+            
             self._update_grid_from_lidar(lidar_info)
 
             # Lock na cor e ângulo durante approach
@@ -1412,249 +1776,509 @@ class YouBotController:
 
             # ===== MODO TO_BOX =====
             if self.mode == "to_box":
-                # MANTER gripper fechado e braço RECOLHIDO (RESET = posição alta)
-                # Isso evita colisões do braço com obstáculos durante navegação
+                # MANTER gripper fechado e braço RECOLHIDO
                 self.gripper.grip()
                 self.arm.set_height(Arm.RESET)
+                
+                # Inicialização do estado
+                if not hasattr(self, 'tobox_state'):
+                    self.tobox_state = 0
+                    self._tobox_maneuver_timer = 0.0
+                    self._route_waypoints = None
+                    self._current_waypoint_idx = 0
 
-                # Navegação com A* waypoints + LIDAR para desvio de obstáculos
-                if self.active_goal:
-                    # === A* WAYPOINT NAVIGATION ===
-                    # Use waypoints from A* path planner instead of direct-to-goal
-                    waypoint = self._next_nav_point()
-                    if waypoint:
-                        distance, angle = self._distance_to_point(waypoint)
-                        # Pop waypoint when reached (within 0.25m)
-                        if distance < 0.25 and self._waypoints:
-                            self._waypoints.pop(0)
-                            waypoint = self._next_nav_point()
-                            if waypoint:
-                                distance, angle = self._distance_to_point(waypoint)
-                    else:
-                        # No waypoints, go direct to goal
-                        distance, angle = self._distance_to_point(self.active_goal)
-
-                    # Always check final goal distance for DROP trigger
-                    final_distance, final_angle = self._distance_to_point(self.active_goal)
-                    lidar_front = lidar_info["front"]
-
-                    # === FINAL APPROACH DETECTION ===
-                    # When close to goal with box detected by LIDAR, switch to final approach mode
-                    # Removed angle requirement - robot can approach from any angle
-                    in_final_approach = (
-                        final_distance < 1.2 and
-                        lidar_front < 0.80
-                    )
-
-                    # Log periódico de navegação
-                    if not hasattr(self, '_tobox_log_timer'):
-                        self._tobox_log_timer = 0.0
-                    self._tobox_log_timer += dt
-                    if self._tobox_log_timer >= 2.0:
-                        wp_info = f"wp={len(self._waypoints)}" if self._waypoints else "direct"
-                        fa_info = " [FINAL]" if in_final_approach else ""
-                        print(f"[TO_BOX] pose=({self.pose[0]:.2f},{self.pose[1]:.2f}) goal={self.active_goal} dist={final_distance:.2f}m ang={math.degrees(final_angle):.1f}° [{wp_info}]{fa_info}")
-                        self._tobox_log_timer = 0.0
-
-                    # === DROP TRIGGER ===
-                    # Aproximar BEM PERTO do box antes de depositar
-                    # lidar < 0.25m garante que estamos quase encostando no box
-                    # PlasticFruitBox é ~0.60m x 0.40m x 0.22m de altura
-                    if in_final_approach and 0.10 < lidar_front < 0.25:
-                        print(f"[TO_BOX] DROP TRIGGER! lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m, ang={math.degrees(final_angle):.1f}°")
-                        if hasattr(self, '_tobox_log_timer'):
-                            del self._tobox_log_timer
-                        self._start_drop()
-                        continue
-
-                    # === FINAL APPROACH MODE ===
-                    # Continuar aproximando até LIDAR < 0.25m
-                    if in_final_approach:
-                        # Alinhar com o goal e aproximar devagar
-                        omega_cmd = -final_angle * 0.8
-                        omega_cmd = max(-0.3, min(0.3, omega_cmd))
-
-                        # Velocidade proporcional à distância do box
-                        # Mais perto = mais devagar
-                        if lidar_front < 0.40:
-                            vx_cmd = 0.03  # Bem devagar quando perto
-                        else:
-                            vx_cmd = 0.06
-
-                        vy_cmd = 0.0
-                        self._log_throttled("tobox_final", f"[TO_BOX] Final approach: lidar={lidar_front:.2f}m, goal_dist={final_distance:.2f}m", 0.8)
-                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
-                        continue
-
-                    # ===== DESVIO DE OBSTÁCULOS - ROTAÇÃO + STRAFE =====
-                    obs_front = lidar_info["front"]
-                    obs_left = lidar_info["left"]
-                    obs_right = lidar_info["right"]
-
-                    # Verificar obstáculos conhecidos também
-                    known_front, known_left, known_right = self.navigator.check_known_obstacles(self.pose)
-                    obs_front = min(obs_front, known_front)
-                    obs_left = min(obs_left, known_left)
-                    obs_right = min(obs_right, known_right)
-
-                    # Determinar lado de escape baseado no espaço disponível
-                    # Prioriza o lado com MAIS espaço para contornar o obstáculo
-                    escape_left = obs_left > obs_right
-
-                    # Stuck detection e clearing timer
-                    if not hasattr(self, '_emergency_counter'):
-                        self._emergency_counter = 0
-                    if not hasattr(self, '_clearing_timer'):
-                        self._clearing_timer = 0.0
-
-                    # PARADA DE EMERGÊNCIA: obstáculo muito perto (< 0.30m)
-                    # Now with rear clearance check to prevent rear collisions during escape
-                    if obs_front < 0.30:
-                        self._emergency_counter += 1
-                        self._clearing_timer = 1.5  # Continuar evitando por 1.5s após sair da emergência
-
-                        # Calcular rotação desejada para escape
-                        desired_omega = 0.45 if escape_left else -0.45
-
-                        # Verificar rear clearance com sensores traseiros reais
-                        rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                            desired_omega, obs_front, obs_left, obs_right, rear_info
-                        )
-
-                        # Se preso por muito tempo (>25 ciclos), manobra agressiva de escape
-                        if self._emergency_counter > 25:
-                            vx_cmd = -0.10  # Ré forte
-                            if rear_safe:
-                                omega_cmd = 0.6 if escape_left else -0.6
-                                vy_cmd = 0.15 if escape_left else -0.15
-                            else:
-                                # Priorizar strafe quando rear em risco
-                                omega_cmd = 0.0
-                                vy_cmd = 0.20 if escape_left else -0.20
-                            self._log_throttled("tobox_stuck", f"[TO_BOX] PRESO! Escape: rear_safe={rear_safe}", 0.5)
-                        else:
-                            # Escape normal: ré + rotation/strafe baseado em rear clearance
-                            vx_cmd = -0.06  # Recuar
-                            if rear_safe:
-                                omega_cmd = desired_omega
-                                vy_cmd = 0.12 if escape_left else -0.12
-                            else:
-                                # Usar strafe predominante quando rear em risco
-                                omega_cmd = 0.0
-                                vy_cmd = 0.18 if escape_left else -0.18
-                            self._log_throttled("tobox_emergency", f"[TO_BOX] Emergência! obs_front={obs_front:.2f}m, rear_safe={rear_safe}", 1.0)
-
-                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
-                        continue
-                    else:
-                        # Reset contador quando não está em emergência
-                        self._emergency_counter = 0
-
-                    # DESVIO PREVENTIVO: obstáculo próximo (< 0.50m) OU ainda em clearing
-                    # Now includes rear clearance check to prevent rear wheel collisions
-                    if obs_front < 0.50 or self._clearing_timer > 0:
-                        if self._clearing_timer > 0:
-                            self._clearing_timer -= dt
-
-                        # Calcular rotação desejada
-                        desired_omega = 0.35 if escape_left else -0.35
-
-                        # CRÍTICO: Verificar clearance traseira com sensores reais
-                        rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                            desired_omega, obs_front, obs_left, obs_right, rear_info
-                        )
-
-                        if rear_safe:
-                            # Seguro rotacionar - movimento normal de contorno
-                            omega_cmd = desired_omega
-                            vy_cmd = 0.12 if escape_left else -0.12
-                            vx_cmd = 0.04
-                        else:
-                            # Risco de colisão traseira - usar strafe prioritário
-                            if rear_issue == "rear_right":
-                                # Traseira bateria à direita - strafe esquerda, não girar à esquerda
-                                vy_cmd = 0.15
-                                omega_cmd = min(0.0, -0.15)  # Só permite giro à direita (leve)
-                            elif rear_issue == "rear_left":
-                                # Traseira bateria à esquerda - strafe direita, não girar à direita
-                                vy_cmd = -0.15
-                                omega_cmd = max(0.0, 0.15)  # Só permite giro à esquerda (leve)
-                            else:
-                                # Frente bloqueada - ré + strafe
-                                vy_cmd = 0.12 if escape_left else -0.12
-                                omega_cmd = 0.0
-                            vx_cmd = 0.02  # Avançar bem devagar quando traseira em risco
-                            self._log_throttled("tobox_rear_risk", f"[TO_BOX] Rear collision risk: {rear_issue}", 1.0)
-
-                        self._log_throttled("tobox_preventive", f"[TO_BOX] Contornando: obs_front={obs_front:.2f}m, lado={'L' if escape_left else 'R'}, rear_safe={rear_safe}", 1.5)
-                        vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                        self._safe_move(vx_cmd, vy_cmd, omega_cmd)
-                        continue
-
-                    # NAVEGAÇÃO NORMAL: Car-like motion with proportional control
-                    # Allow forward motion even with larger angles to prevent oscillation
-                    angle_threshold = math.radians(25)  # Increased from 12° to 25°
-
-                    # Calculate rotation command
-                    omega_cmd = -angle * 0.6
-                    omega_cmd = max(-0.40, min(0.40, omega_cmd))
-
-                    # Check rear clearance with real sensors before rotating
-                    rear_safe, rear_issue = self.navigator.check_rear_clearance(
-                        omega_cmd, obs_front, obs_left, obs_right, rear_info
-                    )
-
-                    if not rear_safe:
-                        # Rear collision risk - prefer forward + strafe instead of rotation
-                        if rear_issue == "rear_right":
-                            # Rear hitting right - strafe left and reduce right rotation
-                            vy_cmd = 0.10
-                            omega_cmd = max(0.0, omega_cmd)  # Only allow left rotation
-                            self._log_throttled("tobox_rear_right", "[TO_BOX] Rear clearance risk RIGHT, strafe left", 1.0)
-                        elif rear_issue == "rear_left":
-                            # Rear hitting left - strafe right and reduce left rotation
-                            vy_cmd = -0.10
-                            omega_cmd = min(0.0, omega_cmd)  # Only allow right rotation
-                            self._log_throttled("tobox_rear_left", "[TO_BOX] Rear clearance risk LEFT, strafe right", 1.0)
-                        else:
-                            # Front blocked - use strafe primarily
-                            vy_cmd = 0.08 if obs_left > obs_right else -0.08
-                            omega_cmd *= 0.5  # Reduce rotation
-                            self._log_throttled("tobox_front_blocked", "[TO_BOX] Front blocked, using strafe", 1.0)
-                        vx_cmd = 0.03  # Reduced forward speed
-                    else:
-                        # Car-like arc motion: always move forward while rotating
-                        # Scale vx by alignment quality (1.0 when aligned, 0.4 at 25°)
-                        alignment_quality = 1.0 - (abs(angle) / angle_threshold)
-                        alignment_quality = max(0.4, min(1.0, alignment_quality))
-
-                        # Base speed scaled by alignment and distance
-                        base_speed = min(0.12, distance * 0.15)
-                        vx_cmd = base_speed * alignment_quality
-                        vx_cmd = max(0.04, vx_cmd)  # Minimum 4cm/s to maintain progress
-
-                        # Lateral correction for side obstacles
-                        if obs_left < 0.35:
-                            vy_cmd = -0.05
-                        elif obs_right < 0.35:
-                            vy_cmd = 0.05
-                        else:
-                            vy_cmd = 0.0
-
-                    vx_cmd, vy_cmd = self._enforce_boundary_safety(vx_cmd, vy_cmd)
-                    self._safe_move(vx_cmd, vy_cmd, omega_cmd)
-                else:
-                    # Sem goal definido - voltar ao search
+                if not self.active_goal:
                     print("[TO_BOX] Sem goal definido, voltando ao search")
                     self.mode = "search"
+                    continue
+
+                # ===== CALCULAR ROTA BASE =====
+                if self._route_waypoints is None:
+                    self._route_waypoints = get_route_to_box(
+                        (self.pose[0], self.pose[1]), 
+                        self.current_color
+                    )
+                    self._current_waypoint_idx = 0
+                    self._last_route_taken = self._route_waypoints.copy()  # Salvar para retorno
+                    print("[TO_BOX] ===== ROTA CALCULADA =====")
+                    print(f"[TO_BOX] Cor: {self.current_color} | Destino: {BOX_POSITIONS.get(self.current_color)}")
+                    print(f"[TO_BOX] Waypoints ({len(self._route_waypoints)}):")
+                    for i, wp in enumerate(self._route_waypoints):
+                        print(f"  [{i+1}] ({wp[0]:.2f}, {wp[1]:.2f})")
+                    print("[TO_BOX] =============================")
+                
+                # Log periódico da posição (a cada ~2 segundos)
+                if not hasattr(self, '_last_pos_log_time'):
+                    self._last_pos_log_time = 0.0
+                current_time = self.robot.getTime()
+                if current_time - self._last_pos_log_time > 2.0:
+                    wp_idx = self._current_waypoint_idx
+                    wp_total = len(self._route_waypoints)
+                    wp_name = f"WP{wp_idx+1}/{wp_total}" if wp_idx < wp_total else "BOX"
+                    print(f"[TO_BOX] Pos: ({self.pose[0]:.2f}, {self.pose[1]:.2f}, {math.degrees(self.pose[2]):.0f}°) → {wp_name}")
+                    self._last_pos_log_time = current_time
+
+                # ===== SENSORES 360° =====
+                front_obs = min(lidar_info["front"], front_info["front"])
+                fl_obs = min(lidar_info["front"], front_info.get("front_left", 2.0))
+                fr_obs = min(lidar_info["front"], front_info.get("front_right", 2.0))
+                rear_obs = min(lidar_info["rear"], rear_info.get("rear", 2.0))
+                rear_min = min(rear_obs, rear_info.get("rear_left", 2.0), rear_info.get("rear_right", 2.0))
+                left_obs = min(lidar_info["left"], lateral_info.get("left", 2.0))
+                right_obs = min(lidar_info["right"], lateral_info.get("right", 2.0))
+
+                # ===== WAYPOINT ATUAL =====
+                if self._current_waypoint_idx < len(self._route_waypoints):
+                    current_target = self._route_waypoints[self._current_waypoint_idx]
+                else:
+                    current_target = self.active_goal
+                
+                dist_to_waypoint, angle_to_waypoint = self._distance_to_point(current_target)
+                dist_to_box, angle_to_box = self._distance_to_point(self.active_goal)
+                
+                # Verificar se chegou no waypoint atual
+                is_final_waypoint = (self._current_waypoint_idx >= len(self._route_waypoints) - 1)
+                is_pre_final = (self._current_waypoint_idx == len(self._route_waypoints) - 2)
+                
+                # Threshold menor para waypoints intermediários, maior para pré-final e final
+                if is_final_waypoint:
+                    waypoint_threshold = 0.50  # Box - transição para alinhamento
+                elif is_pre_final:
+                    waypoint_threshold = 0.30  # Penúltimo - precisão maior
+                else:
+                    waypoint_threshold = 0.40  # Intermediários
+                
+                if dist_to_waypoint < waypoint_threshold and not is_final_waypoint:
+                    self._current_waypoint_idx += 1
+                    next_wp = self._route_waypoints[self._current_waypoint_idx] if self._current_waypoint_idx < len(self._route_waypoints) else self.active_goal
+                    print(f"[TO_BOX] ✓ Waypoint {self._current_waypoint_idx}/{len(self._route_waypoints)} alcançado → próximo: ({next_wp[0]:.2f}, {next_wp[1]:.2f})")
+                    continue
+
+                # State 0: Navegação por waypoints
+                if self.tobox_state == 0:
+                    # Sensores
+                    min_front = min(front_obs, fl_obs, fr_obs)
+                    left_blocked = left_obs < 0.20
+                    right_blocked = right_obs < 0.20
+                    rear_clear = rear_min > 0.35
+                    
+                    # ===== MODO APROXIMAÇÃO DO BOX =====
+                    # Ativar quando: últimos 3 waypoints OU dist_to_box < 1.0m
+                    # Isso garante que o robô NÃO trata o box como obstáculo
+                    waypoints_remaining = len(self._route_waypoints) - self._current_waypoint_idx
+                    approaching_box = waypoints_remaining <= 3 or dist_to_box < 1.0
+                    
+                    # ===== SE APROXIMANDO DO BOX: IGNORAR OBSTÁCULO FRONTAL =====
+                    if approaching_box:
+                        # Transição para alinhamento
+                        if dist_to_box < 0.55 or min_front < 0.18:
+                            print(f"[TO_BOX] ✓ Chegou ao box (dist={dist_to_box:.2f}m). Iniciando alinhamento.")
+                            self._safe_move(0.0, 0.0, 0.0)
+                            self.tobox_state = 1
+                            self._tobox_maneuver_timer = 0.0
+                            self._align_start_time = None
+                            continue
+                        
+                        # Seguir waypoint - IGNORAR sensor frontal (é o box!)
+                        cmd_omega = -angle_to_waypoint * 1.2
+                        cmd_omega = max(-0.35, min(0.35, cmd_omega))
+                        cmd_speed = 0.12
+                        
+                        # Só reagir a laterais (outros objetos, não o box)
+                        if left_blocked:
+                            cmd_omega = min(cmd_omega - 0.15, -0.20)
+                        if right_blocked:
+                            cmd_omega = max(cmd_omega + 0.15, 0.20)
+                        
+                        self._safe_move(cmd_speed, 0.0, cmd_omega)
+                        continue
+
+                    # ===== NAVEGAÇÃO NORMAL (longe do box) =====
+                    EMERGENCY_STOP = 0.22
+                    FRONT_DANGER = 0.35
+                    FRONT_WARN = 0.55
+                    LATERAL_WARN = 0.35
+                    
+                    front_left_close = fl_obs < FRONT_WARN
+                    front_right_close = fr_obs < FRONT_WARN
+                    
+                    cmd_speed = 0.0
+                    cmd_omega = 0.0
+                    
+                    # ===== PRIORIDADE 1: EMERGÊNCIA FRONTAL =====
+                    if min_front < EMERGENCY_STOP:
+                        self._tobox_maneuver_timer += dt
+                        print(f"[TO_BOX] 🛑 EMERGÊNCIA! Frente a {min_front:.2f}m!")
+                        
+                        if self._tobox_maneuver_timer > 0.2 and rear_clear:
+                            cmd_speed = -0.08
+                            # Virar para o lado LIVRE
+                            if not left_blocked and (right_blocked or left_obs > right_obs):
+                                cmd_omega = 0.4
+                            elif not right_blocked:
+                                cmd_omega = -0.4
+                        else:
+                            cmd_speed = 0.0
+                    
+                    # ===== PRIORIDADE 2: PERIGO FRONTAL =====
+                    elif min_front < FRONT_DANGER:
+                        self._tobox_maneuver_timer += dt
+                        print(f"[TO_BOX] ⚠ Perigo frontal a {min_front:.2f}m!")
+                        
+                        if rear_clear and self._tobox_maneuver_timer < 2.0:
+                            cmd_speed = -0.10
+                            # Virar para o lado LIVRE
+                            if not left_blocked and (right_blocked or left_obs > right_obs + 0.1):
+                                cmd_omega = 0.45
+                            elif not right_blocked:
+                                cmd_omega = -0.45
+                            else:
+                                cmd_omega = 0.0  # Ambos bloqueados - só ré
+                        else:
+                            self._tobox_maneuver_timer = 0.0
+                            cmd_speed = 0.0
+                            if not left_blocked and (right_blocked or left_obs > right_obs):
+                                cmd_omega = 0.5
+                            elif not right_blocked:
+                                cmd_omega = -0.5
+                    
+                    # ===== PRIORIDADE 3: DESVIO PREVENTIVO =====
+                    elif min_front < FRONT_WARN or front_left_close or front_right_close:
+                        self._tobox_maneuver_timer = 0.0
+                        
+                        # Decidir direção baseado em espaço E bloqueios
+                        if left_blocked:
+                            # Esquerda bloqueada - SÓ pode virar direita
+                            cmd_omega = -0.4
+                        elif right_blocked:
+                            # Direita bloqueada - SÓ pode virar esquerda
+                            cmd_omega = 0.4
+                        elif front_left_close and not front_right_close:
+                            cmd_omega = -0.35
+                        elif front_right_close and not front_left_close:
+                            cmd_omega = 0.35
+                        elif left_obs > right_obs + 0.1:
+                            cmd_omega = 0.3
+                        elif right_obs > left_obs + 0.1:
+                            cmd_omega = -0.3
+                        else:
+                            # Espaços similares - usar waypoint
+                            cmd_omega = -angle_to_waypoint * 0.6
+                            cmd_omega = max(-0.35, min(0.35, cmd_omega))
+                        
+                        # Velocidade proporcional ao espaço
+                        cmd_speed = 0.03 + 0.06 * (min_front / FRONT_WARN)
+                    
+                    # ===== PRIORIDADE 4: NAVEGAÇÃO NORMAL =====
+                    else:
+                        self._tobox_maneuver_timer = 0.0
+                        
+                        # Seguir waypoint
+                        cmd_omega = -angle_to_waypoint * 1.5
+                        MAX_TURN = 0.45
+                        cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
+                        
+                        if abs(angle_to_waypoint) > math.pi/2:
+                            cmd_speed = 0.03
+                            cmd_omega = -angle_to_waypoint * 0.5
+                            cmd_omega = max(-0.30, min(0.30, cmd_omega))
+                        else:
+                            # Repulsão lateral suave
+                            if left_obs < LATERAL_WARN:
+                                cmd_omega -= 0.15 * (LATERAL_WARN - left_obs) / LATERAL_WARN
+                            if right_obs < LATERAL_WARN:
+                                cmd_omega += 0.15 * (LATERAL_WARN - right_obs) / LATERAL_WARN
+                            cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
+                            
+                            cmd_speed = 0.13
+                            turn_penalty = 1.0 - min(0.25, abs(cmd_omega) / MAX_TURN)
+                            cmd_speed *= turn_penalty
+                    
+                    # ===== VERIFICAÇÃO FINAL: NUNCA VIRAR PARA LADO BLOQUEADO =====
+                    # Esta verificação é ABSOLUTA e sobrescreve qualquer decisão anterior
+                    if left_blocked and cmd_omega > 0:
+                        # Quer virar esquerda mas esquerda bloqueada!
+                        print(f"[TO_BOX] ⛔ BLOQUEIO ESQ a {left_obs:.2f}m! Forçando direita.")
+                        cmd_omega = -0.4
+                        cmd_speed = min(cmd_speed, 0.02)
+                    
+                    if right_blocked and cmd_omega < 0:
+                        # Quer virar direita mas direita bloqueada!
+                        print(f"[TO_BOX] ⛔ BLOQUEIO DIR a {right_obs:.2f}m! Forçando esquerda.")
+                        cmd_omega = 0.4
+                        cmd_speed = min(cmd_speed, 0.02)
+                    
+                    # Se AMBOS bloqueados, só andar reto devagar ou ré
+                    if left_blocked and right_blocked:
+                        print(f"[TO_BOX] ⛔ AMBOS LADOS bloqueados! L={left_obs:.2f} R={right_obs:.2f}")
+                        cmd_omega = 0.0
+                        if min_front > 0.35:
+                            cmd_speed = 0.03  # Reto devagar
+                        elif rear_clear:
+                            cmd_speed = -0.08  # Ré
+                        else:
+                            cmd_speed = 0.0  # Parado
+                    
+                    self._safe_move(cmd_speed, 0.0, cmd_omega)
+
+                # State 1: Alinhamento PERMISSIVO com a Caixa
+                # Não precisa ser perfeito - só precisa estar razoavelmente de frente
+                elif self.tobox_state == 1:
+                    if self._align_start_time is None:
+                        self._align_start_time = self.robot.getTime()
+                    
+                    align_elapsed = self.robot.getTime() - self._align_start_time
+                    
+                    # Ângulo alvo para cada box
+                    if self.current_color == "green":
+                        target_heading = math.pi / 2  # 90°
+                    elif self.current_color == "blue":
+                        target_heading = -math.pi / 2  # -90°
+                    else:  # red
+                        target_heading = 0.0
+                    
+                    heading_error = wrap_angle(target_heading - self.pose[2])
+                    
+                    # Log inicial
+                    if align_elapsed < 0.1:
+                        print(f"[TO_BOX] Alinhamento: erro={math.degrees(heading_error):.0f}°")
+                    
+                    # TOLERÂNCIA PERMISSIVA: 25° ou 2s timeout
+                    # Se já está razoavelmente alinhado, ir direto para aproximação
+                    ALIGN_TOLERANCE = 0.44  # ~25°
+                    ALIGN_TIMEOUT = 2.0     # 2 segundos
+                    
+                    if abs(heading_error) < ALIGN_TOLERANCE:
+                        print(f"[TO_BOX] ✓ Alinhamento OK (erro={math.degrees(heading_error):.0f}°). Aproximação.")
+                        self.tobox_state = 2
+                        self._approach_start_time = None
+                        continue
+                    
+                    if align_elapsed > ALIGN_TIMEOUT:
+                        print(f"[TO_BOX] Timeout alinhamento. Prosseguindo (erro={math.degrees(heading_error):.0f}°).")
+                        self.tobox_state = 2
+                        self._approach_start_time = None
+                        continue
+
+                    # Rotação suave para alinhar
+                    omega = heading_error * 0.5
+                    omega = max(-0.25, min(0.25, omega))
+                    
+                    self._safe_move(0.0, 0.0, omega)
+
+                # State 2: Aproximação Final até o BOX
+                # IMPORTANTE: Usar sensor frontal para detectar distância ao box
+                elif self.tobox_state == 2:
+                    ds_val = front_info["front"]
+                    
+                    # Timeout para evitar loop infinito
+                    if self._approach_start_time is None:
+                        self._approach_start_time = self.robot.getTime()
+                        print(f"[TO_BOX] Iniciando aproximação. Sensor frontal: {ds_val:.3f}m")
+                    
+                    approach_elapsed = self.robot.getTime() - self._approach_start_time
+                    
+                    # Log periódico da aproximação
+                    if int(approach_elapsed * 2) % 2 == 0 and approach_elapsed > 0.5:
+                        if not hasattr(self, '_last_approach_log') or self._last_approach_log != int(approach_elapsed):
+                            self._last_approach_log = int(approach_elapsed)
+                            print(f"[TO_BOX] Aproximando: ds={ds_val:.3f}m, dist_box={dist_to_box:.2f}m")
+                    
+                    # Condição de DROP:
+                    # - Sensor frontal detecta box perto (35-60cm) - zona segura (NÃO bater!)
+                    # - OU timeout (4s) e estamos razoavelmente perto
+                    drop_ready = (0.35 < ds_val < 0.60)
+                    timeout_drop = (approach_elapsed > 4.0 and dist_to_box < 0.65)
+                    
+                    if drop_ready or timeout_drop:
+                        if timeout_drop and not drop_ready:
+                            print(f"[TO_BOX] Timeout aproximação (ds={ds_val:.3f}m). DROP.")
+                        else:
+                            print(f"[TO_BOX] ✓ Posição final (ds={ds_val:.3f}m). Executando DROP.")
+                        self._safe_move(0.0, 0.0, 0.0)  # PARAR antes do drop
+                        self._start_drop()
+                        # Cleanup de atributos TO_BOX (mantém _last_route_taken para retorno)
+                        for attr in ['tobox_state', '_tobox_maneuver_timer', '_align_start_time', 
+                                     '_approach_start_time', '_route_waypoints', '_current_waypoint_idx',
+                                     '_last_pos_log_time', '_last_approach_log']:
+                            if hasattr(self, attr):
+                                delattr(self, attr)
+                        continue
+
+                    # PROTEÇÃO: Se muito perto, PARAR e fazer drop
+                    if ds_val < 0.35:
+                        print(f"[TO_BOX] ⚠ Muito perto ({ds_val:.3f}m). DROP de segurança.")
+                        self._safe_move(0.0, 0.0, 0.0)
+                        self._start_drop()
+                        for attr in ['tobox_state', '_tobox_maneuver_timer', '_route_waypoints', 
+                                     '_current_waypoint_idx', '_last_pos_log_time']:
+                            if hasattr(self, attr):
+                                delattr(self, attr)
+                        continue
+
+                    # Aproximar lentamente mantendo alinhamento
+                    # Velocidade proporcional à distância
+                    if ds_val > 0.50:
+                        speed = 0.08
+                    elif ds_val > 0.35:
+                        speed = 0.05
+                    else:
+                        speed = 0.03
+                    
+                    # Correção de ângulo suave
+                    omega = -angle_to_box * 1.0
+                    omega = max(-0.20, min(0.20, omega))
+                    
+                    self._safe_move(speed, 0.0, omega)
+                
                 continue
 
             # ===== MODO DROP =====
             if self.mode == "drop":
                 self._handle_drop(dt)
                 continue
+
+            # ===== MODO RETURN_TO_SPAWN =====
+            # Estratégia SIMPLES:
+            # Fase 0: Ré RETA por 4 segundos para se afastar do box
+            # Fase 1: Girar até apontar para o spawn
+            # Fase 2: Ir PARA FRENTE até o spawn
+            if self.mode == "return_to_spawn":
+                self.arm.set_height(Arm.RESET)
+                self.gripper.release()
+                
+                current_time = self.robot.getTime()
+                
+                # Inicialização
+                if not hasattr(self, '_return_phase'):
+                    self._return_phase = 0  # 0=ré, 1=giro, 2=navegação
+                    self._return_start = current_time
+                    self._return_log_time = 0.0
+                    print("[RETURN] Fase 0: Recuando do box (4s)...")
+                
+                # Sensores
+                rear_obs = min(lidar_info["rear"], rear_info.get("rear", 2.0))
+                rl_obs = rear_info.get("rear_left", 2.0)
+                rr_obs = rear_info.get("rear_right", 2.0)
+                left_obs = min(lidar_info["left"], lateral_info.get("left", 2.0))
+                right_obs = min(lidar_info["right"], lateral_info.get("right", 2.0))
+                front_obs = min(lidar_info["front"], front_info["front"])
+                fl_obs = front_info.get("front_left", 2.0)
+                fr_obs = front_info.get("front_right", 2.0)
+                
+                min_rear = min(rear_obs, rl_obs, rr_obs)
+                min_front = min(front_obs, fl_obs, fr_obs)
+                
+                dist_to_spawn, angle_to_spawn = self._distance_to_point(SPAWN_POSITION)
+                
+                # ===== FASE 0: RÉ RETA =====
+                if self._return_phase == 0:
+                    phase_elapsed = current_time - self._return_start
+                    
+                    if phase_elapsed < 4.0 and min_rear > 0.25:
+                        # Ré reta, sem rotação
+                        self._safe_move(-0.12, 0.0, 0.0)
+                    else:
+                        # Ir para próxima fase
+                        if phase_elapsed >= 4.0:
+                            print(f"[RETURN] Fase 1: Girando para spawn (ang={math.degrees(angle_to_spawn):.0f}°)...")
+                        else:
+                            print("[RETURN] Traseira bloqueada. Fase 1: Girando...")
+                        self._return_phase = 1
+                        self._return_start = current_time
+                    continue
+                
+                # ===== FASE 1: GIRO NO LUGAR =====
+                elif self._return_phase == 1:
+                    phase_elapsed = current_time - self._return_start
+                    
+                    # Se alinhado (< 45°), ir para navegação
+                    if abs(angle_to_spawn) < 0.78:  # ~45°
+                        print("[RETURN] ✓ Alinhado! Fase 2: Navegando para spawn...")
+                        self._return_phase = 2
+                        self._return_start = current_time
+                        continue
+                    
+                    # Timeout de 10 segundos
+                    if phase_elapsed > 10.0:
+                        print(f"[RETURN] Timeout giro. Prosseguindo (ang={math.degrees(angle_to_spawn):.0f}°)...")
+                        self._return_phase = 2
+                        self._return_start = current_time
+                        continue
+                    
+                    # Girar na direção do spawn
+                    omega = 0.45 if angle_to_spawn > 0 else -0.45
+                    
+                    # Se frente bloqueada, dar ré enquanto gira
+                    if min_front < 0.35:
+                        self._safe_move(-0.06, 0.0, omega)
+                    else:
+                        self._safe_move(0.0, 0.0, omega)
+                    continue
+                
+                # ===== FASE 2: NAVEGAÇÃO PARA FRENTE =====
+                elif self._return_phase == 2:
+                    # Log periódico
+                    if current_time - self._return_log_time > 2.0:
+                        print(f"[RETURN] Pos: ({self.pose[0]:.2f}, {self.pose[1]:.2f}) → SPAWN dist={dist_to_spawn:.2f}m ang={math.degrees(angle_to_spawn):.0f}°")
+                        self._return_log_time = current_time
+                    
+                    # Chegou no spawn?
+                    if dist_to_spawn < 0.60:
+                        print(f"[RETURN] ✓ Chegou ao spawn! Pose: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
+                        print("[RETURN] ========== INICIANDO NOVA BUSCA ==========")
+                        
+                        gt = self._get_ground_truth_pose()
+                        if gt:
+                            self.pose = gt
+                        
+                        for attr in ['_return_phase', '_return_start', '_return_log_time', 
+                                     '_return_waypoints', '_return_waypoint_idx', '_last_route_taken']:
+                            if hasattr(self, attr):
+                                delattr(self, attr)
+                        
+                        self.mode = "search"
+                        continue
+                    
+                    # Navegação simples para o spawn
+                    cmd_speed = 0.0
+                    cmd_omega = 0.0
+                    
+                    # Se ângulo grande (> 90°), parar e girar
+                    if abs(angle_to_spawn) > math.pi / 2:
+                        if min_front < 0.35:
+                            cmd_speed = -0.06
+                        else:
+                            cmd_speed = 0.02
+                        cmd_omega = 0.4 if angle_to_spawn > 0 else -0.4
+                    
+                    # Emergência frontal
+                    elif min_front < 0.30:
+                        if min_rear > 0.30:
+                            cmd_speed = -0.08
+                            cmd_omega = 0.35 if left_obs > right_obs else -0.35
+                        else:
+                            cmd_omega = 0.4 if left_obs > right_obs else -0.4
+                    
+                    # Lateral bloqueado
+                    elif left_obs < 0.25 or right_obs < 0.25:
+                        cmd_speed = 0.04
+                        cmd_omega = -0.35 if left_obs < right_obs else 0.35
+                    
+                    # Navegação normal
+                    else:
+                        cmd_omega = -angle_to_spawn * 1.5
+                        cmd_omega = max(-0.5, min(0.5, cmd_omega))
+                        
+                        if min_front < 0.50:
+                            cmd_speed = 0.08
+                        else:
+                            cmd_speed = 0.14
+                        
+                        cmd_speed *= (1.0 - min(0.3, abs(cmd_omega)))
+                    
+                    self._safe_move(cmd_speed, 0.0, cmd_omega)
+                    continue
 
 
 if __name__ == "__main__":

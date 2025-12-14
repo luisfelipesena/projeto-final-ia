@@ -3,129 +3,276 @@
 ## Visão geral
 - Objetivo: coletar 15 cubos (red/green/blue) e depositar nas caixas da cor correta no mundo `IA_20252.wbt`.
 - Plataforma: Webots (controlador Python, nó Supervisor), KUKA YouBot com base mecanum, braço 5-DOF e garra paralela.
-- Sensores principais: câmera RGB com Recognition ativo, LIDAR planar, 6 sensores infravermelhos de distância (frente/traseira).
-- Estados principais (FSM): `search` → `approach` → `grasp` → `to_box` → `drop` → volta a `search`.
-- Bugs conhecidos (em aberto): (1) risco de travar lateralmente ao contornar obstáculos largos; (2) ocasionalmente o cubo não é depositado no box (overshoot lateral/longitudinal).
+- Sensores principais: câmera RGB com Recognition ativo, 4 LIDARs 360° (front/rear/left/right), 6 sensores infravermelhos de distância (front/rear com diagonais).
+- Estados principais (FSM): `search` → `approach` → `grasp` → `to_box` → `drop` → `return_to_spawn` → volta a `search`.
 
 ## Configuração do mundo e hardware
 - Arena: `RectangleArena` 7.0 m × 4.0 m, centro em (-0.79, 0.0), parede 0.30 m. Robô spawna em x≈-4.0 m.
-- Caixas (PlasticFruitBox): green (0.48, 1.58), blue (0.48, -1.62), red (2.31, 0.01, rotacionada 90°).
+- Caixas (PlasticFruitBox): 
+  - **GREEN**: (0.48, 1.58) - norte
+  - **BLUE**: (0.48, -1.62) - sul  
+  - **RED**: (2.31, 0.01) - leste, rotacionada 90°
 - Obstáculos fixos (WoodenBox, raio seguro ~0.25 m): A-G nas posições do mundo e em `KNOWN_OBSTACLES` do controlador.
-- Sensores no slot do robô (vide `IA_20252/worlds/IA_20252.wbt`):
-  - LIDAR: `horizontalResolution=180`, `fieldOfView=π` (180°), `minRange=0.1 m`, `maxRange=5.0 m`, `numberOfLayers=1`, `pointCloud` habilitado.
-  - Câmera: 128×128, offset (0.27, 0, -0.06), Recognition ativado com `maxRange=3 m`.
-  - IR distance sensors (lookup linear 0→0 m, 50→0.05 m, 1000→1.0 m): traseiros `ds_rear`, `ds_rear_left` (135°), `ds_rear_right` (-135°); frontais `ds_front` (0°), `ds_front_left` (~23°), `ds_front_right` (~-23°).
+- Sensores no slot do robô:
+  - **4 LIDARs 360°**: front (0°), rear (180°), left (90°), right (-90°), cada um com FOV 90°, 64 raios, range 0.1–3.5 m
+  - **Câmera**: 128×128, offset (0.27, 0, -0.06), Recognition ativado com `maxRange=3 m`
+  - **IR distance sensors**: traseiros `ds_rear`, `ds_rear_left` (135°), `ds_rear_right` (-135°); frontais `ds_front` (0°), `ds_front_left` (~23°), `ds_front_right` (~-23°)
 - Base mecanum: parâmetros `WHEEL_RADIUS=0.05`, `LX=0.228`, `LY=0.158`.
 
-## Pilha de percepção
-### Câmera + Recognition API (Webots)
-- Ativação: `camera.enable()` + `camera.recognitionEnable(time_step)`.
-- API nativa (Webots): `getRecognitionObjects()` retorna lista de objetos com `getPosition()` (coordenadas relativas ao frame da câmera; x alinhado ao eixo óptico, y lateral), `getColors()` (RGB normalizado 0–1, média da textura), `getSize()`, `getModel()`, `getId()`. A detecção é feita internamente pelo Webots no host, não pelo nosso classificador.
-- Uso no código (`_process_recognition`):
-  - Filtra por cor opcional (`lock_color`) e prioriza ângulo opcional (`lock_angle`) para manter tracking do mesmo cubo.
-  - Distância = √(x² + y²); ângulo = atan2(y, x); limite de uso 2.5 m.
-  - Score prioriza menor distância e forte viés para o ângulo bloqueado (evita trocar de cubo).
-  - Saída alimenta os modos `search/approach` e o alinhamento fino no grasp.
+## Arquitetura de Navegação Car-Like
 
-### Classificação de cor
-- RNA: MobileNetV3-Small fine-tuned (cabeça 256→3), entrada 64×64, normalização ImageNet, saída softmax (red/green/blue). Formato ONNX carregado por `onnxruntime`.
-- Fallback: heurística HSV/RGB (`color_from_rgb` e `_fallback_hsv`) quando `confidence < 0.5` ou modelo indisponível. Decisão final é feita na câmera (usando `getColors()` do Recognition).
+### Conceito
+O YouBot utiliza navegação **car-like** onde:
+- `Vy = 0` (sem strafe lateral por padrão)
+- Apenas `Vx` (frente/ré) e `ω` (rotação) são usados
+- Simula um veículo com "rodas frontais que esterçam" e "rodas traseiras de tração"
 
-### LIDAR
-- Varredura planar 180 amostras, FOV 180°, alcance 0.1–5.0 m.
-- Pré-processamento: ignora `inf/NaN/≤0`; downsample a cada 2 pontos para `points` (r, θ). Janelas:
-  - front: -20°..20°, left: 20°..90°, right: -90°..-20° (usa mínimo da janela).
-- Usa para: (1) detecção frontal/lateral (`obs_front/left/right`), (2) raycast no grid, (3) gatilho de aproximação ao box (`lidar_front` < 0.25 m).
+### Rotas Pré-definidas (Base Routes)
+O robô segue **corredores fixos** para cada caixa, garantindo:
+1. Passar reto pelos primeiros obstáculos (E, F)
+2. Inclinação gradual para desviar do obstáculo central (A)
+3. Garantir que as **rodas traseiras** passem completamente o obstáculo antes de virar
+4. Alinhamento perpendicular final com a caixa
 
-### Sensores IR (distance sensors)
-- Conversão `raw_to_meters`: `max(0.05, min(2.0, raw/1000.0))`.
-- Traseiros: proteção de rotação e ré (mínimo 0.35 m atrás, 0.40 m nas diagonais) em `check_rear_clearance`.
-- Frontais: redundância de proximidade no `approach` (parada/strafe se <0.20 m).
+```
+SPAWN (-3.91, 0)
+    │
+    │  Reto até X=-0.45 (passa E e F)
+    ▼
+    ├───────────► GREEN (0.48, 1.58) - inclina para +Y
+    │
+    ├───────────► BLUE (0.48, -1.62) - inclina para -Y
+    │
+    └───────────► RED (2.31, 0.01) - desvia A, volta para Y=0
+```
 
-## Mapeamento e planejamento
-- Grade (`OccupancyGrid`): célula 0.12 m, 58×33, bounds do mundo; estados UNKNOWN/FREE/OBSTACLE/BOX/CUBE.
-- Semeadura estática: bordas como OBSTACLE; inflar obstáculos fixos com `wall_inflate=0.30` (meia-largura do robô + margem); caixas marcadas como BOX.
-- Raycasting (Bresenham): cada ponto LIDAR faz `grid.raycast(origin, hit, OBSTACLE, free=FREE)`, marcando caminho livre e célula atingida como obstáculo; qualquer mudança marca `_path_dirty`.
-- A* (`plan_path`): vizinhos 4-conexos, custo unitário, heurística Manhattan; retorna waypoints em mundo; replanning sempre que `_path_dirty` ou novo objetivo.
-- Waypoints: consumidos quando `dist < 0.25 m`; se vazio, navega direto para o goal.
+### Waypoints por Cor
 
-## Localização e odometria
-- Encoders das 4 rodas → `compute_odometry`:
-  - `vx = R/4 * Σωi`
-  - `vy = R/4 * (-ω1 + ω2 + ω3 - ω4)`
-  - `omega = R / (4*(LX+LY)) * (-ω1 + ω2 - ω3 + ω4)`
-- Integração (`_integrate_pose`): transforma para mundo com yaw, valida NaN, wrap de ângulo.
-- Correção de drift via ground truth (`_get_ground_truth_pose`):
-  - `search/approach`: a cada 2.0 s ou NaN.
-  - `to_box`: a cada 0.5 s (alta precisão para depósito).
-- Recuperação de pose: se NaN, restaura do ground truth imediatamente.
+**BLUE** (8 waypoints):
+```
+(-0.45, 0.00) → (-0.15, 0.00) → (0.00, -0.35) → (0.15, -0.70)
+→ (0.25, -1.00) → (0.35, -1.25) → (0.48, -1.35) → (0.48, -1.62)
+```
 
-## Navegação e controle
-### FuzzyNavigator (desvio e perseguição ao alvo)
-- Memberships: `_mu_close(0–0.45)`, `_mu_very_close(0–0.25)`, `_mu_far(0.4–1.5)`, `_mu_small_angle(0–25°)`, `_mu_medium_angle(10–60°)`, `_mu_big_angle(40–90°)`.
-- Regras chave:
-  - Muito perto: `vx=-0.04`, strafe longe do lado mais obstruído, `omega=0`.
-  - Perto: reduz velocidade frontal; mantém avanço mínimo se bem alinhado.
-  - Strafe lateral = 0.10*(μ_right_close - μ_left_close).
-  - Rotação proporcional ao ângulo normalizado (limite |ω|≤0.6) com leve viés de obstáculo lateral.
-- Limites finais: `vx∈[-0.18,0.18]`, `vy∈[-0.14,0.14]`, `omega∈[-0.6,0.6]`.
+**GREEN** (8 waypoints):
+```
+(-0.45, 0.00) → (-0.15, 0.00) → (0.00, 0.35) → (0.15, 0.70)
+→ (0.25, 1.00) → (0.35, 1.25) → (0.48, 1.35) → (0.48, 1.58)
+```
 
-### Padrão de busca (SEARCH)
-- Lawnmower adaptativo com proteção de parede: velocidade fwd 0.10 m/s; giros ~72° (`TURN_DURATION = π/2.5 / TURN_SPEED`), turn speed 0.30 rad/s (reduz perto de parede).
-- Se parede <0.25 m, prioriza strafe/avanço/recúo ao invés de girar.
-- Transição para `approach` ao detectar cubo via Recognition.
+**RED** (11 waypoints):
+```
+(-0.45, 0.00) → (0.00, 0.00) → (0.25, -0.45) → (0.50, -0.55)
+→ (0.75, -0.55) → (1.00, -0.50) → (1.25, -0.35) → (1.55, -0.15)
+→ (1.85, 0.01) → (2.05, 0.01) → (2.31, 0.01)
+```
 
-### Aproximação ao cubo (APPROACH)
-- Usa câmera + Recognition com lock de cor/ângulo. Alinha primeiro, avança depois.
-- Gatilho de grasp: `dist < 0.32 m` e `|ang| < 10°`. Se muito perto e desalinhado, gira sem avançar.
-- Segurança frontal: se sensor/LIDAR <0.20 m, recua + strafe e aborta após 0.5 s de tentativas.
-- Timeout de perda de cubo: 4 s; se o cubo some perto (<0.35 m) por 0.3 s, força grasp para não perder o alvo.
+## Sistema de Navegação TO_BOX
 
-### Grasp
-- Sequência (estágios):
-  0) Garra abre; braço RESET (1.2 s).
-  1) Braço FRONT_FLOOR (2.0 s).
-  2) Avanço lento 0.04 m/s por tempo calculado: `forward = clamp(dist_cam - 0.12, 0.05..0.25)`, com correção de yaw usando Recognition travado no mesmo cubo.
-  3) Fecha garra (1.2 s).
-  4) Sobe para FRONT_PLATE e verifica posse: `has_object(threshold=0.003)` com múltiplas amostras dos sensores dos dedos.
-  5) Se sucesso → `to_box`; se falha → recuo 2 s e volta a `search`.
+### Estados da Máquina de Estados (tobox_state)
+- **State 0**: Navegação por waypoints com obstacle avoidance
+- **State 1**: Alinhamento perpendicular com a caixa
+- **State 2**: Aproximação final e trigger de DROP
 
-### Navegação até a caixa (TO_BOX)
-- Goal = centro da caixa da cor; `A*` gera waypoints.
-- Modo final de aproximação quando `dist_goal < 1.2 m` e `lidar_front < 0.80 m`.
-- Gatilho de DROP: `lidar_front` entre 0.10–0.25 m (quase encostado).
-- Desvio reativo:
-  - Emergência <0.30 m: ré + rotação/strafe respeitando clearance traseiro; se preso >25 ciclos, manobra agressiva (ré 0.10, |ω|=0.6, |vy|=0.18).
-  - Preventivo <0.50 m ou clearing timer: rotação/strafe priorizando lado mais livre; verifica traseiros para não colidir.
-- Movimento “car-like”: sempre que possível combina avanço proporcional ao alinhamento (mínimo 0.04 m/s) com rotação limitada a |0.40|.
+### Hierarquia de Prioridades (State 0)
 
-### Depósito (DROP)
-- 0) Braço FRONT_FLOOR, garra fechada (2.0 s).
-- 1) Avança 0.04 m/s por 2.5 s (~10 cm) para ficar sobre o box.
-- 2) Abre garra (1.0 s).
-- 3) Recuo curto 0.06 m/s por 1.0 s.
-- 4) Braço RESET (1.5 s).
-- 5) Recuo 0.10 m/s por 2.0 s (~20 cm).
-- 6) Giro 0.4 rad/s por 1.5 s (~60°) para não redetectar o cubo.
+```
+PRIORIDADE 1: EMERGÊNCIA (min_front < 0.22m)
+├── Parar imediatamente
+├── Ré se traseira livre
+└── Rotação para lado mais livre
 
-## Reconhecimento de cor e pipeline de percepção (detalhe)
-- Fonte do sinal de cor: `Camera Recognition` (média da textura do objeto) → `color_classifier.predict_from_rgb(r,g,b)` → se `confidence<0.5`, heurística RGB simples.
-- Rede: MobileNetV3-Small fine-tuned, ImageNet init, ONNX. Entrada 64×64, normalização (mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]). Saída em Python via `onnxruntime` CPU.
-- Falha de modelo ou ausência de onnxruntime: loga fallback HSV e continua.
+PRIORIDADE 2: PERIGO FRONTAL (min_front < 0.35m)
+├── Ré lenta + rotação
+└── Se traseira bloqueada: rotação pura
 
-## Layout de sensores (resumo)
-- Câmera: (0.27, 0, -0.06), Recognition `maxRange=3 m`.
-- LIDAR: (0.28, 0, 0), FOV 180°, 180 raios, range 0.1–5 m.
-- IR frontais: (0.29,0), (0.25,±0.12), todos a 0.05 m de altura, abertura 0.3 rad, 2 raios.
-- IR traseiros: (-0.29,0), (-0.25,±0.15), mesmas características.
+PRIORIDADE 3: ALERTA FRONTAL (min_front < 0.50m)
+├── Velocidade reduzida (0.04 m/s)
+└── Rotação para waypoint
 
-## Local de bugs conhecidos
-- Travamento lateral em obstáculos largos: ocorre em `to_box` quando o LIDAR frontal fica <0.30 m e a folga traseira inibe rotação; pode entrar em loop de strafe curto + rotação limitada.
-- Depósito incorreto: em alguns casos o avanço +10 cm (DROP estágio 1) não centraliza no box, levando a soltar o cubo na borda; sensibilidade alta a pequenas derivações de pose mesmo com sync de 0.5 s.
+PRIORIDADE 4: BLOQUEIO LATERAL (left/right < 0.20m)
+├── Forçar rotação OPOSTA ao lado bloqueado
+└── Log: "⛔ BLOQUEIO ESQ/DIR"
 
-## Referências técnicas
+PRIORIDADE 5: NAVEGAÇÃO NORMAL
+├── Seguir waypoint com omega proporcional ao ângulo
+└── Velocidade 0.10–0.12 m/s
+```
+
+### Override Absoluto de Colisão
+```python
+# NUNCA virar para lado bloqueado (verificação final)
+if left_blocked and cmd_omega > 0:
+    cmd_omega = -0.4  # Forçar direita
+if right_blocked and cmd_omega < 0:
+    cmd_omega = 0.4   # Forçar esquerda
+```
+
+### Box Approach Mode
+Quando `waypoints_remaining <= 3` ou `dist_to_box < 1.0m`:
+- **Ignora** detecção de obstáculo frontal (o box é o destino!)
+- Reage apenas a obstáculos **laterais**
+- Transição para alinhamento quando `dist_to_box < 0.55m` ou `min_front < 0.18m`
+
+### Alinhamento Perpendicular (State 1)
+```python
+target_heading = {
+    "green": +90°,   # Apontar para norte
+    "blue":  -90°,   # Apontar para sul
+    "red":   0°      # Apontar para leste
+}
+
+ALIGN_TOLERANCE = 25°  # Tolerância permissiva
+ALIGN_TIMEOUT = 2.0s   # Não gastar muito tempo
+omega = heading_error * 0.5  # Rotação suave
+```
+
+## Sistema de Retorno (RETURN_TO_SPAWN)
+
+### Estratégia: WAYPOINTS invertidos da ida (robusta)
+Após depositar, o robô volta ao spawn seguindo **a rota planejada na ida, invertida**:
+- Garante que o retorno respeite o mesmo desvio de obstáculos (incluindo o obstáculo **A** no caso do box **RED**).
+- Como o `DROP` pode ocorrer antes do último waypoint, o retorno começa **do waypoint mais próximo** da pose atual.
+
+### Controle
+- Segue waypoint-a-waypoint com `cmd_omega = -angle_to_wp * k` (car-like) e velocidade reduzida em curvas.
+- Evitação de colisão **apenas quando necessário** (emergência/perigo frontal + repulsão lateral suave) para não “driftar” para dentro de obstáculos.
+
+### Saída do Spawn (reorientação)
+Ao chegar no spawn, o controlador executa uma sequência curta para garantir que o robô **não encoste na parede** e comece a nova busca **de frente pro mapa**:
+- Garante folga da parede esquerda (se necessário, move alguns cm para dentro).
+- Faz um **U-turn (reorientação)** até heading ~0°.
+- Avança ~0.8s para “limpar” a parede (similar ao passo inicial do `INIT`).
+
+Notas de robustez:
+- O `RETURN` considera “chegou no spawn” somente quando está **bem próximo** (distância menor) e só então dispara o `spawn_reset`.
+
+## Pilha de Sensores 360°
+
+### LIDARs (4 unidades)
+```
+        FRONT (0°)
+           │
+    ┌──────┴──────┐
+    │             │
+LEFT│   YOUBOT    │RIGHT
+(90°)│             │(-90°)
+    └──────┬──────┘
+           │
+        REAR (180°)
+```
+
+Cada LIDAR:
+- FOV: 90° (π/2)
+- Resolução: 64 raios
+- Range: 0.1 – 3.5 m
+- Atualização: 32 ms
+
+### Processamento LIDAR
+```python
+def _process_lidar_360(self, lidar, name):
+    ranges = lidar.getRangeImage()
+    valid = [r for r in ranges if 0.1 < r < 3.5]
+    return {
+        "min": min(valid),
+        "avg": mean(valid),
+        "count": len([r for r in valid if r < 0.5])
+    }
+```
+
+### Fusão de Sensores
+```python
+min_front = min(
+    lidar_info["front"]["min"],  # LIDAR frontal
+    front_info["front"],         # IR ds_front
+    front_info["front_left"],    # IR ds_front_left
+    front_info["front_right"]    # IR ds_front_right
+)
+```
+
+## Fluxo Completo (Loop)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        SEARCH                               │
+│  Lawnmower + Recognition → detecta cubo                     │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       APPROACH                              │
+│  Alinha → Avança → cubo a 0.32m                             │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        GRASP                                │
+│  Braço baixo → Avança → Fecha garra → Verifica             │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       TO_BOX                                │
+│  Waypoints → Obstacle Avoidance → Alinhamento → Aproximação │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        DROP                                 │
+│  Braço baixo → Avança sobre box → Solta → Recua            │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   RETURN_TO_SPAWN                           │
+│  Waypoints simples → Baliza se preso → Volta ao spawn      │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+                   (LOOP)
+```
+
+## Constantes Críticas
+
+| Parâmetro | Valor | Descrição |
+|-----------|-------|-----------|
+| `EMERGENCY_STOP` | 0.22 m | Parada imediata |
+| `FRONT_DANGER` | 0.35 m | Ré obrigatória |
+| `FRONT_WARN` | 0.50 m | Velocidade reduzida |
+| `LATERAL_DANGER` | 0.20 m | Bloqueio lateral |
+| `WP_ARRIVAL` | 0.35 m | Chegada ao waypoint |
+| `ALIGN_TOLERANCE` | 25° | Alinhamento permissivo |
+| `BALIZA_DURATION` | 1.5 s | Duração de cada fase |
+
+## Depósito (DROP)
+
+### Thresholds de Segurança
+```python
+# Trigger do DROP (no TO_BOX state 2)
+drop_ready = 0.45 < ds_front < 0.65  # Distância segura (não bater no box)
+emergency = ds_front < 0.45          # Muito perto, DROP de segurança
+timeout = elapsed > 4.0s AND dist_box < 0.65m
+```
+
+### Sequência
+1. Braço FRONT_FLOOR (2.0 s)
+2. Avança 0.04 m/s até `ds_front <= 0.60m` (ou timeout 2.5 s)
+3. Abre garra (1.0 s)
+4. Recuo curto (1.0 s)
+5. Braço RESET (1.5 s)
+6. Recuo longo (2.0 s)
+
+## Localização e Odometria
+
+### Cinemática Mecanum
+```python
+vx = R/4 * (ω1 + ω2 + ω3 + ω4)
+vy = R/4 * (-ω1 + ω2 + ω3 - ω4)
+omega = R / (4*(LX+LY)) * (-ω1 + ω2 - ω3 + ω4)
+```
+
+### Sincronização Ground Truth
+- `search/approach`: a cada 2.0 s
+- `to_box`: a cada 0.5 s (alta precisão)
+- `return_to_spawn`: a cada 0.5 s (alta precisão)
+
+## Referências Técnicas
 - Webots docs: https://cyberbotics.com/doc/guide/index
 - Webots Recognition API: https://cyberbotics.com/doc/reference/recognition
-- Webots Camera/LIDAR: https://cyberbotics.com/doc/reference/camera, https://cyberbotics.com/doc/reference/lidar
-- DeepWiki Webots (overview): https://deepwiki.com/cyberbotics/webots
-- Mapeamento por grade ocupação (Elfes, 1989); A* (Hart et al., 1968); Fuzzy Sets (Zadeh, 1965); MobileNetV3 (Howard et al., 2019).
+- Three-Point Turn: manobra padrão de veículos para inversão em espaços confinados
+- Car-like kinematics: Ackermann steering geometry principles
+- MobileNetV3 (Howard et al., 2019) para classificação de cores
