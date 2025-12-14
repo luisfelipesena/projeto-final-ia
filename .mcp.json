@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "webots-youbot": {
+      "command": "python",
+      "args": ["/Users/luisfelipesena/Development/Personal/webots-youbot-mcp/webots_youbot_mcp_server.py"],
+      "cwd": "/Users/luisfelipesena/Development/Personal/webots-youbot-mcp"
+    }
+  }
+}

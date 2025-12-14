@@ -1,10 +1,21 @@
 import heapq
 import math
+import sys
 from controller import Supervisor
 from base import Base
 from arm import Arm
 from gripper import Gripper
 from color_classifier import ColorClassifier
+
+# MCP Bridge for Claude Code integration
+MCP_BRIDGE_PATH = "/Users/luisfelipesena/Development/Personal/webots-youbot-mcp"
+sys.path.insert(0, MCP_BRIDGE_PATH)
+try:
+    from mcp_bridge import MCPBridge
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    print("[MCP] Bridge not available - running without MCP integration")
 
 CUBE_SIZE = 0.03
 ARENA_CENTER = (-0.79, 0.0)
@@ -724,6 +735,16 @@ class YouBotController:
         self._path_dirty = True
         self.active_goal = None
         self._max_cmd = 0.25
+
+        # MCP Bridge for Claude Code real-time monitoring
+        self.mcp = None
+        self.delivered = {"red": 0, "green": 0, "blue": 0}
+        if MCP_AVAILABLE:
+            try:
+                self.mcp = MCPBridge(self.robot)
+                print("[MCP] Bridge initialized successfully")
+            except Exception as e:
+                print(f"[MCP] Bridge init failed: {e}")
 
     def _log_throttled(self, key, msg, interval=1.5):
         try:
@@ -1489,11 +1510,11 @@ class YouBotController:
                 print("[DROP] Braço baixo, avançando sobre box...")
 
         elif self.stage == 1:
-            # Avançar até ficar BEM sobre o box
-            # Já estamos a ~0.20m (lidar), precisamos avançar mais ~10cm
-            self._safe_move(0.04, 0.0, 0.0)
+            # Avançar até ficar sobre o box - REDUZIDO para evitar colisão de rodas
+            # Já estamos a ~0.20m (lidar), avançamos apenas ~5cm
+            self._safe_move(0.03, 0.0, 0.0)
             self.gripper.grip()
-            if self.stage_timer >= 2.5:  # 0.04 m/s × 2.5s = 10cm
+            if self.stage_timer >= 1.5:  # 0.03 m/s × 1.5s = ~5cm
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
@@ -1539,20 +1560,45 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 7:
+            # Track delivered cube by color
+            color_key = (self.current_color or "").lower()
+            if color_key in self.delivered:
+                self.delivered[color_key] += 1
             print(f"[DROP] Cubo depositado na caixa {self.current_color}. Iniciando retorno ao spawn.")
-            
-            # Usar os waypoints percorridos na ida, invertidos (RÉ PURA)
-            if hasattr(self, '_last_route_taken') and self._last_route_taken:
-                # Inverter a rota (excluir o box, que é o último)
-                self._return_waypoints = list(reversed(self._last_route_taken[:-1]))
-                self._return_waypoints.append(SPAWN_POSITION)
+
+            # NOVA ESTRATÉGIA: Calcular rota A* direta ao spawn
+            # Temporariamente aumentar raio dos boxes para A* desviar bem
+            for pos in self.box_positions.values():
+                self.grid.fill_disk(pos[0], pos[1], 0.45, OccupancyGrid.OBSTACLE, static=False)
+
+            # Sincronizar pose antes de calcular rota
+            gt = self._get_ground_truth_pose()
+            if gt:
+                self.pose = gt
+
+            # Calcular rota A* ao spawn
+            a_star_path = self.grid.plan_path((self.pose[0], self.pose[1]), SPAWN_POSITION)
+
+            if a_star_path and len(a_star_path) > 0:
+                # Simplificar path - pegar waypoints espaçados
+                self._return_waypoints = []
+                for i, wp in enumerate(a_star_path):
+                    if i % 3 == 0 or i == len(a_star_path) - 1:  # Cada 3 waypoints
+                        self._return_waypoints.append(wp)
+                if SPAWN_POSITION not in self._return_waypoints:
+                    self._return_waypoints.append(SPAWN_POSITION)
+                print(f"[RETURN] Rota A* calculada: {len(self._return_waypoints)} waypoints")
             else:
-                # Fallback: rota simples
-                self._return_waypoints = [SPAWN_POSITION]
-            
+                # Fallback: usar rota estratégica baseada na cor do box
+                self._return_waypoints = get_return_route((self.pose[0], self.pose[1]), color_key)
+                print(f"[RETURN] Fallback: rota estratégica com {len(self._return_waypoints)} waypoints")
+
+            # Restaurar boxes como BOX (não OBSTACLE) para próximas navegações
+            for pos in self.box_positions.values():
+                self.grid.fill_disk(pos[0], pos[1], 0.20, OccupancyGrid.BOX, static=True)
+
             self._return_waypoint_idx = 0
             self.mode = "return_to_spawn"
-            print(f"[RETURN] Rota: {len(self._return_waypoints)} waypoints (RÉ PURA)")
             
             # Limpar estado do drop
             self.current_target = None
@@ -1611,7 +1657,7 @@ class YouBotController:
                 self._gt_sync_timer = 0.0
             self._gt_sync_timer += dt
 
-            sync_interval = 0.5 if self.mode == "to_box" else 2.0
+            sync_interval = 0.5 if self.mode in ("to_box", "return_to_spawn") else 2.0
             pose_invalid = any(math.isnan(v) for v in self.pose)
             if pose_invalid or self._gt_sync_timer >= sync_interval:
                 gt = self._get_ground_truth_pose()
@@ -1637,6 +1683,41 @@ class YouBotController:
             lock_color = self.current_color if self.mode == "approach" else None
             lock_angle = self.locked_cube_angle if self.mode == "approach" else None
             recognition = self._process_recognition(lock_color=lock_color, lock_angle=lock_angle)
+
+            # MCP Bridge: publish state for Claude Code monitoring
+            if self.mcp:
+                # Gripper state
+                left_f, right_f = self.gripper.finger_positions()
+                gripper_closed = (left_f or 0) < 0.005 and (right_f or 0) < 0.005
+                has_cube = self.gripper.has_object(threshold=0.003) if not gripper_closed else False
+
+                # Recognition info
+                recog_info = None
+                if recognition:
+                    recog_info = {"color": recognition["color"], "distance": round(recognition["distance"], 3), "angle": round(recognition["angle"], 2)}
+
+                self.mcp.publish({
+                    "pose": self.pose,
+                    "mode": self.mode,
+                    "collected": self.collected,
+                    "max_cubes": self.max_cubes,
+                    "delivered": self.delivered,
+                    "current_target": self.current_color,
+                    "lidar": {"front": lidar_info["front"], "rear": lidar_info["rear"], "left": lidar_info["left"], "right": lidar_info["right"]},
+                    "distance_sensors": front_info,
+                    "gripper": {"left": left_f, "right": right_f, "closed": gripper_closed, "has_cube": has_cube},
+                    "recognition": recog_info,
+                    "arm_state": getattr(self, 'arm_state', 'unknown'),
+                })
+                self.mcp.get_command()
+
+                # Save camera frame every 50 cycles (~0.8s)
+                if hasattr(self, '_mcp_frame_counter'):
+                    self._mcp_frame_counter += 1
+                else:
+                    self._mcp_frame_counter = 0
+                if self._mcp_frame_counter % 50 == 0:
+                    self.mcp.save_camera_frame(self.camera)
 
             # ===== MODO SEARCH =====
             if self.mode == "search":
@@ -2139,23 +2220,28 @@ class YouBotController:
                 continue
 
             # ===== MODO RETURN_TO_SPAWN =====
-            # Estratégia SIMPLES:
-            # Fase 0: Ré RETA por 4 segundos para se afastar do box
-            # Fase 1: Girar até apontar para o spawn
-            # Fase 2: Ir PARA FRENTE até o spawn
+            # Estratégia: Seguir waypoints invertidos da ida + Fuzzy Logic
             if self.mode == "return_to_spawn":
                 self.arm.set_height(Arm.RESET)
                 self.gripper.release()
-                
+
                 current_time = self.robot.getTime()
-                
+
                 # Inicialização
                 if not hasattr(self, '_return_phase'):
-                    self._return_phase = 0  # 0=ré, 1=giro, 2=navegação
+                    self._return_phase = 0  # 0=recuo curto, 1=navegação waypoints
                     self._return_start = current_time
                     self._return_log_time = 0.0
-                    print("[RETURN] Fase 0: Recuando do box (4s)...")
-                
+
+                    # Garantir waypoints existem
+                    if not hasattr(self, '_return_waypoints') or not self._return_waypoints:
+                        self._return_waypoints = [SPAWN_POSITION]
+                    if not hasattr(self, '_return_waypoint_idx'):
+                        self._return_waypoint_idx = 0
+
+                    print(f"[RETURN] Iniciando retorno com {len(self._return_waypoints)} waypoints")
+                    print(f"[RETURN] Fase 0: Recuo curto do box (1.5s)...")
+
                 # Sensores
                 rear_obs = min(lidar_info["rear"], rear_info.get("rear", 2.0))
                 rl_obs = rear_info.get("rear_left", 2.0)
@@ -2163,121 +2249,181 @@ class YouBotController:
                 left_obs = min(lidar_info["left"], lateral_info.get("left", 2.0))
                 right_obs = min(lidar_info["right"], lateral_info.get("right", 2.0))
                 front_obs = min(lidar_info["front"], front_info["front"])
-                fl_obs = front_info.get("front_left", 2.0)
-                fr_obs = front_info.get("front_right", 2.0)
-                
+
                 min_rear = min(rear_obs, rl_obs, rr_obs)
-                min_front = min(front_obs, fl_obs, fr_obs)
-                
+                min_front = min(front_obs, front_info.get("front_left", 2.0), front_info.get("front_right", 2.0))
+
                 dist_to_spawn, angle_to_spawn = self._distance_to_point(SPAWN_POSITION)
-                
-                # ===== FASE 0: RÉ RETA =====
+
+                # ===== FASE 0: RECUO DO BOX (distância-based) =====
                 if self._return_phase == 0:
                     phase_elapsed = current_time - self._return_start
-                    
-                    if phase_elapsed < 4.0 and min_rear > 0.25:
-                        # Ré reta, sem rotação
+
+                    # Inicializar posição de recuo
+                    if not hasattr(self, '_retreat_start_pos'):
+                        self._retreat_start_pos = (self.pose[0], self.pose[1])
+
+                    # Calcular distância recuada
+                    retreat_dist = math.hypot(
+                        self.pose[0] - self._retreat_start_pos[0],
+                        self.pose[1] - self._retreat_start_pos[1]
+                    )
+
+                    # Verificar sensores traseiros completos
+                    rear_clear = min_rear > 0.25 and rl_obs > 0.25 and rr_obs > 0.25
+
+                    # Recuar até 0.60m OU timeout 5s OU traseira bloqueada
+                    # AUMENTADO para garantir distância segura do box
+                    if retreat_dist < 0.60 and phase_elapsed < 5.0 and rear_clear:
                         self._safe_move(-0.12, 0.0, 0.0)
                     else:
-                        # Ir para próxima fase
-                        if phase_elapsed >= 4.0:
-                            print(f"[RETURN] Fase 1: Girando para spawn (ang={math.degrees(angle_to_spawn):.0f}°)...")
-                        else:
-                            print("[RETURN] Traseira bloqueada. Fase 1: Girando...")
+                        if hasattr(self, '_retreat_start_pos'):
+                            delattr(self, '_retreat_start_pos')
+                        print(f"[RETURN] Fase 1: Navegando (recuou {retreat_dist:.2f}m)...")
+
+                        # Sincronizar pose após recuo
+                        gt = self._get_ground_truth_pose()
+                        if gt:
+                            self.pose = gt
+
                         self._return_phase = 1
                         self._return_start = current_time
+                        self._return_stuck_time = current_time
+                        self._return_last_dist = dist_to_spawn
                     continue
-                
-                # ===== FASE 1: GIRO NO LUGAR =====
+
+                # ===== FASE 1: NAVEGAÇÃO POR WAYPOINTS COM FUZZY =====
                 elif self._return_phase == 1:
-                    phase_elapsed = current_time - self._return_start
-                    
-                    # Se alinhado (< 45°), ir para navegação
-                    if abs(angle_to_spawn) < 0.78:  # ~45°
-                        print("[RETURN] ✓ Alinhado! Fase 2: Navegando para spawn...")
-                        self._return_phase = 2
-                        self._return_start = current_time
-                        continue
-                    
-                    # Timeout de 10 segundos
-                    if phase_elapsed > 10.0:
-                        print(f"[RETURN] Timeout giro. Prosseguindo (ang={math.degrees(angle_to_spawn):.0f}°)...")
-                        self._return_phase = 2
-                        self._return_start = current_time
-                        continue
-                    
-                    # Girar na direção do spawn
-                    omega = 0.45 if angle_to_spawn > 0 else -0.45
-                    
-                    # Se frente bloqueada, dar ré enquanto gira
-                    if min_front < 0.35:
-                        self._safe_move(-0.06, 0.0, omega)
-                    else:
-                        self._safe_move(0.0, 0.0, omega)
-                    continue
-                
-                # ===== FASE 2: NAVEGAÇÃO PARA FRENTE =====
-                elif self._return_phase == 2:
-                    # Log periódico
-                    if current_time - self._return_log_time > 2.0:
-                        print(f"[RETURN] Pos: ({self.pose[0]:.2f}, {self.pose[1]:.2f}) → SPAWN dist={dist_to_spawn:.2f}m ang={math.degrees(angle_to_spawn):.0f}°")
-                        self._return_log_time = current_time
-                    
                     # Chegou no spawn?
                     if dist_to_spawn < 0.60:
                         print(f"[RETURN] ✓ Chegou ao spawn! Pose: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
                         print("[RETURN] ========== INICIANDO NOVA BUSCA ==========")
-                        
+
                         gt = self._get_ground_truth_pose()
                         if gt:
                             self.pose = gt
-                        
-                        for attr in ['_return_phase', '_return_start', '_return_log_time', 
-                                     '_return_waypoints', '_return_waypoint_idx', '_last_route_taken']:
+
+                        for attr in ['_return_phase', '_return_start', '_return_log_time',
+                                     '_return_waypoints', '_return_waypoint_idx', '_last_route_taken',
+                                     '_return_stuck_time', '_return_last_dist']:
                             if hasattr(self, attr):
                                 delattr(self, attr)
-                        
+
                         self.mode = "search"
                         continue
-                    
-                    # Navegação simples para o spawn
-                    cmd_speed = 0.0
-                    cmd_omega = 0.0
-                    
-                    # Se ângulo grande (> 90°), parar e girar
-                    if abs(angle_to_spawn) > math.pi / 2:
-                        if min_front < 0.35:
-                            cmd_speed = -0.06
-                        else:
-                            cmd_speed = 0.02
-                        cmd_omega = 0.4 if angle_to_spawn > 0 else -0.4
-                    
-                    # Emergência frontal
-                    elif min_front < 0.30:
-                        if min_rear > 0.30:
-                            cmd_speed = -0.08
-                            cmd_omega = 0.35 if left_obs > right_obs else -0.35
-                        else:
-                            cmd_omega = 0.4 if left_obs > right_obs else -0.4
-                    
-                    # Lateral bloqueado
-                    elif left_obs < 0.25 or right_obs < 0.25:
-                        cmd_speed = 0.04
-                        cmd_omega = -0.35 if left_obs < right_obs else 0.35
-                    
-                    # Navegação normal
+
+                    # === STUCK DETECTION ===
+                    # Se não progrediu em 8s, tentar manobra de escape
+                    if hasattr(self, '_return_stuck_time') and hasattr(self, '_return_last_dist'):
+                        if current_time - self._return_stuck_time > 8.0:
+                            if dist_to_spawn >= self._return_last_dist - 0.20:
+                                print(f"[RETURN] ⚠ Stuck detectado! Tentando escape...")
+                                # Manobra de escape: ré + giro
+                                if min_rear > 0.30:
+                                    self._safe_move(-0.08, 0.0, 0.4)
+                                else:
+                                    self._safe_move(0.0, 0.0, 0.5)
+                                self._return_stuck_time = current_time
+                                self._return_last_dist = dist_to_spawn
+                                continue
+                            else:
+                                # Progrediu, resetar timer
+                                self._return_stuck_time = current_time
+                                self._return_last_dist = dist_to_spawn
+
+                    # Waypoint atual
+                    if self._return_waypoint_idx >= len(self._return_waypoints):
+                        target_wp = SPAWN_POSITION
                     else:
-                        cmd_omega = -angle_to_spawn * 1.5
-                        cmd_omega = max(-0.5, min(0.5, cmd_omega))
-                        
-                        if min_front < 0.50:
-                            cmd_speed = 0.08
+                        target_wp = self._return_waypoints[self._return_waypoint_idx]
+
+                    dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
+
+                    # Threshold adaptativo: mais largo perto do spawn
+                    is_near_spawn = self._return_waypoint_idx >= len(self._return_waypoints) - 1
+                    wp_threshold = 0.50 if is_near_spawn else 0.40
+
+                    # Avançar waypoint se chegou perto
+                    if dist_to_wp < wp_threshold and self._return_waypoint_idx < len(self._return_waypoints):
+                        self._return_waypoint_idx += 1
+                        if self._return_waypoint_idx < len(self._return_waypoints):
+                            print(f"[RETURN] Waypoint {self._return_waypoint_idx}/{len(self._return_waypoints)}")
+                        continue
+
+                    # Log periódico
+                    if current_time - self._return_log_time > 2.0:
+                        wp_info = f"WP {self._return_waypoint_idx+1}/{len(self._return_waypoints)}" if self._return_waypoint_idx < len(self._return_waypoints) else "SPAWN"
+                        print(f"[RETURN] Pos: ({self.pose[0]:.2f}, {self.pose[1]:.2f}) → {wp_info} dist={dist_to_wp:.2f}m ang={math.degrees(angle_to_wp):.0f}°")
+                        self._return_log_time = current_time
+
+                    # === VERIFICAR PROXIMIDADE DE BOXES ===
+                    # Usar posições conhecidas dos boxes para evitar colisão
+                    near_box = False
+                    box_avoid_omega = 0.0
+                    for box_name, box_pos in self.box_positions.items():
+                        dx = box_pos[0] - self.pose[0]
+                        dy = box_pos[1] - self.pose[1]
+                        dist_to_box = math.hypot(dx, dy)
+                        if dist_to_box < 0.70:  # Muito perto de um box
+                            near_box = True
+                            # Calcular direção de escape (oposta ao box)
+                            box_angle = math.atan2(dy, dx) - self.pose[2]
+                            box_angle = wrap_angle(box_angle)
+                            # Se box está à frente, desviar
+                            if abs(box_angle) < math.radians(60):
+                                box_avoid_omega = -0.5 if box_angle > 0 else 0.5
+                                print(f"[RETURN] ⚠ Perto do box {box_name}! Desviando...")
+                            break
+
+                    # === FUZZY LOGIC NAVIGATION ===
+                    vx, vy, omega = self.navigator.compute(
+                        has_target=True,
+                        target_distance=dist_to_wp,
+                        target_angle=angle_to_wp,
+                        obs_front=front_obs,
+                        obs_left=left_obs,
+                        obs_right=right_obs,
+                        pose=self.pose
+                    )
+
+                    # === CORREÇÃO ÂNGULO ±180° ===
+                    if abs(angle_to_wp) > 2.6:  # ~150°
+                        omega = 0.5 if angle_to_wp > 0 else -0.5
+                        vx = 0.0
+
+                    # === OVERRIDE: BOX PROXIMITY ===
+                    if near_box and abs(box_avoid_omega) > 0.1:
+                        vx = 0.0
+                        omega = box_avoid_omega
+
+                    # === OVERRIDES DE SEGURANÇA ===
+                    # Thresholds MAIS AGRESSIVOS para retorno
+                    if min_front < 0.30:  # Aumentado de 0.25
+                        rear_all_clear = min_rear > 0.30 and rl_obs > 0.30 and rr_obs > 0.30
+                        if rear_all_clear:
+                            vx = -0.10
+                            omega = 0.5 if left_obs > right_obs else -0.5
                         else:
-                            cmd_speed = 0.14
-                        
-                        cmd_speed *= (1.0 - min(0.3, abs(cmd_omega)))
-                    
-                    self._safe_move(cmd_speed, 0.0, cmd_omega)
+                            vx = 0.0
+                            omega = 0.6 if left_obs > right_obs else -0.6
+                    elif min_front < 0.45:  # Aumentado de 0.35
+                        vx = min(vx, 0.04)
+                        # Adicionar rotação para desviar
+                        if left_obs > right_obs:
+                            omega = max(omega, 0.2)
+                        else:
+                            omega = min(omega, -0.2)
+
+                    # Bloqueio lateral mais agressivo
+                    if left_obs < 0.28 and omega > 0 and right_obs > left_obs + 0.05:
+                        omega = -0.4
+                        vx = min(vx, 0.04)
+                    elif right_obs < 0.28 and omega < 0 and left_obs > right_obs + 0.05:
+                        omega = 0.4
+                        vx = min(vx, 0.04)
+
+                    # Car-like: sem strafe
+                    self._safe_move(vx, 0.0, omega)
                     continue
 
 
