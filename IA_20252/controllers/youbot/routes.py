@@ -160,16 +160,18 @@ def get_return_route(current_pos, from_color):
     if from_color == "red":
         # RED box at (2.31, 0.01)
         # Robot was facing EAST, now needs to go WEST
+        # KEY INSIGHT: Going SOUTH first (90° right turn) is easier than 180° turn
         
-        # Only add waypoints that are actually WEST of current position
-        # This prevents trying to go backwards to reach waypoints
+        # Strategy: Go SOUTH to clear obstacles, then WEST through southern corridor
         if x > 1.0:
-            waypoints.append((0.90, 0.45))   # Arc north-west
-        if x > 0.60:
-            waypoints.append((0.50, 0.45))   # Continue arc
-        if x > 0.20:
-            waypoints.append((0.15, 0.30))   # Curve toward center
-        waypoints.append((-0.20, 0.15))      # Into center corridor
+            # First go SOUTH - only requires ~90° right turn from EAST
+            waypoints.append((1.20, -0.50))   # South first (easy turn)
+            waypoints.append((0.80, -0.60))   # Continue south-west
+        if x > 0.50:
+            waypoints.append((0.40, -0.50))   # West through southern area
+        if x > 0.0:
+            waypoints.append((0.00, -0.30))   # Curve toward center
+        waypoints.append((-0.30, -0.10))      # Into center corridor
         
     elif from_color == "green":
         # GREEN box at (0.48, 1.58)
