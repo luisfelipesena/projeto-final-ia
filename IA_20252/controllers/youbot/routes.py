@@ -185,13 +185,27 @@ def get_return_route(current_pos, from_color):
     elif from_color == "blue":
         # BLUE box at (0.48, -1.62)
         # Robot was facing SOUTH, needs to go NORTH-WEST
+        # After retreat, robot may end up at various Y positions
         
         if y < -0.80:
             waypoints.append((0.50, -0.60))  # Arc north
         if y < -0.40:
             waypoints.append((0.35, -0.30))  # Continue north
-        waypoints.append((0.10, -0.10))      # Toward center
-        waypoints.append((-0.25, 0.0))       # Center corridor
+        
+        # If robot is already in the center area (y > -0.40), 
+        # we need waypoints that guide it WEST without requiring 180° turn
+        if y > -0.40:
+            # Robot is close to center, avoid obstacle A at (0.6, 0.0)
+            if x > 0.40:
+                # Need to go around obstacle A - go NORTH of it
+                waypoints.append((0.35, 0.35))   # Go north of A
+                waypoints.append((0.0, 0.30))    # Continue west-north
+            elif x > 0.0:
+                waypoints.append((-0.10, 0.15))  # Direct to corridor
+            waypoints.append((-0.40, 0.05))      # Into corridor
+        else:
+            waypoints.append((0.10, -0.10))      # Toward center
+            waypoints.append((-0.25, 0.0))       # Center corridor
     
     # Common path through center corridor to spawn
     # Only add waypoints that are WEST of current x position

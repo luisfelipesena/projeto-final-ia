@@ -820,7 +820,20 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 6:
-            self._safe_move(0.0, 0.0, 0.4)
+            # Rotate toward spawn direction based on current box color
+            # This prepares the robot for the return journey
+            color_key = (self.current_color or "").lower()
+            
+            # Determine rotation direction based on box
+            # RED box (east): rotate left to face west
+            # GREEN box (north): rotate right to face south-west
+            # BLUE box (south): rotate right to face north-west
+            if color_key == "red":
+                omega = 0.4  # Turn left
+            else:
+                omega = -0.4  # Turn right for green/blue
+            
+            self._safe_move(0.0, 0.0, omega)
             if self.stage_timer >= 1.5:
                 self.base.reset()
                 self.stage += 1
@@ -945,48 +958,101 @@ class YouBotController:
 
             # If angle to waypoint > 100 degrees, rotate in place first
             if abs(angle_to_wp) > math.radians(100):
-                # Track rotation progress
+                # Initialize tracking on first iteration
                 if self._return_turn_start is None:
                     self._return_turn_start = current_time
                     self._return_last_angle = angle_to_wp
+                    self._return_turn_attempts = 0
+                    self._return_preferred_dir = 1 if angle_to_wp > 0 else -1
                 
                 turn_elapsed = current_time - self._return_turn_start
                 
-                # Stuck detection: if turning for >5s without progress, skip waypoint
-                if turn_elapsed > 5.0:
+                # Stuck detection: if turning for >4s without progress
+                if turn_elapsed > 4.0:
                     angle_progress = abs(abs(self._return_last_angle) - abs(angle_to_wp))
-                    if angle_progress < math.radians(30):  # Less than 30° progress in 5s
-                        print(f"[RETURN] Turn stuck! Skipping waypoint {self._return_waypoint_idx+1}")
-                        self._return_waypoint_idx += 1
-                        self._return_turn_start = None
-                        self._return_last_angle = None
-                        self._skip_passed_waypoints()
-                        return
+                    if angle_progress < math.radians(25):  # Less than 25° progress
+                        self._return_turn_attempts += 1
+                        
+                        if self._return_turn_attempts == 1:
+                            # First stuck: try opposite direction
+                            self._return_preferred_dir = -self._return_preferred_dir
+                            print("[RETURN] Rotation blocked, trying opposite direction")
+                            self._return_turn_start = current_time
+                            self._return_last_angle = angle_to_wp
+                        elif self._return_turn_attempts == 2:
+                            # Second stuck: try with backward movement
+                            print("[RETURN] Still stuck, will try with reverse")
+                            self._return_turn_start = current_time
+                            self._return_last_angle = angle_to_wp
+                        else:
+                            # Third stuck: skip waypoint
+                            print(f"[RETURN] Turn stuck! Skipping waypoint {self._return_waypoint_idx+1}")
+                            self._return_waypoint_idx += 1
+                            self._return_turn_start = None
+                            self._return_last_angle = None
+                            self._return_turn_attempts = 0
+                            self._skip_passed_waypoints()
+                            return
                     else:
+                        # Making progress, reset timer
                         self._return_turn_start = current_time
                         self._return_last_angle = angle_to_wp
                 
-                # Use higher speed for angles near ±180° to break through
-                if abs(angle_to_wp) > math.radians(150):
-                    omega_speed = 0.5
+                # Determine rotation direction based on obstacles
+                # Preferred direction comes from angle, but we check obstacles
+                omega_speed = 0.5 if abs(angle_to_wp) > math.radians(150) else 0.4
+                
+                # Check obstacle clearance for rotation
+                left_clear = left_obs > 0.25
+                right_clear = right_obs > 0.25
+                
+                if self._return_preferred_dir > 0:
+                    # Want to turn left
+                    if left_clear:
+                        omega = omega_speed
+                    elif right_clear:
+                        omega = -omega_speed  # Fallback to right
+                    else:
+                        omega = omega_speed * 0.5  # Both blocked, slow left
                 else:
-                    omega_speed = 0.4
+                    # Want to turn right
+                    if right_clear:
+                        omega = -omega_speed
+                    elif left_clear:
+                        omega = omega_speed  # Fallback to left
+                    else:
+                        omega = -omega_speed * 0.5  # Both blocked, slow right
                 
-                omega = omega_speed if angle_to_wp > 0 else -omega_speed
-                
-                # Add small forward motion to help unstick
-                fwd = 0.02 if min_front > 0.40 else 0.0
+                # Movement to help unstick
+                if self._return_turn_attempts >= 2:
+                    # After second attempt, try reversing
+                    if min_rear > 0.30:
+                        fwd = -0.05
+                    elif min_front > 0.40:
+                        fwd = 0.03
+                    else:
+                        fwd = 0.0
+                elif min_front > 0.40:
+                    fwd = 0.02
+                else:
+                    fwd = 0.0
                 
                 self._safe_move(fwd, 0.0, omega)
                 
                 # Log progress
                 if current_time - self._return_log_time > 1.0:
-                    print(f"[RETURN] Turning in place: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
+                    dir_str = "L" if omega > 0 else "R"
+                    print(f"[RETURN] Turning {dir_str}: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
                     self._return_log_time = current_time
                 return
             else:
+                # Cleanup turn state
                 self._return_turn_start = None
                 self._return_last_angle = None
+                if hasattr(self, '_return_turn_attempts'):
+                    delattr(self, '_return_turn_attempts')
+                if hasattr(self, '_return_preferred_dir'):
+                    delattr(self, '_return_preferred_dir')
                 print("[RETURN] Phase 2: Navigating to spawn...")
                 self._return_phase = 2
                 self._return_start = current_time
@@ -1006,7 +1072,7 @@ class YouBotController:
                 for attr in ['_return_phase', '_return_start', '_return_log_time',
                              '_return_waypoints', '_return_waypoint_idx', '_last_box_color',
                              '_return_turn_start', '_return_last_angle', '_return_nav_last_pos',
-                             '_return_nav_stuck_time']:
+                             '_return_nav_stuck_time', '_return_turn_attempts', '_return_preferred_dir']:
                     if hasattr(self, attr):
                         delattr(self, attr)
 
@@ -1031,7 +1097,7 @@ class YouBotController:
                     next_wp = self._return_waypoints[self._return_waypoint_idx]
                     print(f"[RETURN] Waypoint {self._return_waypoint_idx}/{len(self._return_waypoints)} reached -> next: ({next_wp[0]:.2f}, {next_wp[1]:.2f})")
                 else:
-                    print(f"[RETURN] All waypoints reached, heading to spawn")
+                    print("[RETURN] All waypoints reached, heading to spawn")
                 # Reset stuck tracking
                 if hasattr(self, '_return_nav_last_pos'):
                     delattr(self, '_return_nav_last_pos')
