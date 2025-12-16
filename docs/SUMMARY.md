@@ -6,6 +6,34 @@
 - Sensores principais: câmera RGB com Recognition ativo, 4 LIDARs 360° (front/rear/left/right), 6 sensores infravermelhos de distância (front/rear com diagonais).
 - Estados principais (FSM): `search` → `approach` → `grasp` → `to_box` → `drop` → `return_to_spawn` → volta a `search`.
 
+## Arquitetura Modular do Código
+
+O controlador foi dividido em módulos para melhor manutenibilidade:
+
+```
+controllers/youbot/
+├── constants.py          # Constantes e configuração da arena (~60 linhas)
+├── routes.py             # Planejamento de rotas estratégicas (~240 linhas)
+├── occupancy_grid.py     # Grade de ocupação e A* (~280 linhas)
+├── fuzzy_navigator.py    # Navegação fuzzy (~230 linhas)
+├── youbot_controller.py  # Controlador principal FSM (~1600 linhas)
+├── youbot.py             # Entry point (~12 linhas)
+├── base.py               # Controle da base mecanum
+├── arm.py                # Controle do braço 5-DOF
+├── gripper.py            # Controle da garra
+└── color_classifier.py   # CNN para classificação de cores
+```
+
+### Módulos Principais
+
+| Módulo | Responsabilidade |
+|--------|------------------|
+| `constants.py` | `CUBE_SIZE`, `ARENA_*`, `BOX_POSITIONS`, `SPAWN_POSITION`, `KNOWN_OBSTACLES` |
+| `routes.py` | `get_route_to_box()`, `get_return_route()`, `wrap_angle()`, `color_from_rgb()` |
+| `occupancy_grid.py` | Classe `OccupancyGrid` com A*, raycast, inflação de obstáculos |
+| `fuzzy_navigator.py` | Classe `FuzzyNavigator` com funções de pertinência e regras |
+| `youbot_controller.py` | Classe `YouBotController` com FSM e handlers de cada estado |
+
 ## Configuração do mundo e hardware
 - Arena: `RectangleArena` 7.0 m × 4.0 m, centro em (-0.79, 0.0), parede 0.30 m. Robô spawna em x≈-4.0 m.
 - Caixas (PlasticFruitBox): 
@@ -129,23 +157,108 @@ omega = heading_error * 0.5  # Rotação suave
 
 ## Sistema de Retorno (RETURN_TO_SPAWN)
 
-### Estratégia: WAYPOINTS invertidos da ida (robusta)
-Após depositar, o robô volta ao spawn seguindo **a rota planejada na ida, invertida**:
-- Garante que o retorno respeite o mesmo desvio de obstáculos (incluindo o obstáculo **A** no caso do box **RED**).
-- Como o `DROP` pode ocorrer antes do último waypoint, o retorno começa **do waypoint mais próximo** da pose atual.
+### Estratégia: Waypoints Adaptativos (3 fases)
+
+O sistema de retorno foi redesenhado para evitar travamentos em giros de 180°:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 0: RETREAT (recuo da caixa)                           │
+│  - Recua 60cm ou até obstáculo traseiro                     │
+│  - Sincroniza ground truth após recuo                       │
+│  - Calcula rota ADAPTATIVA baseada na posição REAL          │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 1: TURN-IN-PLACE (se necessário)                      │
+│  - Se ângulo ao waypoint > 100°: rotação pura               │
+│  - Detecção de travamento: se < 30° progresso em 5s, skip   │
+│  - Velocidade aumentada (0.5) para ângulos > 150°           │
+└─────────────────────┬───────────────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FASE 2: WAYPOINT NAVIGATION                                │
+│  - Navegação car-like idêntica ao TO_BOX                    │
+│  - Skip automático de waypoints passados                    │
+│  - Detecção de stuck: se < 15cm movimento em 8s, skip       │
+│  - Retorna à Fase 1 se ângulo > 100°                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Waypoints Adaptativos por Cor
+
+A função `get_return_route(current_pos, from_color)` gera waypoints **baseados na posição atual**, não assumindo posição fixa após depósito:
+
+**RED** (posição típica após recuo ~0.9, 0.5):
+```python
+# Só adiciona waypoints OESTE da posição atual
+if x > 1.0: waypoints.append((0.90, 0.45))
+if x > 0.6: waypoints.append((0.50, 0.45))
+if x > 0.2: waypoints.append((0.15, 0.30))
+waypoints.append((-0.20, 0.15))  # Entrada corredor central
+```
+
+**GREEN** (posição típica após recuo ~0.5, 1.0):
+```python
+if y > 0.80: waypoints.append((0.50, 0.60))
+if y > 0.40: waypoints.append((0.35, 0.30))
+waypoints.append((0.10, 0.10))
+waypoints.append((-0.25, 0.0))  # Corredor central
+```
+
+**BLUE** (posição típica após recuo ~0.5, -1.0):
+```python
+if y < -0.80: waypoints.append((0.50, -0.60))
+if y < -0.40: waypoints.append((0.35, -0.30))
+waypoints.append((0.10, -0.10))
+waypoints.append((-0.25, 0.0))  # Corredor central
+```
+
+**Corredor comum** (evita obstáculos E e F):
+```python
+waypoints.extend([
+    (-0.60, 0.0),   # Antes de E/F
+    (-1.30, 0.0),   # Entre E e F
+    (-1.80, 0.0),   # Após E/F
+    (-2.50, 0.0),   # Área livre
+    (-3.20, 0.0),   # Aproximando spawn
+    SPAWN_POSITION  # (-3.91, 0.0)
+])
+```
+
+### Mecanismos de Recuperação
+
+```python
+# Skip de waypoints já passados
+def _skip_passed_waypoints(self):
+    while waypoint_idx < len(waypoints):
+        dist, angle = distance_to_point(waypoint)
+        if dist < 0.45:  # Muito perto
+            skip()
+        elif abs(angle) > 120° and dist < 1.0:  # Atrás e perto
+            skip()
+        else:
+            break
+
+# Detecção de travamento em rotação (Fase 1)
+if turn_elapsed > 5.0 and angle_progress < 30°:
+    skip_waypoint()
+
+# Detecção de travamento em navegação (Fase 2)
+if moved < 0.15m in 8.0s:
+    skip_waypoint()
+```
 
 ### Controle
 - Segue waypoint-a-waypoint com `cmd_omega = -angle_to_wp * k` (car-like) e velocidade reduzida em curvas.
-- Evitação de colisão **apenas quando necessário** (emergência/perigo frontal + repulsão lateral suave) para não “driftar” para dentro de obstáculos.
+- Evitação de colisão **apenas quando necessário** (emergência/perigo frontal + repulsão lateral suave).
+- **Transição automática** entre fases conforme necessário (Fase 2 pode voltar à Fase 1 se waypoint ficar atrás).
 
 ### Saída do Spawn (reorientação)
-Ao chegar no spawn, o controlador executa uma sequência curta para garantir que o robô **não encoste na parede** e comece a nova busca **de frente pro mapa**:
-- Garante folga da parede esquerda (se necessário, move alguns cm para dentro).
-- Faz um **U-turn (reorientação)** até heading ~0°.
-- Avança ~0.8s para “limpar” a parede (similar ao passo inicial do `INIT`).
-
-Notas de robustez:
-- O `RETURN` considera “chegou no spawn” somente quando está **bem próximo** (distância menor) e só então dispara o `spawn_reset`.
+Ao chegar no spawn (`dist_to_spawn < 0.60m`):
+- Sincroniza ground truth
+- Limpa todos os estados de retorno
+- Transiciona para modo `search`
 
 ## Pilha de Sensores 360°
 

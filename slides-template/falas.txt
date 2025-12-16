@@ -186,20 +186,36 @@ No diagrama: marrom = obstaculo real, pontilhado vermelho = zona inflada.
 O A* planeja evitando a zona maior.
 
 ================================================================================
-SLIDE 12: MAQUINA DE ESTADOS (45 segundos)
+SLIDE 12: ARQUITETURA MODULAR (45 segundos)
 ================================================================================
 
-Maquina de estados finita com 5 estados:
+O codigo foi dividido em modulos para melhor manutencao:
+
+- constants.py: configuracao da arena e posicoes das caixas
+- routes.py: planejamento de rotas estrategicas para ir e voltar
+- occupancy_grid.py: grade de ocupacao e algoritmo A*
+- fuzzy_navigator.py: regras fuzzy para navegacao reativa
+- youbot_controller.py: maquina de estados principal
+- color_classifier.py: rede neural MobileNetV3
+
+Essa separacao de responsabilidades facilita testes e manutencao.
+
+================================================================================
+SLIDE 13: MAQUINA DE ESTADOS (45 segundos)
+================================================================================
+
+Maquina de estados finita com 6 estados:
 - SEARCH: explorar arena procurando cubos
 - APPROACH: alinhar e aproximar do cubo detectado
 - GRASP: descer braco, fechar garra, verificar agarrou
 - TO_BOX: navegar ate caixa de cor correspondente via A*
-- DROP: soltar cubo e voltar ao SEARCH
+- DROP: soltar cubo sobre a caixa
+- RETURN: voltar ao spawn em 3 fases (recuo, rotacao, navegacao)
 
-O ciclo repete 15 vezes.
+O ciclo repete 15 vezes, uma para cada cubo.
 
 ================================================================================
-SLIDE 13: PIPELINE COMPLETO (45 segundos)
+SLIDE 14: PIPELINE COMPLETO (45 segundos)
 ================================================================================
 
 Este diagrama mostra como os componentes se integram:
@@ -213,7 +229,7 @@ Sensores → Processamento → Decisao → Acao
 - FSM decide comandos para motores
 
 ================================================================================
-SLIDE 14: SEQUENCIA DE COLETA (45 segundos)
+SLIDE 15: SEQUENCIA DE COLETA (45 segundos)
 ================================================================================
 
 Visualizacao do ciclo completo de coleta em 6 passos:
@@ -223,10 +239,10 @@ Visualizacao do ciclo completo de coleta em 6 passos:
 3. GRASP: braco desce, garra fecha, verifica agarrou
 4. TO_BOX: A* planeja rota ate caixa de cor correspondente
 5. DROP: solta cubo, verifica gripper vazio e distancia
-6. REPETIR: volta ao SEARCH, ciclo repete 15x
+6. RETURN: volta ao spawn com waypoints adaptativos
 
 ================================================================================
-SLIDE 15: NAVEGACAO A* EM ACAO (30 segundos)
+SLIDE 16: NAVEGACAO A* EM ACAO (30 segundos)
 ================================================================================
 
 Este diagrama mostra o A* planejando rota na arena real.
@@ -236,7 +252,7 @@ A linha azul mostra o caminho planejado. Os pontos azuis sao waypoints.
 O robo segue esses waypoints enquanto fuzzy evita colisoes locais.
 
 ================================================================================
-SLIDE 16: DEMONSTRACAO (2 minutos)
+SLIDE 17: DEMONSTRACAO (2 minutos)
 ================================================================================
 
 [INICIAR VIDEO/SIMULACAO]
@@ -246,14 +262,14 @@ Observem:
 - Deteccao e aproximacao do cubo
 - Braco agarrando o cubo
 - Navegacao A* ate a caixa desviando de obstaculos
-- Deposito validado e retorno ao SEARCH
+- Deposito e RETORNO ao spawn para buscar proximo cubo
 
-Prestem atencao na navegacao fuzzy suavizando movimentos proximos a obstaculos.
+Prestem atencao no sistema de retorno em 3 fases: recuo, rotacao, navegacao.
 
 [ENCERRAR VIDEO/SIMULACAO]
 
 ================================================================================
-SLIDE 17: LIMITACOES DOS ALGORITMOS (1 minuto)
+SLIDE 18: LIMITACOES DOS ALGORITMOS (1 minuto)
 ================================================================================
 
 Cada algoritmo tem limitacoes conhecidas na literatura:
@@ -277,7 +293,7 @@ CNN/MobileNetV3 (Howard 2019):
 Mitigacao: fallback HSV quando confianca < 0.5
 
 ================================================================================
-SLIDE 18: CONCLUSAO (30 segundos)
+SLIDE 19: CONCLUSAO (30 segundos)
 ================================================================================
 
 Integracao bem-sucedida de tres tecnicas de IA:
@@ -285,10 +301,10 @@ Integracao bem-sucedida de tres tecnicas de IA:
 - Fuzzy: navegacao reativa suave
 - A*: planejamento global de trajetorias
 
-O sistema e robusto, capaz de se recuperar de travamentos.
+O sistema e robusto, com recuperacao automatica de travamentos no retorno.
 
 ================================================================================
-SLIDE 19: REFERENCIAS E PERGUNTAS (30 segundos)
+SLIDE 20: REFERENCIAS E PERGUNTAS (30 segundos)
 ================================================================================
 
 Referencias principais:
@@ -299,7 +315,7 @@ Referencias principais:
 Obrigado pela atencao. Estou a disposicao para perguntas.
 
 ================================================================================
-FIM - TEMPO TOTAL ESTIMADO: ~15 MINUTOS (19 SLIDES)
+FIM - TEMPO TOTAL ESTIMADO: ~15 MINUTOS (20 SLIDES)
 ================================================================================
 
 DICAS PARA APRESENTACAO:
@@ -308,6 +324,7 @@ DICAS PARA APRESENTACAO:
 - Enfatizar as mitigacoes para cada limitacao dos algoritmos
 - Referenciar autores: Hart/Nilsson/Raphael (A*), Zadeh (Fuzzy), Howard (MobileNetV3)
 - Explicar que Recognition API e ground truth, CNN e requisito obrigatorio
-- Ressaltar sensores laterais como solucao para travamentos
+- Ressaltar arquitetura modular como boa pratica de engenharia
+- Destacar sistema de retorno em 3 fases com recuperacao de travamentos
 - Conectar teoria com exemplos praticos da simulacao
 - Demonstracao ao vivo e o ponto alto - ter simulacao pronta!

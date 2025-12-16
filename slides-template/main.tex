@@ -539,29 +539,90 @@
 \section{Arquitetura do Sistema}
 %=================================================
 
+\begin{frame}{Arquitetura Modular}
+    \centering
+    \begin{tikzpicture}[scale=0.75]
+        % Module boxes
+        \node[draw, rectangle, rounded corners, fill=blue!20, minimum width=2.8cm, minimum height=1cm, font=\scriptsize\bfseries] 
+            (constants) at (0,3) {constants.py};
+        \node[draw, rectangle, rounded corners, fill=green!20, minimum width=2.8cm, minimum height=1cm, font=\scriptsize\bfseries] 
+            (routes) at (4,3) {routes.py};
+        \node[draw, rectangle, rounded corners, fill=orange!20, minimum width=2.8cm, minimum height=1cm, font=\scriptsize\bfseries] 
+            (grid) at (8,3) {occupancy\_grid.py};
+        \node[draw, rectangle, rounded corners, fill=purple!20, minimum width=2.8cm, minimum height=1cm, font=\scriptsize\bfseries] 
+            (fuzzy) at (12,3) {fuzzy\_navigator.py};
+        
+        % Main controller
+        \node[draw, rectangle, rounded corners, fill=red!30, minimum width=8cm, minimum height=1.5cm, font=\bfseries] 
+            (controller) at (6,0) {youbot\_controller.py};
+        
+        % Entry point
+        \node[draw, rectangle, rounded corners, fill=gray!20, minimum width=2.5cm, minimum height=0.8cm, font=\scriptsize\bfseries] 
+            (entry) at (6,-2.5) {youbot.py};
+        
+        % Hardware modules
+        \node[draw, rectangle, rounded corners, fill=cyan!20, minimum width=1.8cm, minimum height=0.8cm, font=\tiny\bfseries] 
+            (base) at (0,0) {base.py};
+        \node[draw, rectangle, rounded corners, fill=cyan!20, minimum width=1.8cm, minimum height=0.8cm, font=\tiny\bfseries] 
+            (arm) at (12,0) {arm.py};
+        \node[draw, rectangle, rounded corners, fill=yellow!30, minimum width=2.2cm, minimum height=0.8cm, font=\tiny\bfseries] 
+            (cnn) at (6,1.8) {color\_classifier.py};
+        
+        % Arrows
+        \draw[->, thick] (constants) -- (controller);
+        \draw[->, thick] (routes) -- (controller);
+        \draw[->, thick] (grid) -- (controller);
+        \draw[->, thick] (fuzzy) -- (controller);
+        \draw[->, thick] (cnn) -- (controller);
+        \draw[->, thick] (base) -- (controller);
+        \draw[->, thick] (arm) -- (controller);
+        \draw[->, thick] (entry) -- (controller);
+        
+        % Labels
+        \node[font=\tiny, blue!70] at (0,2.3) {Arena config};
+        \node[font=\tiny, green!70!black] at (4,2.3) {Waypoints};
+        \node[font=\tiny, orange!70] at (8,2.3) {A* + Grid};
+        \node[font=\tiny, purple!70] at (12,2.3) {Fuzzy rules};
+        \node[font=\tiny, yellow!70!black] at (6,1.2) {MobileNetV3};
+    \end{tikzpicture}
+    
+    \vspace{0.5em}
+    {\small \textbf{Separação de responsabilidades} $\rightarrow$ Código manutenível}
+\end{frame}
+
 \begin{frame}{Máquina de Estados}
     \centering
     \begin{tikzpicture}[
-        scale=1.1,
-        state/.style={draw, rectangle, rounded corners, minimum width=2.2cm, minimum height=1cm, thick, font=\small\bfseries},
+        scale=0.95,
+        state/.style={draw, rectangle, rounded corners, minimum width=2cm, minimum height=0.9cm, thick, font=\small\bfseries},
         arrow/.style={->, thick, >=stealth}
     ]
-        % States (circular layout)
+        % States (circular layout with RETURN)
         \node[state, fill=yellow!40] (search) at (0,2) {SEARCH};
-        \node[state, fill=orange!40] (approach) at (4,2) {APPROACH};
-        \node[state, fill=green!40] (grasp) at (6,0) {GRASP};
-        \node[state, fill=purple!40] (tobox) at (4,-2) {TO\_BOX};
-        \node[state, fill=red!40] (drop) at (0,-2) {DROP};
+        \node[state, fill=orange!40] (approach) at (3.5,2) {APPROACH};
+        \node[state, fill=green!40] (grasp) at (6.5,1) {GRASP};
+        \node[state, fill=purple!40] (tobox) at (6.5,-1) {TO\_BOX};
+        \node[state, fill=red!40] (drop) at (3.5,-2) {DROP};
+        \node[state, fill=cyan!40] (return) at (0,-2) {RETURN};
 
-        % Transitions with icons
+        % Transitions
         \draw[arrow, blue!70, line width=1.5pt] (search) -- node[above, font=\tiny] {detectado} (approach);
-        \draw[arrow, blue!70, line width=1.5pt] (approach) -- node[right, font=\tiny, pos=0.3] {perto} (grasp);
+        \draw[arrow, blue!70, line width=1.5pt] (approach) -- node[right, font=\tiny, pos=0.4] {perto} (grasp);
         \draw[arrow, blue!70, line width=1.5pt] (grasp) -- node[right, font=\tiny] {ok} (tobox);
         \draw[arrow, blue!70, line width=1.5pt] (tobox) -- node[below, font=\tiny] {chegou} (drop);
-        \draw[arrow, blue!70, line width=1.5pt] (drop) -- node[left, font=\tiny] {$\times$15} (search);
+        \draw[arrow, blue!70, line width=1.5pt] (drop) -- node[below, font=\tiny] {soltou} (return);
+        \draw[arrow, blue!70, line width=1.5pt] (return) -- node[left, font=\tiny] {spawn} (search);
 
         % Self-loop (lost)
-        \draw[arrow, red!60, dashed] (approach.north) .. controls (2,3.5) and (-2,3.5) .. node[above, font=\tiny] {perdido} (search.north);
+        \draw[arrow, red!60, dashed] (approach.north) .. controls (1.75,3.5) and (-1.5,3.5) .. node[above, font=\tiny] {perdido} (search.north);
+        
+        % Return phases annotation
+        \node[draw, rounded corners, fill=cyan!10, font=\tiny, text width=2.5cm, align=left] at (10,0) {
+            \textbf{RETURN:}\\
+            1. Recuo 60cm\\
+            2. Turn-in-place\\
+            3. Navigate
+        };
     \end{tikzpicture}
 \end{frame}
 
