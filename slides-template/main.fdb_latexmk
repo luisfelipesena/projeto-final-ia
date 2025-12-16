@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1765404865.34654 "/Users/luisfelipesena/Development/Personal/projeto-final-ia/slides-template/main.tex" "main.pdf" "main" 1765404867.10835 0
-  "/Users/luisfelipesena/Development/Personal/projeto-final-ia/slides-template/main.tex" 1765344307.62186 36239 9491e25f3e6221e0cad042e5448f696b ""
+["pdflatex"] 1765849401.80874 "/Users/luisfelipesena/Development/Personal/projeto-final-ia/slides-template/main.tex" "main.pdf" "main" 1765849403.66583 0
+  "/Users/luisfelipesena/Development/Personal/projeto-final-ia/slides-template/main.tex" 1765849400.39953 39416 a5b69326fc279708284b813738315746 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc" 1254269338 2375 baa924870cfb487815765f9094cf3728 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc" 1202520719 2405 5dcf2c1b967ee25cc46c58cd52244aed ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc" 1202520719 2840 216e6e45ad352e2456e1149f28885bee ""
@@ -57,7 +57,6 @@
   "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsso10.pfb" 1255129361 108953 1f7b36ba493bc956ac3c5eab8852ab76 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsso17.pfb" 1255129361 107277 12bb06b4f1b5546fd2b623f476f51ecb ""
   "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy10.pfb" 1254269338 27863 09ce3735688ffde955e72da27c95b61a ""
-  "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy6.pfb" 1254269338 28109 6d61305ed3d0eb794ebe36f15cf44aa0 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmsy8.pfb" 1254269338 27802 5c876bb2c4040caaf035d60bd74a86bd ""
   "/usr/local/texlive/2025/texmf-dist/fonts/type1/public/lm/lmtt8.pfb" 1255129361 115291 2ae7034c644e971beb573b1e6606f863 ""
   "/usr/local/texlive/2025/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1461363279 71627 94eb9990bed73c364d7f53f960cc8c5b ""
@@ -282,10 +281,10 @@
   "/usr/local/texlive/2025/texmf.cnf" 1741450484 577 418a7058ec8e006d8704f60ecd22c938 ""
   "beamerthemeDCC.sty" 1765231129.29175 5174 f773ad73f97b69c58ed3673180d7385f ""
   "imgs/dcc.png" 1765231129.29421 91923 c803d27ecc0925080248c36c5160bd26 ""
-  "main.aux" 1765404867.02758 5364 85e8432a12f0111a7897070bd68d623c "pdflatex"
-  "main.nav" 1765404867.0289 3283 a2189628a6fee92fe0ab7089c6e0d6c8 "pdflatex"
-  "main.out" 1765404867.02858 1030 bc0c3d5c160adf1341c5dbffcdcb356c "pdflatex"
-  "main.tex" 1765344307.62186 36239 9491e25f3e6221e0cad042e5448f696b ""
+  "main.aux" 1765849403.58835 5492 6c227425c75eea3098cce4539e72167d "pdflatex"
+  "main.nav" 1765849403.58963 3375 68a6681f637255c133a23e72de29987e "pdflatex"
+  "main.out" 1765849403.58944 1030 bc0c3d5c160adf1341c5dbffcdcb356c "pdflatex"
+  "main.tex" 1765849400.39953 39416 a5b69326fc279708284b813738315746 ""
   (generated)
   "main.aux"
   "main.log"
