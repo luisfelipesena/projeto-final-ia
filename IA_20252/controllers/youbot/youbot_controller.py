@@ -996,8 +996,10 @@ class YouBotController:
                 turn_elapsed = current_time - self._return_turn_start
 
                 # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
+                # BUT ignore sign changes if we are near 180 degrees (singularity), where sign flips easily.
+                # Only switch if we are NOT facing away from target (angle < 150 degrees).
                 current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
+                if current_dir != self._return_committed_dir and abs(angle_to_wp) < math.radians(150):
                     # Waypoint is now on opposite side, switch direction
                     self._return_committed_dir = current_dir
                     print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
