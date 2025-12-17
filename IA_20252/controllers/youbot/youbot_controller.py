@@ -813,51 +813,15 @@ class YouBotController:
                 print("[DROP] Retreating...")
 
         elif self.stage == 5:
+            # Short retreat from box - just enough to clear the box edge
             self._safe_move(-0.10, 0.0, 0.0)
-            if self.stage_timer >= 2.0:
+            if self.stage_timer >= 1.5:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
+                print(f"[DROP] Retreating done. Preparing for return navigation...")
 
         elif self.stage == 6:
-            # Longer retreat from box
-            self._safe_move(-0.12, 0.0, 0.0)
-            if self.stage_timer >= 2.5:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-                # Determine turn direction based on box color
-                color = (self.current_color or "").lower()
-                if color == "red":
-                    # RED box is EAST, turn LEFT (toward WEST)
-                    self._post_drop_turn_dir = 1  # positive = left
-                    self._post_drop_turn_target = 2.5  # ~140° turn
-                elif color == "green":
-                    # GREEN box is NORTH, turn RIGHT (toward SOUTH/WEST)
-                    self._post_drop_turn_dir = -1
-                    self._post_drop_turn_target = 2.0  # ~115° turn
-                elif color == "blue":
-                    # BLUE box is SOUTH, turn LEFT (toward NORTH/WEST)
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 2.0
-                else:
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 1.5
-                print(f"[DROP] Retreating done. Turning away from {color.upper()} box...")
-
-        elif self.stage == 7:
-            # Turn away from box before searching
-            turn_dir = getattr(self, '_post_drop_turn_dir', 1)
-            turn_target = getattr(self, '_post_drop_turn_target', 2.0)
-
-            self._safe_move(0.0, 0.0, 0.5 * turn_dir)
-
-            if self.stage_timer >= turn_target:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-
-        elif self.stage == 8:
             color_key = (self.current_color or "").lower()
             if color_key in self.delivered:
                 self.delivered[color_key] += 1
@@ -869,25 +833,27 @@ class YouBotController:
 
             print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
             print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
-            print(f"[DROP] Starting search for next cube...")
 
-            # Go to search mode facing away from box
-            self.mode = "search"
-            self.search_state = "forward"
-            self.turn_progress = 0.0
-
-            # Clear state
+            # CRITICAL FIX: Instead of going directly to search (which fails near obstacles),
+            # use return_to_spawn mode which has robust waypoint-based navigation.
+            # This ensures the robot safely navigates back to spawn area before searching.
+            print(f"[DROP] Navigating back to spawn for next search...")
+            
+            # Save the box color for return route calculation
+            self._last_box_color = color_key
+            
+            # Transition to return_to_spawn mode (uses waypoint navigation)
+            self.mode = "return_to_spawn"
+            
+            # Clear navigation state
             self.current_target = None
             self.active_goal = None
             self._waypoints = []
             self._path_dirty = True
-            self.current_color = None
             self.locked_cube_angle = None
             self.locked_cube_distance = None
-            # Cleanup post-drop turn state
-            for attr in ['_post_drop_turn_dir', '_post_drop_turn_target']:
-                if hasattr(self, attr):
-                    delattr(self, attr)
+            
+            # Keep current_color for route calculation, will be cleared when reaching spawn
             self.base.reset()
             self.stage = 0
 
@@ -928,13 +894,24 @@ class YouBotController:
 
         dist_to_spawn, angle_to_spawn = self._distance_to_point(SPAWN_POSITION)
 
-        # ===== PHASE 0: RETREAT FROM BOX =====
+        # ===== PHASE 0: RETREAT FROM BOX (smart - check if already clear) =====
         if self._return_phase == 0:
             phase_elapsed = current_time - self._return_start
 
             if not hasattr(self, '_retreat_start_pos'):
                 self._retreat_start_pos = (self.pose[0], self.pose[1])
-                self._retreat_substage = 0  # 0=reverse, 1=turn+forward, 2=done
+                self._retreat_substage = 0  # 0=check/reverse, 1=turn+forward, 2=done
+                
+                # SMART CHECK: If already far from box, skip retreat entirely
+                color_key = getattr(self, '_last_box_color', None)
+                if color_key:
+                    box_pos = BOX_POSITIONS.get(color_key)
+                    if box_pos:
+                        dist_to_box = math.hypot(self.pose[0] - box_pos[0], self.pose[1] - box_pos[1])
+                        if dist_to_box > 0.50:
+                            # Already retreated during DROP, skip to route calculation
+                            print(f"[RETURN] Already {dist_to_box:.2f}m from box, skipping retreat")
+                            self._retreat_substage = 2
 
             retreat_dist = math.hypot(
                 self.pose[0] - self._retreat_start_pos[0],
@@ -944,14 +921,14 @@ class YouBotController:
             rear_clear = min_rear > 0.25 and rl_obs > 0.25 and rr_obs > 0.25
             front_clear = min_front > 0.35
 
-            # Substage 0: Try to reverse
+            # Substage 0: Try to reverse (if needed)
             if self._retreat_substage == 0:
-                if retreat_dist < 0.40 and phase_elapsed < 3.0 and rear_clear:
+                if retreat_dist < 0.30 and phase_elapsed < 2.0 and rear_clear:
                     self._safe_move(-0.12, 0.0, 0.0)
                     return
                 else:
                     # Rear blocked or retreated enough, try turning + forward
-                    if retreat_dist < 0.20 and front_clear:
+                    if retreat_dist < 0.15 and front_clear:
                         # Didn't retreat enough, try turning and moving forward
                         self._retreat_substage = 1
                         self._retreat_turn_start = current_time
@@ -965,7 +942,7 @@ class YouBotController:
             # Substage 1: Turn and move forward to escape
             if self._retreat_substage == 1:
                 turn_elapsed = current_time - self._retreat_turn_start
-                if turn_elapsed < 2.5 and front_clear:
+                if turn_elapsed < 2.0 and front_clear:
                     # Turn while moving forward slightly
                     self._safe_move(0.06, 0.0, self._retreat_turn_dir)
                     return
@@ -1014,41 +991,59 @@ class YouBotController:
 
             dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
 
-            # Only need to turn if angle > 80 degrees (reduced from 100)
-            # KEY FIX: Turn TOWARD the waypoint, not based on box color
+            # Only need to turn if angle > 80 degrees
             if abs(angle_to_wp) > math.radians(80):
-                # Initialize on first iteration - CHOOSE DIRECTION ONCE
+                # Initialize on first iteration - CHOOSE DIRECTION ONCE AND COMMIT
                 if self._return_turn_start is None:
                     self._return_turn_start = current_time
                     self._return_last_angle = angle_to_wp
                     self._return_turn_attempts = 0
 
-                    # FIX: Turn toward waypoint based on angle sign, NOT box color
-                    # angle_to_wp > 0 means waypoint is to the LEFT → turn LEFT
-                    # angle_to_wp < 0 means waypoint is to the RIGHT → turn RIGHT
-                    if angle_to_wp > 0:
-                        self._return_committed_dir = 1   # Turn left
-                    else:
-                        self._return_committed_dir = -1  # Turn right
-
+                    # For near-180° turns, the sign is ambiguous. 
+                    # COMMIT to a direction based on which way is shorter OR use box position.
+                    # For RED box (east), robot faces east (~0°), waypoint is west (~180°)
+                    # Turning RIGHT (going through south) is often clearer path
                     color_key = getattr(self, '_last_box_color', 'unknown')
-                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
+                    
+                    if abs(angle_to_wp) > math.radians(150):
+                        # Near 180° - pick direction based on box color (known clear path)
+                        if color_key == 'red':
+                            # From RED box, turn RIGHT (south then west)
+                            self._return_committed_dir = -1
+                        elif color_key == 'green':
+                            # From GREEN box, turn RIGHT (south then west)  
+                            self._return_committed_dir = -1
+                        elif color_key == 'blue':
+                            # From BLUE box, turn LEFT (north then west)
+                            self._return_committed_dir = 1
+                        else:
+                            # Default: turn right
+                            self._return_committed_dir = -1
+                    else:
+                        # Normal case: turn toward the waypoint
+                        self._return_committed_dir = 1 if angle_to_wp > 0 else -1
+
+                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
                 
                 turn_elapsed = current_time - self._return_turn_start
 
-                # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
-                current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
-                    # Waypoint is now on opposite side, switch direction
-                    self._return_committed_dir = current_dir
-                    print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
+                # CRITICAL FIX: Do NOT switch directions for near-180° turns!
+                # The angle will cross ±180° boundary, but we must keep turning the same way.
+                # Only allow direction re-evaluation when angle has become small (< 90°)
+                if abs(angle_to_wp) < math.radians(90):
+                    # Now angle is small enough that sign is reliable
+                    current_dir = 1 if angle_to_wp > 0 else -1
+                    if current_dir != self._return_committed_dir:
+                        # We overshot, switch direction
+                        self._return_committed_dir = current_dir
+                        print(f"[RETURN] Fine-tuning: now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
 
-                # Stuck detection: if turning for >6s without reaching < 70°
-                if turn_elapsed > 6.0:
+                # Stuck detection: if turning for >8s without progress
+                if turn_elapsed > 8.0:
                     self._return_turn_attempts += 1
 
-                    if self._return_turn_attempts >= 3:
-                        # Give up on this waypoint
+                    if self._return_turn_attempts >= 2:
+                        # Give up on this waypoint, skip it
                         print(f"[RETURN] Turn timeout! Skipping waypoint {self._return_waypoint_idx+1}")
                         self._return_waypoint_idx += 1
                         self._return_turn_start = None
@@ -1059,34 +1054,33 @@ class YouBotController:
                         self._skip_passed_waypoints()
                         return
                     else:
-                        # Reset timer and re-evaluate direction
-                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, re-evaluating...")
+                        # Reset timer but KEEP the same direction (don't re-evaluate for 180° turns)
+                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, continuing same direction...")
                         self._return_turn_start = current_time
-                        self._return_committed_dir = current_dir  # Re-evaluate based on current angle
                 
                 # Use committed direction with obstacle checking
-                omega_speed = 0.45
+                omega_speed = 0.50  # Slightly faster
                 omega = self._return_committed_dir * omega_speed
                 
-                # Check if direction is blocked
+                # Check if direction is blocked - slow down but don't reverse
                 if omega > 0 and left_obs < 0.20:
-                    omega = omega_speed * 0.3  # Slow down but keep trying
+                    omega = omega_speed * 0.4
                 elif omega < 0 and right_obs < 0.20:
-                    omega = -omega_speed * 0.3
+                    omega = -omega_speed * 0.4
                 
-                # ALWAYS move forward slightly while turning - prevents getting stuck
-                fwd = 0.04 if min_front > 0.35 else (-0.04 if min_rear > 0.30 else 0.0)
+                # Move forward slightly while turning to help clear obstacles
+                fwd = 0.05 if min_front > 0.40 else (-0.03 if min_rear > 0.30 else 0.0)
                 
                 self._safe_move(fwd, 0.0, omega)
                 
-                # Log progress
-                if current_time - self._return_log_time > 1.0:
+                # Log progress (less frequently to reduce spam)
+                if current_time - self._return_log_time > 1.5:
                     dir_str = "L" if omega > 0 else "R"
                     print(f"[RETURN] Turning {dir_str}: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
                     self._return_log_time = current_time
                 return
             else:
-                # Cleanup turn state
+                # Angle is now small enough, proceed to navigation
                 self._return_turn_start = None
                 self._return_last_angle = None
                 for attr in ['_return_turn_attempts', '_return_committed_dir']:
@@ -1107,13 +1101,22 @@ class YouBotController:
                 if gt:
                     self.pose = gt
 
-                # Cleanup
+                # Cleanup all return state
                 for attr in ['_return_phase', '_return_start', '_return_log_time',
                              '_return_waypoints', '_return_waypoint_idx', '_last_box_color',
                              '_return_turn_start', '_return_last_angle', '_return_nav_last_pos',
                              '_return_nav_stuck_time', '_return_turn_attempts', '_return_committed_dir']:
                     if hasattr(self, attr):
                         delattr(self, attr)
+
+                # Clear navigation state for fresh search
+                self.current_color = None
+                self.current_target = None
+                self.active_goal = None
+                self._waypoints = []
+                self._path_dirty = True
+                self.search_state = "forward"
+                self.turn_progress = 0.0
 
                 self.mode = "search"
                 return
