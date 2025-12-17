@@ -53,92 +53,128 @@ def get_route_to_box(current_pos, destination_color):
     
     if destination_color == "blue":
         # BLUE at (0.48, -1.62)
-        # Obstacle F at (-1.02, -0.74), right edge at ~(-0.77, -0.74)
-        
-        # 1. Go STRAIGHT through center corridor until past F (x > -0.5)
-        if x < -0.5:
-            waypoints.append((-0.45, 0.0))  # Past F's edge
-        
-        # 2. Continue STRAIGHT a bit more for rear wheel clearance
-        waypoints.append((-0.15, 0.0))  # +30cm for rear wheel
-        
-        # 3. INCLINE toward SOUTH - gentle start
-        waypoints.append((0.0, -0.35))
-        
-        # 4. MAINTAIN inclination descending - go STRAIGHT while inclined
-        waypoints.append((0.15, -0.70))
-        waypoints.append((0.25, -1.00))  # Continue straight inclined
-        
-        # 5. Now align with box X coordinate
-        waypoints.append((0.35, -1.25))
-        waypoints.append((0.48, -1.35))  # Same X as box
-        
-        # 6. Final destination
-        waypoints.append(box_pos)
-        
+        # Position-aware routing
+
+        if y < -1.2:
+            # Already close, go direct
+            waypoints.append((0.48, -1.35))
+            waypoints.append(box_pos)
+        elif y < -0.7:
+            # In southern region
+            if x < 0.35:
+                waypoints.append((0.35, -1.25))
+            waypoints.append((0.48, -1.35))
+            waypoints.append(box_pos)
+        elif y < -0.3:
+            # Mid-south
+            waypoints.append((0.25, -1.00))
+            waypoints.append((0.35, -1.25))
+            waypoints.append((0.48, -1.35))
+            waypoints.append(box_pos)
+        else:
+            # Full route from north/center
+            if x < -0.5:
+                waypoints.append((-0.45, 0.0))
+            if x < -0.15:
+                waypoints.append((-0.15, 0.0))
+            if x < 0.0:
+                waypoints.append((0.0, -0.35))
+            waypoints.append((0.15, -0.70))
+            waypoints.append((0.25, -1.00))
+            waypoints.append((0.35, -1.25))
+            waypoints.append((0.48, -1.35))
+            waypoints.append(box_pos)
+
     elif destination_color == "green":
         # GREEN at (0.48, 1.58)
-        # Obstacle E at (-1.02, 0.75), right edge at ~(-0.77, 0.75)
-        
-        # 1. Go STRAIGHT through center corridor until past E (x > -0.5)
-        if x < -0.5:
-            waypoints.append((-0.45, 0.0))
-        
-        # 2. Continue STRAIGHT for rear wheel clearance
-        waypoints.append((-0.15, 0.0))
-        
-        # 3. INCLINE toward NORTH - gentle start
-        waypoints.append((0.0, 0.35))
-        
-        # 4. MAINTAIN inclination ascending - go STRAIGHT while inclined
-        waypoints.append((0.15, 0.70))
-        waypoints.append((0.25, 1.00))
-        
-        # 5. Now align with box X coordinate
-        waypoints.append((0.35, 1.25))
-        waypoints.append((0.48, 1.35))
-        
-        # 6. Final destination
-        waypoints.append(box_pos)
+        # Position-aware routing
+
+        if y > 1.2:
+            # Already close, go direct
+            waypoints.append((0.48, 1.35))
+            waypoints.append(box_pos)
+        elif y > 0.7:
+            # In northern region
+            if x < 0.35:
+                waypoints.append((0.35, 1.25))
+            waypoints.append((0.48, 1.35))
+            waypoints.append(box_pos)
+        elif y > 0.3:
+            # Mid-north
+            waypoints.append((0.25, 1.00))
+            waypoints.append((0.35, 1.25))
+            waypoints.append((0.48, 1.35))
+            waypoints.append(box_pos)
+        else:
+            # Full route from south/center
+            if x < -0.5:
+                waypoints.append((-0.45, 0.0))
+            if x < -0.15:
+                waypoints.append((-0.15, 0.0))
+            if x < 0.0:
+                waypoints.append((0.0, 0.35))
+            waypoints.append((0.15, 0.70))
+            waypoints.append((0.25, 1.00))
+            waypoints.append((0.35, 1.25))
+            waypoints.append((0.48, 1.35))
+            waypoints.append(box_pos)
         
     elif destination_color == "red":
         # RED at (2.31, 0.01)
         # Obstacle A at (0.6, 0.0), radius ~0.25m
-        # Edges: x from 0.35 to 0.85, y from -0.25 to 0.25
-        # Need x > 1.15 for rear wheel to clear
-        
-        # 1. Go STRAIGHT through center corridor
-        if x < -0.5:
-            waypoints.append((-0.45, 0.0))
-        
-        # 2. Continue STRAIGHT until near A
-        waypoints.append((0.0, 0.0))
-        
-        # 3. INCLINE to avoid A - choose side based on y
-        if y >= 0:
-            # Detour ABOVE A (positive y)
-            waypoints.append((0.25, 0.45))   # Start inclination
-            waypoints.append((0.50, 0.55))   # MAINTAIN inclined past A
-            waypoints.append((0.75, 0.55))   # Continue STRAIGHT inclined
-            waypoints.append((1.00, 0.50))   # Still inclined
-            waypoints.append((1.25, 0.35))   # Rear wheel cleared A!
+        # Only add waypoints that are AHEAD of current position
+
+        # If already close to box, go direct
+        if x > 1.8:
+            # Already past obstacles, go direct to box
+            if abs(y) > 0.3:
+                waypoints.append((x + 0.1, y * 0.5))  # Move toward center
+            waypoints.append((2.05, 0.01))
+            waypoints.append(box_pos)
+        elif x > 1.2:
+            # Past obstacle A, converge to center path
+            waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
+            waypoints.append((1.85, 0.01))
+            waypoints.append((2.05, 0.01))
+            waypoints.append(box_pos)
+        elif x > 0.9:
+            # Just past A, need gradual return
+            waypoints.append((1.25, 0.35 if y >= 0 else -0.35))
+            waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
+            waypoints.append((1.85, 0.01))
+            waypoints.append((2.05, 0.01))
+            waypoints.append(box_pos)
         else:
-            # Detour BELOW A (negative y)
-            waypoints.append((0.25, -0.45))
-            waypoints.append((0.50, -0.55))
-            waypoints.append((0.75, -0.55))
-            waypoints.append((1.00, -0.50))
-            waypoints.append((1.25, -0.35))
-        
-        # 4. NOW return to center gradually
-        waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
-        waypoints.append((1.85, 0.01))
-        
-        # 5. Align straight with box
-        waypoints.append((2.05, 0.01))
-        
-        # 6. Final destination
-        waypoints.append(box_pos)
+            # Full route needed - avoid obstacle A
+            if x < -0.5:
+                waypoints.append((-0.45, 0.0))
+            if x < 0.0:
+                waypoints.append((0.0, 0.0))
+
+            # Detour around A based on current y
+            if y >= 0:
+                if x < 0.25:
+                    waypoints.append((0.25, 0.45))
+                if x < 0.50:
+                    waypoints.append((0.50, 0.55))
+                if x < 0.75:
+                    waypoints.append((0.75, 0.55))
+                waypoints.append((1.00, 0.50))
+                waypoints.append((1.25, 0.35))
+            else:
+                if x < 0.25:
+                    waypoints.append((0.25, -0.45))
+                if x < 0.50:
+                    waypoints.append((0.50, -0.55))
+                if x < 0.75:
+                    waypoints.append((0.75, -0.55))
+                waypoints.append((1.00, -0.50))
+                waypoints.append((1.25, -0.35))
+
+            waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
+            waypoints.append((1.85, 0.01))
+            waypoints.append((2.05, 0.01))
+            waypoints.append(box_pos)
     
     return waypoints
 

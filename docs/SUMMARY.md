@@ -1,10 +1,18 @@
 # YouBot Cube Collection — Resumo Técnico (focado em implementação)
 
 ## Visão geral
-- Objetivo: coletar 15 cubos (red/green/blue) e depositar nas caixas da cor correta no mundo `IA_20252.wbt`.
-- Plataforma: Webots (controlador Python, nó Supervisor), KUKA YouBot com base mecanum, braço 5-DOF e garra paralela.
-- Sensores principais: câmera RGB com Recognition ativo, 4 LIDARs 360° (front/rear/left/right), 6 sensores infravermelhos de distância (front/rear com diagonais).
-- Estados principais (FSM): `search` → `approach` → `grasp` → `to_box` → `drop` → `return_to_spawn` → volta a `search`.
+- **Objetivo**: coletar 15 cubos (red/green/blue) e depositar nas caixas da cor correta no mundo `IA_20252.wbt`.
+- **Plataforma**: Webots (controlador Python, nó Supervisor), KUKA YouBot com base mecanum, braço 5-DOF e garra paralela.
+- **Sensores principais**: câmera RGB com Recognition ativo, LIDAR 180° frontal, 8 sensores infravermelhos de distância (6 front/rear + 2 laterais novos).
+- **Estados principais (FSM)**: `search` → `approach` → `grasp` → `to_box` → `drop` → `return_to_spawn` → volta a `search`.
+
+## Técnicas de IA Utilizadas
+
+| Técnica | Aplicação | Algoritmo/Arquitetura |
+|---------|-----------|----------------------|
+| **Redes Neurais** | Classificação de cor dos cubos | MobileNetV3-Small (transfer learning) |
+| **Lógica Fuzzy** | Navegação reativa e desvio de obstáculos | Regras SE-ENTÃO com funções trapezoidais |
+| **Busca A*** | Planejamento de trajetória global | A* com grade de ocupação 12×12cm |
 
 ## Arquitetura Modular do Código
 
@@ -383,9 +391,198 @@ omega = R / (4*(LX+LY)) * (-ω1 + ω2 - ω3 + ω4)
 - `to_box`: a cada 0.5 s (alta precisão)
 - `return_to_spawn`: a cada 0.5 s (alta precisão)
 
+## Rede Neural Convolucional (CNN)
+
+### Arquitetura: MobileNetV3-Small
+- **Backbone**: MobileNetV3-Small pré-treinado no ImageNet
+- **Classificador**: Dense(256) → Dense(3, softmax)
+- **Input**: 64×64×3 RGB normalizado
+- **Output**: probabilidades para {red, green, blue}
+
+### Convolução Depthwise Separável
+```
+Convolução Tradicional: O(k² · Ci · Co · H · W)
+Depthwise Separável:    O(k² · Ci · H · W + Ci · Co · H · W)
+                        ≈ 8-9x menos operações
+```
+
+### Transfer Learning (2 fases)
+1. **Backbone congelado**: treina apenas classificador (10 epochs)
+2. **Fine-tuning**: descongelado, learning rate 0.0001 (5 epochs)
+
+### Métricas
+- **Acurácia**: 99.4%
+- **Fallback HSV**: usado quando confiança CNN < 0.5
+
+```python
+# Fallback HSV para iluminação adversa
+if confidence < 0.5:
+    h, s, v = rgb_to_hsv(r, g, b)
+    if 0 <= h < 10 or h > 340: return "red"
+    if 80 <= h < 160: return "green"
+    if 200 <= h < 260: return "blue"
+```
+
+## Sistema Fuzzy de Navegação
+
+### Variáveis de Entrada
+| Variável | Universo | Termos Linguísticos |
+|----------|----------|---------------------|
+| `distância` | [0, 2] m | muito_perto, perto, longe |
+| `ângulo` | [-π, π] rad | grande_esq, pequeno_esq, alinhado, pequeno_dir, grande_dir |
+
+### Funções de Pertinência (Trapezoidais)
+```
+μ_muito_perto(d): 1.0 se d < 0.25m, 0 se d > 0.45m
+μ_perto(d):       triângulo centrado em 0.45m
+μ_longe(d):       1.0 se d > 0.65m
+```
+
+### Regras Fuzzy Principais
+```
+SE distância=muito_perto ENTÃO velocidade=reverso, strafe=lateral
+SE distância=perto ENTÃO velocidade=lento
+SE distância=longe E ângulo=alinhado ENTÃO velocidade=rápido
+SE ângulo=grande ENTÃO velocidade=parar, omega=máximo
+SE lateral_esq=bloqueado ENTÃO strafe=direita
+SE lateral_dir=bloqueado ENTÃO strafe=esquerda
+```
+
+### Defuzzificação
+- **Método**: Centróide ponderado
+- **Saídas**: `Vx` (linear), `Vy` (strafe), `ω` (angular)
+
+## Algoritmo A* com Grade de Ocupação
+
+### Grade de Ocupação
+- **Resolução**: 12×12 cm por célula
+- **Dimensões**: 58×33 células (arena 7m×4m)
+- **Estados**: LIVRE (0), OCUPADO (1), INFLADO (2), DESCONHECIDO (3)
+
+### Atualização por Raycasting
+```python
+def update_from_lidar(self, robot_pos, robot_heading, ranges):
+    for i, r in enumerate(ranges):
+        angle = robot_heading + ray_angles[i]
+        # Bresenham: células no caminho = LIVRE
+        for cell in bresenham(robot_pos, endpoint):
+            grid[cell] = LIVRE
+        # Célula final (obstáculo) = OCUPADO
+        if r < max_range:
+            grid[endpoint] = OCUPADO
+```
+
+### Inflação de Obstáculos
+- **Raio de inflação**: 30 cm (meia-diagonal do robô + margem)
+- **Propósito**: garantir que caminhos gerados tenham espaço suficiente
+
+### Heurística A*
+```python
+def heuristic(a, b):
+    # Distância Manhattan
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+def f(n):
+    return g[n] + heuristic(n, goal)
+```
+
+### Suavização de Caminho
+```python
+def smooth_path(path):
+    # Remove waypoints colineares
+    smoothed = [path[0]]
+    for i in range(1, len(path)-1):
+        if not collinear(smoothed[-1], path[i], path[i+1]):
+            smoothed.append(path[i])
+    smoothed.append(path[-1])
+    return smoothed
+```
+
+## Sistema de Escape (TO_BOX)
+
+### Detecção de Travamento
+```python
+if tobox_time > 3.0 and distance_moved < 0.15:
+    enter_escape_mode()
+```
+
+### Fases do Escape
+1. **Fase 1 (1.5s)**: Reverso + strafe na direção menos obstruída
+2. **Fase 2 (1.5s)**: Rotação para waypoint
+3. **Após 3 escapes**: Re-roteia com A*
+
+### Lock de Direção
+```python
+# Evita oscilação (bug corrigido)
+if entering_escape:
+    self._escape_go_left = (left_dist > right_dist + 0.03)
+# Direção permanece fixa durante todo o escape
+```
+
+## Pós-Depósito: Rotação e Retorno
+
+### Sequência de Drop (8 estágios)
+| Stage | Duração | Ação |
+|-------|---------|------|
+| 0-5 | ~7s | Aproximação, drop, recuo inicial |
+| 6 | 2.5s | Recuo longo (0.12 m/s) |
+| 7 | ~2.0-2.5s | Rotação para evitar box |
+| 8 | - | Transição para search |
+
+### Direção de Rotação por Cor
+```python
+if color == "red":
+    turn_direction = LEFT   # 140° (virar para norte)
+elif color == "green":
+    turn_direction = RIGHT  # 115° (virar para centro)
+elif color == "blue":
+    turn_direction = LEFT   # 115° (virar para centro)
+```
+
+## Materiais de Apresentação
+
+### Estrutura dos Slides (20 slides, apenas figuras TikZ)
+1. Título
+2. Agenda (timeline visual)
+3. Problema (arena diagram)
+4. Restrições (obrigatório/proibido)
+5. Sensores do YouBot (top view detalhado)
+6. Recognition API (flow diagram)
+7. CNN MobileNetV3 (arquitetura)
+8. Fuzzy - Funções de Pertinência
+9. Fuzzy - Regras (cenários visuais)
+10. A* - Fórmula e Grid
+11. Inflação de Obstáculos
+12. Arquitetura Modular
+13. Máquina de Estados (FSM)
+14. Pipeline Completo
+15. Sequência de Coleta (6 passos)
+16. Navegação A* em Ação
+17. Demonstração
+18. Limitações dos Algoritmos
+19. Conclusão
+20. Referências e Perguntas
+
+### Falas (15 minutos)
+- Arquivo: `slides-template/falas.txt`
+- Tempo médio por slide: 45 segundos
+- Total: ~320 linhas de script
+
 ## Referências Técnicas
-- Webots docs: https://cyberbotics.com/doc/guide/index
+
+### Algoritmos
+- Hart, Nilsson, Raphael (1968) - A* Search Algorithm
+- Zadeh (1965) - Fuzzy Sets and Systems
+- Howard et al. (2019) - MobileNetV3: Searching for Efficient CNNs
+
+### Documentação
+- Webots Documentation: https://cyberbotics.com/doc/guide/index
 - Webots Recognition API: https://cyberbotics.com/doc/reference/recognition
-- Three-Point Turn: manobra padrão de veículos para inversão em espaços confinados
+- LIDAR Sensor: https://cyberbotics.com/doc/reference/lidar
+- Camera Recognition: https://cyberbotics.com/doc/reference/camera#wb_camera_recognition_get_objects
+
+### Conceitos
 - Car-like kinematics: Ackermann steering geometry principles
-- MobileNetV3 (Howard et al., 2019) para classificação de cores
+- Three-Point Turn: manobra para inversão em espaços confinados
+- Mecanum wheel kinematics: omnidirectional movement
+- UMBMark: Universal Mobile Robot Benchmark (calibração odometria)

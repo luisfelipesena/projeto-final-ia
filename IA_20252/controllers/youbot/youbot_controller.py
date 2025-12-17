@@ -820,40 +820,63 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 6:
-            # Rotate toward spawn direction based on current box color
-            # This prepares the robot for the return journey
-            color_key = (self.current_color or "").lower()
-            
-            # Determine rotation direction based on box
-            # RED box (east): rotate left to face west
-            # GREEN box (north): rotate right to face south-west
-            # BLUE box (south): rotate right to face north-west
-            if color_key == "red":
-                omega = 0.4  # Turn left
-            else:
-                omega = -0.4  # Turn right for green/blue
-            
-            self._safe_move(0.0, 0.0, omega)
-            if self.stage_timer >= 1.5:
+            # Longer retreat from box
+            self._safe_move(-0.12, 0.0, 0.0)
+            if self.stage_timer >= 2.5:
+                self.base.reset()
+                self.stage += 1
+                self.stage_timer = 0.0
+                # Determine turn direction based on box color
+                color = (self.current_color or "").lower()
+                if color == "red":
+                    # RED box is EAST, turn LEFT (toward WEST)
+                    self._post_drop_turn_dir = 1  # positive = left
+                    self._post_drop_turn_target = 2.5  # ~140° turn
+                elif color == "green":
+                    # GREEN box is NORTH, turn RIGHT (toward SOUTH/WEST)
+                    self._post_drop_turn_dir = -1
+                    self._post_drop_turn_target = 2.0  # ~115° turn
+                elif color == "blue":
+                    # BLUE box is SOUTH, turn LEFT (toward NORTH/WEST)
+                    self._post_drop_turn_dir = 1
+                    self._post_drop_turn_target = 2.0
+                else:
+                    self._post_drop_turn_dir = 1
+                    self._post_drop_turn_target = 1.5
+                print(f"[DROP] Retreating done. Turning away from {color.upper()} box...")
+
+        elif self.stage == 7:
+            # Turn away from box before searching
+            turn_dir = getattr(self, '_post_drop_turn_dir', 1)
+            turn_target = getattr(self, '_post_drop_turn_target', 2.0)
+
+            self._safe_move(0.0, 0.0, 0.5 * turn_dir)
+
+            if self.stage_timer >= turn_target:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
 
-        elif self.stage == 7:
+        elif self.stage == 8:
             color_key = (self.current_color or "").lower()
             if color_key in self.delivered:
                 self.delivered[color_key] += 1
-            print(f"[DROP] Cube deposited in box {self.current_color}. Starting return to spawn.")
 
-            # Store color for route calculation AFTER retreat
-            # Route will be calculated in _handle_return_to_spawn Phase 0 end
-            self._last_box_color = color_key
-            self._return_waypoints = None  # Will be calculated after retreat
-            self._return_waypoint_idx = 0
+            # Sync ground truth after deposit
+            gt = self._get_ground_truth_pose()
+            if gt:
+                self.pose = gt
 
-            self.mode = "return_to_spawn"
-            
-            # Clear drop state
+            print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
+            print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
+            print(f"[DROP] Starting search for next cube...")
+
+            # Go to search mode facing away from box
+            self.mode = "search"
+            self.search_state = "forward"
+            self.turn_progress = 0.0
+
+            # Clear state
             self.current_target = None
             self.active_goal = None
             self._waypoints = []
@@ -861,6 +884,10 @@ class YouBotController:
             self.current_color = None
             self.locked_cube_angle = None
             self.locked_cube_distance = None
+            # Cleanup post-drop turn state
+            for attr in ['_post_drop_turn_dir', '_post_drop_turn_target']:
+                if hasattr(self, attr):
+                    delattr(self, attr)
             self.base.reset()
             self.stage = 0
 
@@ -988,30 +1015,38 @@ class YouBotController:
             dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
 
             # Only need to turn if angle > 80 degrees (reduced from 100)
-            # KEY FIX: Once we start turning, commit to a direction until angle < 70°
+            # KEY FIX: Turn TOWARD the waypoint, not based on box color
             if abs(angle_to_wp) > math.radians(80):
                 # Initialize on first iteration - CHOOSE DIRECTION ONCE
                 if self._return_turn_start is None:
                     self._return_turn_start = current_time
                     self._return_last_angle = angle_to_wp
                     self._return_turn_attempts = 0
-                    
-                    # Choose direction based on box color for predictable behavior
-                    # RED: prefer right (go south), GREEN: prefer left, BLUE: prefer left
-                    color_key = getattr(self, '_last_box_color', 'red')
-                    if color_key == 'red':
-                        self._return_committed_dir = -1  # Turn right (toward south)
-                    else:
+
+                    # FIX: Turn toward waypoint based on angle sign, NOT box color
+                    # angle_to_wp > 0 means waypoint is to the LEFT → turn LEFT
+                    # angle_to_wp < 0 means waypoint is to the RIGHT → turn RIGHT
+                    if angle_to_wp > 0:
                         self._return_committed_dir = 1   # Turn left
-                    
-                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} for {color_key}")
+                    else:
+                        self._return_committed_dir = -1  # Turn right
+
+                    color_key = getattr(self, '_last_box_color', 'unknown')
+                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
                 
                 turn_elapsed = current_time - self._return_turn_start
-                
+
+                # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
+                current_dir = 1 if angle_to_wp > 0 else -1
+                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
+                    # Waypoint is now on opposite side, switch direction
+                    self._return_committed_dir = current_dir
+                    print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
+
                 # Stuck detection: if turning for >6s without reaching < 70°
                 if turn_elapsed > 6.0:
                     self._return_turn_attempts += 1
-                    
+
                     if self._return_turn_attempts >= 3:
                         # Give up on this waypoint
                         print(f"[RETURN] Turn timeout! Skipping waypoint {self._return_waypoint_idx+1}")
@@ -1024,9 +1059,10 @@ class YouBotController:
                         self._skip_passed_waypoints()
                         return
                     else:
-                        # Reset timer but keep same direction
-                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, continuing...")
+                        # Reset timer and re-evaluate direction
+                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, re-evaluating...")
                         self._return_turn_start = current_time
+                        self._return_committed_dir = current_dir  # Re-evaluate based on current angle
                 
                 # Use committed direction with obstacle checking
                 omega_speed = 0.45
@@ -1532,13 +1568,88 @@ class YouBotController:
 
                 if self.tobox_state == 0:
                     min_front = min(front_obs, fl_obs, fr_obs)
-                    left_blocked = left_obs < 0.20
-                    right_blocked = right_obs < 0.20
-                    rear_clear = rear_min > 0.35
-                    
+                    left_blocked = left_obs < 0.25  # Increased from 0.20
+                    right_blocked = right_obs < 0.25
+                    rear_clear = rear_min > 0.30
+
+                    # ===== STUCK DETECTION =====
+                    if not hasattr(self, '_tobox_stuck_pos'):
+                        self._tobox_stuck_pos = (self.pose[0], self.pose[1])
+                        self._tobox_stuck_time = current_time
+                        self._tobox_escape_mode = False
+
+                    moved_dist = math.hypot(
+                        self.pose[0] - self._tobox_stuck_pos[0],
+                        self.pose[1] - self._tobox_stuck_pos[1]
+                    )
+
+                    if moved_dist > 0.12:  # Moved 12cm, reset stuck tracking
+                        self._tobox_stuck_pos = (self.pose[0], self.pose[1])
+                        self._tobox_stuck_time = current_time
+                        self._tobox_escape_mode = False
+
+                    stuck_duration = current_time - self._tobox_stuck_time
+
+                    # If stuck for 3+ seconds, enter escape mode
+                    if stuck_duration > 3.0 and not self._tobox_escape_mode:
+                        self._tobox_escape_mode = True
+                        self._tobox_escape_start = current_time
+                        # LOCK escape direction based on current sensor readings
+                        self._escape_go_left = left_obs > right_obs + 0.03
+                        # Track skipped waypoints for re-routing
+                        if not hasattr(self, '_escape_skips'):
+                            self._escape_skips = 0
+                        print(f"[TO_BOX] STUCK! Escape {'LEFT' if self._escape_go_left else 'RIGHT'} (L={left_obs:.2f}, R={right_obs:.2f})")
+
+                    # ===== ESCAPE MODE =====
+                    if self._tobox_escape_mode:
+                        escape_elapsed = current_time - self._tobox_escape_start
+                        go_left = getattr(self, '_escape_go_left', left_obs > right_obs)
+
+                        # Phase 1 (0-1.5s): Aggressive strafe + reverse
+                        if escape_elapsed < 1.5:
+                            vy_escape = 0.15 if go_left else -0.15
+                            vx_escape = -0.08 if rear_clear else 0.0
+                            omega_escape = 0.35 if go_left else -0.35
+                            self._safe_move(vx_escape, vy_escape, omega_escape)
+                            if int(escape_elapsed * 4) % 4 == 0:
+                                print(f"[TO_BOX] Escape P1: strafe {'LEFT' if go_left else 'RIGHT'}")
+                            continue
+
+                        # Phase 2 (1.5-3s): Reverse + strong turn
+                        elif escape_elapsed < 3.0:
+                            if rear_clear:
+                                self._safe_move(-0.15, 0.0, 0.6 if go_left else -0.6)
+                            else:
+                                # Rear blocked - forward strafe
+                                self._safe_move(0.08, 0.12 if go_left else -0.12, 0.4 if go_left else -0.4)
+                            if int(escape_elapsed * 4) % 4 == 0:
+                                print(f"[TO_BOX] Escape P2: reverse+turn {'LEFT' if go_left else 'RIGHT'}")
+                            continue
+
+                        # Phase 3: Skip waypoint
+                        else:
+                            self._escape_skips = getattr(self, '_escape_skips', 0) + 1
+                            print(f"[TO_BOX] Skip WP{self._current_waypoint_idx + 1} (total skips: {self._escape_skips})")
+                            self._current_waypoint_idx += 1
+
+                            # If skipped 3+ waypoints, re-generate route
+                            if self._escape_skips >= 3:
+                                print("[TO_BOX] Too many skips! Re-routing from current position.")
+                                self._route_waypoints = get_route_to_box(
+                                    (self.pose[0], self.pose[1]), self.current_color
+                                )
+                                self._current_waypoint_idx = 0
+                                self._escape_skips = 0
+
+                            self._tobox_escape_mode = False
+                            self._tobox_stuck_pos = (self.pose[0], self.pose[1])
+                            self._tobox_stuck_time = current_time
+                            continue
+
                     waypoints_remaining = len(self._route_waypoints) - self._current_waypoint_idx
                     approaching_box = waypoints_remaining <= 3 or dist_to_box < 1.0
-                    
+
                     if approaching_box:
                         if dist_to_box < 0.55 or min_front < 0.18:
                             print(f"[TO_BOX] Arrived at box (dist={dist_to_box:.2f}m). Starting alignment.")
@@ -1546,71 +1657,90 @@ class YouBotController:
                             self.tobox_state = 1
                             self._tobox_maneuver_timer = 0.0
                             self._align_start_time = None
+                            # Cleanup stuck tracking
+                            for attr in ['_tobox_stuck_pos', '_tobox_stuck_time', '_tobox_escape_mode',
+                                         '_tobox_escape_start', '_escape_go_left', '_escape_skips']:
+                                if hasattr(self, attr):
+                                    delattr(self, attr)
                             continue
-                        
+
                         cmd_omega = -angle_to_waypoint * 1.2
                         cmd_omega = max(-0.35, min(0.35, cmd_omega))
                         cmd_speed = 0.12
-                        
+
                         if left_blocked:
                             cmd_omega = min(cmd_omega - 0.15, -0.20)
                         if right_blocked:
                             cmd_omega = max(cmd_omega + 0.15, 0.20)
-                        
+
                         self._safe_move(cmd_speed, 0.0, cmd_omega)
                         continue
 
                     EMERGENCY_STOP = 0.22
-                    FRONT_DANGER = 0.35
+                    FRONT_DANGER = 0.38  # Increased from 0.35
                     FRONT_WARN = 0.55
                     LATERAL_WARN = 0.35
-                    
+
                     front_left_close = fl_obs < FRONT_WARN
                     front_right_close = fr_obs < FRONT_WARN
-                    
+
                     cmd_speed = 0.0
                     cmd_omega = 0.0
-                    
+                    cmd_vy = 0.0  # Add lateral velocity
+
                     if min_front < EMERGENCY_STOP:
                         self._tobox_maneuver_timer += dt
-                        print(f"[TO_BOX] EMERGENCY! Front at {min_front:.2f}m!")
-                        
+
+                        # Use strafe to escape!
+                        if left_obs > right_obs + 0.05:
+                            cmd_vy = 0.10
+                        elif right_obs > left_obs + 0.05:
+                            cmd_vy = -0.10
+
                         if self._tobox_maneuver_timer > 0.2 and rear_clear:
-                            cmd_speed = -0.08
-                            if not left_blocked and (right_blocked or left_obs > right_obs):
-                                cmd_omega = 0.4
-                            elif not right_blocked:
-                                cmd_omega = -0.4
-                        else:
-                            cmd_speed = 0.0
-                    
-                    elif min_front < FRONT_DANGER:
-                        self._tobox_maneuver_timer += dt
-                        print(f"[TO_BOX] Front danger at {min_front:.2f}m!")
-                        
-                        if rear_clear and self._tobox_maneuver_timer < 2.0:
                             cmd_speed = -0.10
-                            if not left_blocked and (right_blocked or left_obs > right_obs + 0.1):
-                                cmd_omega = 0.45
-                            elif not right_blocked:
-                                cmd_omega = -0.45
-                            else:
-                                cmd_omega = 0.0
-                        else:
-                            self._tobox_maneuver_timer = 0.0
-                            cmd_speed = 0.0
                             if not left_blocked and (right_blocked or left_obs > right_obs):
                                 cmd_omega = 0.5
                             elif not right_blocked:
                                 cmd_omega = -0.5
-                    
+
+                    elif min_front < FRONT_DANGER:
+                        self._tobox_maneuver_timer += dt
+
+                        # Use strafe + reverse + turn
+                        if left_obs > right_obs + 0.05:
+                            cmd_vy = 0.08
+                        elif right_obs > left_obs + 0.05:
+                            cmd_vy = -0.08
+
+                        if rear_clear:
+                            cmd_speed = -0.12
+                            if not left_blocked and (right_blocked or left_obs > right_obs):
+                                cmd_omega = 0.5
+                            elif not right_blocked:
+                                cmd_omega = -0.5
+                        else:
+                            cmd_speed = 0.0
+                            if not left_blocked:
+                                cmd_omega = 0.5
+                            elif not right_blocked:
+                                cmd_omega = -0.5
+
                     elif min_front < FRONT_WARN or front_left_close or front_right_close:
                         self._tobox_maneuver_timer = 0.0
-                        
+
+                        # Add strafe for obstacle avoidance
+                        if front_left_close and not front_right_close:
+                            cmd_vy = -0.06
+                        elif front_right_close and not front_left_close:
+                            cmd_vy = 0.06
+
                         if left_blocked:
                             cmd_omega = -0.4
+                            cmd_vy = -0.08
                         elif right_blocked:
                             cmd_omega = 0.4
+                            cmd_vy = 0.08
                         elif front_left_close and not front_right_close:
                             cmd_omega = -0.35
                         elif front_right_close and not front_left_close:
@@ -1622,18 +1752,18 @@ class YouBotController:
                         else:
                             cmd_omega = -angle_to_waypoint * 0.6
                             cmd_omega = max(-0.35, min(0.35, cmd_omega))
-                        
-                        cmd_speed = 0.03 + 0.06 * (min_front / FRONT_WARN)
-                    
+
+                        cmd_speed = 0.06 + 0.06 * (min_front / FRONT_WARN)
+
                     else:
                         self._tobox_maneuver_timer = 0.0
-                        
+
                         cmd_omega = -angle_to_waypoint * 1.5
                         MAX_TURN = 0.45
                         cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
-                        
+
                         if abs(angle_to_waypoint) > math.pi/2:
-                            cmd_speed = 0.03
+                            cmd_speed = 0.05
                             cmd_omega = -angle_to_waypoint * 0.5
                             cmd_omega = max(-0.30, min(0.30, cmd_omega))
                         else:
@@ -1642,32 +1772,32 @@ class YouBotController:
                             if right_obs < LATERAL_WARN:
                                 cmd_omega += 0.15 * (LATERAL_WARN - right_obs) / LATERAL_WARN
                             cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
-                            
-                            cmd_speed = 0.13
+
+                            cmd_speed = 0.14
                             turn_penalty = 1.0 - min(0.25, abs(cmd_omega) / MAX_TURN)
                             cmd_speed *= turn_penalty
-                    
+
                     if left_blocked and cmd_omega > 0:
-                        print(f"[TO_BOX] LEFT BLOCKED at {left_obs:.2f}m! Forcing right.")
-                        cmd_omega = -0.4
+                        cmd_omega = -0.45
+                        cmd_vy = -0.08
                         cmd_speed = min(cmd_speed, 0.02)
-                    
+
                     if right_blocked and cmd_omega < 0:
-                        print(f"[TO_BOX] RIGHT BLOCKED at {right_obs:.2f}m! Forcing left.")
-                        cmd_omega = 0.4
+                        cmd_omega = 0.45
+                        cmd_vy = 0.08
                         cmd_speed = min(cmd_speed, 0.02)
-                    
+
                     if left_blocked and right_blocked:
-                        print(f"[TO_BOX] BOTH SIDES blocked! L={left_obs:.2f} R={right_obs:.2f}")
                         cmd_omega = 0.0
+                        cmd_vy = 0.0
                         if min_front > 0.35:
-                            cmd_speed = 0.03
+                            cmd_speed = 0.05
                         elif rear_clear:
-                            cmd_speed = -0.08
+                            cmd_speed = -0.10
                         else:
                             cmd_speed = 0.0
-                    
-                    self._safe_move(cmd_speed, 0.0, cmd_omega)
+
+                    self._safe_move(cmd_speed, cmd_vy, cmd_omega)
 
                 elif self.tobox_state == 1:
                     if self._align_start_time is None:
