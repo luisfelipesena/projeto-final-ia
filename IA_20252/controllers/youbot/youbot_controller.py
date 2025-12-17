@@ -869,12 +869,12 @@ class YouBotController:
 
             print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
             print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
-            print(f"[DROP] Starting search for next cube...")
+            print("[DROP] Returning to spawn corridor before next search...")
 
-            # Go to search mode facing away from box
-            self.mode = "search"
-            self.search_state = "forward"
-            self.turn_progress = 0.0
+            # After dropping near a box/wall, do NOT restart lawnmower search here.
+            # Use the dedicated return-to-spawn routine to get back to a safe region.
+            self._last_box_color = color_key or "red"
+            self.mode = "return_to_spawn"
 
             # Clear state
             self.current_target = None
