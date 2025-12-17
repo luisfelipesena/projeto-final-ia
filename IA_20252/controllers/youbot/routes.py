@@ -195,26 +195,29 @@ def get_return_route(current_pos, from_color):
     
     if from_color == "red":
         # RED box at (2.31, 0.01)
-        # Robot was facing EAST, now needs to go WEST
-        # KEY INSIGHT: Going SOUTH first (90° right turn) is easier than 180° turn
+        # Robot was facing EAST (~0°), now needs to go WEST (~180°)
+        # 
+        # KEY INSIGHT: A 180° turn is problematic! Instead, go SOUTH first
+        # (only 90° right turn from facing east), then curve west.
+        # This avoids the ±180° angle wrap-around issue.
+        #
         # Obstacles to avoid: B at (1.96, -1.24), A at (0.6, 0.0)
         
-        # Strategy: Go SOUTH to clear obstacles, then WEST through southern corridor
-        if x > 1.5:
-            # Far east, need to arc south first avoiding obstacle B
-            waypoints.append((1.40, -0.40))   # South-west, avoiding B
-            waypoints.append((1.00, -0.55))   # Continue south-west
-        elif x > 1.0:
-            # Mid-east
-            waypoints.append((0.80, -0.50))   # Continue south-west
+        # Strategy: First waypoint should be SOUTH (easy 90° right turn), not west
+        if x > 1.2:
+            # First go SOUTH - this is a 90° turn, much easier than 180°!
+            waypoints.append((x - 0.1, -0.50))  # Go south from current position
+            waypoints.append((1.00, -0.60))     # Continue south-west
+        elif x > 0.8:
+            waypoints.append((0.80, -0.55))     # South-west
         
         if x > 0.50:
-            # Curve around obstacle A (at 0.6, 0.0)
-            waypoints.append((0.35, -0.45))   # Stay south of A
+            # Curve around obstacle A (at 0.6, 0.0) - stay south
+            waypoints.append((0.35, -0.50))     # Stay south of A
         if x > 0.0:
-            waypoints.append((-0.10, -0.25))  # Continue west
+            waypoints.append((-0.10, -0.30))    # Continue west
         
-        waypoints.append((-0.40, -0.05))      # Into center corridor
+        waypoints.append((-0.45, -0.10))        # Into center corridor
         
     elif from_color == "green":
         # GREEN box at (0.48, 1.58)

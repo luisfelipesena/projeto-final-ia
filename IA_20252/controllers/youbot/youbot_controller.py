@@ -991,41 +991,59 @@ class YouBotController:
 
             dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
 
-            # Only need to turn if angle > 80 degrees (reduced from 100)
-            # KEY FIX: Turn TOWARD the waypoint, not based on box color
+            # Only need to turn if angle > 80 degrees
             if abs(angle_to_wp) > math.radians(80):
-                # Initialize on first iteration - CHOOSE DIRECTION ONCE
+                # Initialize on first iteration - CHOOSE DIRECTION ONCE AND COMMIT
                 if self._return_turn_start is None:
                     self._return_turn_start = current_time
                     self._return_last_angle = angle_to_wp
                     self._return_turn_attempts = 0
 
-                    # FIX: Turn toward waypoint based on angle sign, NOT box color
-                    # angle_to_wp > 0 means waypoint is to the LEFT → turn LEFT
-                    # angle_to_wp < 0 means waypoint is to the RIGHT → turn RIGHT
-                    if angle_to_wp > 0:
-                        self._return_committed_dir = 1   # Turn left
-                    else:
-                        self._return_committed_dir = -1  # Turn right
-
+                    # For near-180° turns, the sign is ambiguous. 
+                    # COMMIT to a direction based on which way is shorter OR use box position.
+                    # For RED box (east), robot faces east (~0°), waypoint is west (~180°)
+                    # Turning RIGHT (going through south) is often clearer path
                     color_key = getattr(self, '_last_box_color', 'unknown')
-                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
+                    
+                    if abs(angle_to_wp) > math.radians(150):
+                        # Near 180° - pick direction based on box color (known clear path)
+                        if color_key == 'red':
+                            # From RED box, turn RIGHT (south then west)
+                            self._return_committed_dir = -1
+                        elif color_key == 'green':
+                            # From GREEN box, turn RIGHT (south then west)  
+                            self._return_committed_dir = -1
+                        elif color_key == 'blue':
+                            # From BLUE box, turn LEFT (north then west)
+                            self._return_committed_dir = 1
+                        else:
+                            # Default: turn right
+                            self._return_committed_dir = -1
+                    else:
+                        # Normal case: turn toward the waypoint
+                        self._return_committed_dir = 1 if angle_to_wp > 0 else -1
+
+                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
                 
                 turn_elapsed = current_time - self._return_turn_start
 
-                # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
-                current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
-                    # Waypoint is now on opposite side, switch direction
-                    self._return_committed_dir = current_dir
-                    print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
+                # CRITICAL FIX: Do NOT switch directions for near-180° turns!
+                # The angle will cross ±180° boundary, but we must keep turning the same way.
+                # Only allow direction re-evaluation when angle has become small (< 90°)
+                if abs(angle_to_wp) < math.radians(90):
+                    # Now angle is small enough that sign is reliable
+                    current_dir = 1 if angle_to_wp > 0 else -1
+                    if current_dir != self._return_committed_dir:
+                        # We overshot, switch direction
+                        self._return_committed_dir = current_dir
+                        print(f"[RETURN] Fine-tuning: now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
 
-                # Stuck detection: if turning for >6s without reaching < 70°
-                if turn_elapsed > 6.0:
+                # Stuck detection: if turning for >8s without progress
+                if turn_elapsed > 8.0:
                     self._return_turn_attempts += 1
 
-                    if self._return_turn_attempts >= 3:
-                        # Give up on this waypoint
+                    if self._return_turn_attempts >= 2:
+                        # Give up on this waypoint, skip it
                         print(f"[RETURN] Turn timeout! Skipping waypoint {self._return_waypoint_idx+1}")
                         self._return_waypoint_idx += 1
                         self._return_turn_start = None
@@ -1036,34 +1054,33 @@ class YouBotController:
                         self._skip_passed_waypoints()
                         return
                     else:
-                        # Reset timer and re-evaluate direction
-                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, re-evaluating...")
+                        # Reset timer but KEEP the same direction (don't re-evaluate for 180° turns)
+                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, continuing same direction...")
                         self._return_turn_start = current_time
-                        self._return_committed_dir = current_dir  # Re-evaluate based on current angle
                 
                 # Use committed direction with obstacle checking
-                omega_speed = 0.45
+                omega_speed = 0.50  # Slightly faster
                 omega = self._return_committed_dir * omega_speed
                 
-                # Check if direction is blocked
+                # Check if direction is blocked - slow down but don't reverse
                 if omega > 0 and left_obs < 0.20:
-                    omega = omega_speed * 0.3  # Slow down but keep trying
+                    omega = omega_speed * 0.4
                 elif omega < 0 and right_obs < 0.20:
-                    omega = -omega_speed * 0.3
+                    omega = -omega_speed * 0.4
                 
-                # ALWAYS move forward slightly while turning - prevents getting stuck
-                fwd = 0.04 if min_front > 0.35 else (-0.04 if min_rear > 0.30 else 0.0)
+                # Move forward slightly while turning to help clear obstacles
+                fwd = 0.05 if min_front > 0.40 else (-0.03 if min_rear > 0.30 else 0.0)
                 
                 self._safe_move(fwd, 0.0, omega)
                 
-                # Log progress
-                if current_time - self._return_log_time > 1.0:
+                # Log progress (less frequently to reduce spam)
+                if current_time - self._return_log_time > 1.5:
                     dir_str = "L" if omega > 0 else "R"
                     print(f"[RETURN] Turning {dir_str}: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
                     self._return_log_time = current_time
                 return
             else:
-                # Cleanup turn state
+                # Angle is now small enough, proceed to navigation
                 self._return_turn_start = None
                 self._return_last_angle = None
                 for attr in ['_return_turn_attempts', '_return_committed_dir']:
