@@ -47,7 +47,7 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=1.1]
+    \begin{tikzpicture}[scale=0.85]
         % Timeline visual
         \foreach \i/\c/\icon in {
             0/blue!60/P,
@@ -56,22 +56,22 @@
             3/purple!60/A*,
             4/red!60/D%
         } {
-            \node[draw, circle, fill=\c, minimum size=2.2cm, thick, font=\LARGE\bfseries, text=white, drop shadow]
-                (n\i) at (\i*3.2, 0) {\icon};
+            \node[draw, circle, fill=\c, minimum size=1.8cm, thick, font=\large\bfseries, text=white, drop shadow]
+                (n\i) at (\i*2.8, 0) {\icon};
         }
         % Arrows
         \foreach \i in {0,...,3} {
             \pgfmathsetmacro{\next}{\i+1}
-            \draw[->, ultra thick, gray!60, line width=3pt] (\i*3.2+1.2, 0) -- (\next*3.2-1.2, 0);
+            \draw[->, ultra thick, gray!60, line width=2pt] (\i*2.8+1.0, 0) -- (\next*2.8-1.0, 0);
         }
         % Time markers
         \foreach \i/\t in {0/0, 1/3, 2/6, 3/9, 4/12} {
-            \node[font=\small, gray] at (\i*3.2, -1.8) {\t\ min};
+            \node[font=\small, gray] at (\i*2.8, -1.5) {\t\ min};
         }
         % Progress bar
-        \draw[gray!30, line width=8pt, rounded corners] (-0.5,-2.5) -- (12.3,-2.5);
+        \draw[gray!30, line width=6pt, rounded corners] (-0.3,-2.2) -- (10.9,-2.2);
         \foreach \i/\c in {0/blue!60, 1/orange!60, 2/green!60, 3/purple!60, 4/red!60} {
-            \fill[\c] (\i*3.2-0.3,-2.5) circle (0.2);
+            \fill[\c] (\i*2.8-0.2,-2.2) circle (0.15);
         }
     \end{tikzpicture}
 \end{frame}
@@ -137,60 +137,60 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=0.95]
+    \begin{tikzpicture}[scale=0.7]
         % Center: YouBot
-        \node[draw, circle, fill=blue!30, minimum size=3.5cm, thick, font=\Large\bfseries, drop shadow] (robot) at (0,0) {};
-        \draw[fill=blue!50, thick, rounded corners=2pt] (-0.5,-0.3) rectangle (0.5,0.4);
-        \foreach \dx/\dy in {-0.4/-0.25, -0.4/0.25, 0.4/-0.25, 0.4/0.25} {
-            \fill[gray!60] (\dx-0.06, \dy-0.08) rectangle (\dx+0.06, \dy+0.08);
+        \node[draw, circle, fill=blue!30, minimum size=2.8cm, thick, font=\large\bfseries, drop shadow] (robot) at (0,0) {};
+        \draw[fill=blue!50, thick, rounded corners=2pt] (-0.4,-0.25) rectangle (0.4,0.3);
+        \foreach \dx/\dy in {-0.3/-0.2, -0.3/0.2, 0.3/-0.2, 0.3/0.2} {
+            \fill[gray!60] (\dx-0.05, \dy-0.06) rectangle (\dx+0.05, \dy+0.06);
         }
 
         % Required (green boxes with checkmarks)
-        \node[draw, rectangle, fill=green!50, rounded corners=8pt, minimum width=2.8cm, minimum height=1.8cm, thick, drop shadow]
-            (nn) at (-5.5,2) {};
-        \node[font=\Huge, green!30!black] at (-5.5,2) {\checkmark};
-        \draw[fill=orange!60, thick] (-5.8,2.3) rectangle (-5.2,2.9);
-        \node[font=\tiny, white] at (-5.5,2.6) {CNN};
+        \node[draw, rectangle, fill=green!50, rounded corners=6pt, minimum width=2.2cm, minimum height=1.4cm, thick, drop shadow]
+            (nn) at (-4.5,1.8) {};
+        \node[font=\Large, green!30!black] at (-4.5,1.8) {\checkmark};
+        \draw[fill=orange!60, thick] (-4.75,2.05) rectangle (-4.25,2.45);
+        \node[font=\tiny, white] at (-4.5,2.25) {CNN};
 
-        \node[draw, rectangle, fill=green!50, rounded corners=8pt, minimum width=2.8cm, minimum height=1.8cm, thick, drop shadow]
-            (fuzzy) at (5.5,2) {};
-        \node[font=\Huge, green!30!black] at (5.5,2) {\checkmark};
-        \node[font=\small\bfseries, green!30!black] at (5.5,2.5) {$\mu(x)$};
+        \node[draw, rectangle, fill=green!50, rounded corners=6pt, minimum width=2.2cm, minimum height=1.4cm, thick, drop shadow]
+            (fuzzy) at (4.5,1.8) {};
+        \node[font=\Large, green!30!black] at (4.5,1.8) {\checkmark};
+        \node[font=\small\bfseries, green!30!black] at (4.5,2.2) {$\mu(x)$};
 
-        \node[draw, rectangle, fill=green!50, rounded corners=8pt, minimum width=2.8cm, minimum height=1.8cm, thick, drop shadow]
-            (sensors) at (0,4) {};
-        \node[font=\Huge, green!30!black] at (0,4) {\checkmark};
+        \node[draw, rectangle, fill=green!50, rounded corners=6pt, minimum width=2.2cm, minimum height=1.4cm, thick, drop shadow]
+            (sensors) at (0,3.2) {};
+        \node[font=\Large, green!30!black] at (0,3.2) {\checkmark};
         % LIDAR rays
         \foreach \a in {-40,-20,0,20,40} {
-            \draw[red!60, thick] (0,3.6) -- ++(\a+90:0.7);
+            \draw[red!60, thick] (0,2.9) -- ++(\a+90:0.5);
         }
 
         % Prohibited (red boxes with X)
-        \node[draw, rectangle, fill=red!50, rounded corners=8pt, minimum width=2.5cm, minimum height=1.6cm, thick, drop shadow]
-            (gps) at (-5.5,-2) {};
-        \node[font=\Huge, red!30!black] at (-5.5,-2) {$\times$};
-        \node[font=\tiny, white] at (-5.5,-1.6) {GPS};
+        \node[draw, rectangle, fill=red!50, rounded corners=6pt, minimum width=2cm, minimum height=1.2cm, thick, drop shadow]
+            (gps) at (-4.5,-1.8) {};
+        \node[font=\Large, red!30!black] at (-4.5,-1.8) {$\times$};
+        \node[font=\tiny, white] at (-4.5,-1.5) {GPS};
 
-        \node[draw, rectangle, fill=red!50, rounded corners=8pt, minimum width=2.5cm, minimum height=1.6cm, thick, drop shadow]
-            (tele) at (0,-4) {};
-        \node[font=\Huge, red!30!black] at (0,-4) {$\times$};
+        \node[draw, rectangle, fill=red!50, rounded corners=6pt, minimum width=2cm, minimum height=1.2cm, thick, drop shadow]
+            (tele) at (0,-3.2) {};
+        \node[font=\Large, red!30!black] at (0,-3.2) {$\times$};
         % Joystick icon
-        \draw[white, thick] (-0.2,-4.2) -- (0,-3.8) -- (0.2,-4.2);
-        \fill[white] (0,-3.8) circle (0.15);
+        \draw[white, thick] (-0.15,-3.35) -- (0,-3.05) -- (0.15,-3.35);
+        \fill[white] (0,-3.05) circle (0.1);
 
-        \node[draw, rectangle, fill=red!50, rounded corners=8pt, minimum width=2.5cm, minimum height=1.6cm, thick, drop shadow]
-            (priv) at (5.5,-2) {};
-        \node[font=\Huge, red!30!black] at (5.5,-2) {$\times$};
+        \node[draw, rectangle, fill=red!50, rounded corners=6pt, minimum width=2cm, minimum height=1.2cm, thick, drop shadow]
+            (priv) at (4.5,-1.8) {};
+        \node[font=\Large, red!30!black] at (4.5,-1.8) {$\times$};
         % Position coords
-        \node[font=\tiny, white] at (5.5,-1.6) {(x,y,z)};
+        \node[font=\tiny, white] at (4.5,-1.55) {(x,y,z)};
 
         % Arrows
-        \draw[->, thick, green!70!black, line width=3pt] (nn) -- (robot);
-        \draw[->, thick, green!70!black, line width=3pt] (fuzzy) -- (robot);
-        \draw[->, thick, green!70!black, line width=3pt] (sensors) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=2pt] (gps) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=2pt] (tele) -- (robot);
-        \draw[->, thick, red!70, dashed, line width=2pt] (priv) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (nn) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (fuzzy) -- (robot);
+        \draw[->, thick, green!70!black, line width=2pt] (sensors) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (gps) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (tele) -- (robot);
+        \draw[->, thick, red!70, dashed, line width=1.5pt] (priv) -- (robot);
     \end{tikzpicture}
 \end{frame}
 
@@ -408,73 +408,73 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=0.75]
+    \begin{tikzpicture}[scale=0.55]
         % Scenario 1: Emergency - reverse + strafe
         \begin{scope}[shift={(0,0)}]
-            \draw[thick, fill=gray!10, rounded corners=8pt] (-2,-2) rectangle (2,2.5);
+            \draw[thick, fill=gray!10, rounded corners=6pt] (-1.8,-1.8) rectangle (1.8,2.2);
             % Robot
-            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.5,-0.5) rectangle (0.5,0.7);
-            \foreach \dx/\dy in {-0.4/-0.4, -0.4/0.4, 0.4/-0.4, 0.4/0.4} {
-                \fill[gray!60] (\dx-0.08, \dy) rectangle (\dx+0.08, \dy+0.15);
+            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.4,-0.4) rectangle (0.4,0.6);
+            \foreach \dx/\dy in {-0.3/-0.3, -0.3/0.3, 0.3/-0.3, 0.3/0.3} {
+                \fill[gray!60] (\dx-0.06, \dy) rectangle (\dx+0.06, \dy+0.12);
             }
             % Obstacle very close
-            \fill[red!70] (-0.4,1.3) rectangle (0.4,1.8);
+            \fill[red!70] (-0.35,1.1) rectangle (0.35,1.5);
             % Distance indicator
-            \draw[<->, red!70, thick] (0,0.7) -- (0,1.3);
-            \node[red!70, font=\tiny] at (0.4,1) {!};
+            \draw[<->, red!70, thick] (0,0.6) -- (0,1.1);
+            \node[red!70, font=\tiny] at (0.35,0.85) {!};
             % Action arrows
-            \draw[->, ultra thick, red!60, line width=3pt] (0,-0.5) -- (0,-1.4);
-            \draw[->, thick, green!60!black, line width=2pt] (0.5,0.1) -- (1.3,0.1);
+            \draw[->, ultra thick, red!60, line width=2pt] (0,-0.4) -- (0,-1.2);
+            \draw[->, thick, green!60!black, line width=1.5pt] (0.4,0.1) -- (1.1,0.1);
         \end{scope}
 
         % Scenario 2: Side obstacle - strafe away
-        \begin{scope}[shift={(5.5,0)}]
-            \draw[thick, fill=gray!10, rounded corners=8pt] (-2,-2) rectangle (2,2.5);
+        \begin{scope}[shift={(4.5,0)}]
+            \draw[thick, fill=gray!10, rounded corners=6pt] (-1.8,-1.8) rectangle (1.8,2.2);
             % Robot
-            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.5,-0.5) rectangle (0.5,0.7);
-            \foreach \dx/\dy in {-0.4/-0.4, -0.4/0.4, 0.4/-0.4, 0.4/0.4} {
-                \fill[gray!60] (\dx-0.08, \dy) rectangle (\dx+0.08, \dy+0.15);
+            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.4,-0.4) rectangle (0.4,0.6);
+            \foreach \dx/\dy in {-0.3/-0.3, -0.3/0.3, 0.3/-0.3, 0.3/0.3} {
+                \fill[gray!60] (\dx-0.06, \dy) rectangle (\dx+0.06, \dy+0.12);
             }
             % Side obstacle
-            \fill[orange!70] (-1.6,-0.2) rectangle (-1,0.8);
+            \fill[orange!70] (-1.4,-0.15) rectangle (-0.9,0.65);
             % Distance indicator
-            \draw[<->, orange!70, thick] (-0.5,0.3) -- (-1,0.3);
+            \draw[<->, orange!70, thick] (-0.4,0.25) -- (-0.9,0.25);
             % Action arrow
-            \draw[->, thick, green!60!black, line width=3pt] (0.5,0.1) -- (1.4,0.1);
+            \draw[->, thick, green!60!black, line width=2pt] (0.4,0.1) -- (1.2,0.1);
         \end{scope}
 
         % Scenario 3: Aligned - forward fast
-        \begin{scope}[shift={(11,0)}]
-            \draw[thick, fill=gray!10, rounded corners=8pt] (-2,-2) rectangle (2,2.5);
+        \begin{scope}[shift={(9,0)}]
+            \draw[thick, fill=gray!10, rounded corners=6pt] (-1.8,-1.8) rectangle (1.8,2.2);
             % Robot
-            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.5,-0.5) rectangle (0.5,0.7);
-            \foreach \dx/\dy in {-0.4/-0.4, -0.4/0.4, 0.4/-0.4, 0.4/0.4} {
-                \fill[gray!60] (\dx-0.08, \dy) rectangle (\dx+0.08, \dy+0.15);
+            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.4,-0.4) rectangle (0.4,0.6);
+            \foreach \dx/\dy in {-0.3/-0.3, -0.3/0.3, 0.3/-0.3, 0.3/0.3} {
+                \fill[gray!60] (\dx-0.06, \dy) rectangle (\dx+0.06, \dy+0.12);
             }
             % Target ahead (cube)
-            \fill[green!70] (-0.15,1.8) rectangle (0.15,2.1);
+            \fill[green!70] (-0.12,1.5) rectangle (0.12,1.8);
             % Alignment line
-            \draw[dashed, green!50, thick] (0,0.7) -- (0,1.8);
+            \draw[dashed, green!50, thick] (0,0.6) -- (0,1.5);
             % Action arrow
-            \draw[->, ultra thick, green!60!black, line width=4pt] (0,0.7) -- (0,1.5);
+            \draw[->, ultra thick, green!60!black, line width=3pt] (0,0.6) -- (0,1.3);
         \end{scope}
 
         % Scenario 4: Big angle - rotate only
-        \begin{scope}[shift={(16.5,0)}]
-            \draw[thick, fill=gray!10, rounded corners=8pt] (-2,-2) rectangle (2,2.5);
+        \begin{scope}[shift={(13.5,0)}]
+            \draw[thick, fill=gray!10, rounded corners=6pt] (-1.8,-1.8) rectangle (1.8,2.2);
             % Robot
-            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.5,-0.5) rectangle (0.5,0.7);
-            \foreach \dx/\dy in {-0.4/-0.4, -0.4/0.4, 0.4/-0.4, 0.4/0.4} {
-                \fill[gray!60] (\dx-0.08, \dy) rectangle (\dx+0.08, \dy+0.15);
+            \draw[fill=blue!40, thick, rounded corners=2pt] (-0.4,-0.4) rectangle (0.4,0.6);
+            \foreach \dx/\dy in {-0.3/-0.3, -0.3/0.3, 0.3/-0.3, 0.3/0.3} {
+                \fill[gray!60] (\dx-0.06, \dy) rectangle (\dx+0.06, \dy+0.12);
             }
             % Target at angle
-            \fill[green!70] (1.3,1.5) rectangle (1.6,1.8);
+            \fill[green!70] (1.1,1.3) rectangle (1.4,1.6);
             % Angle indicator
-            \draw[orange!70, thick, dashed] (0,0.7) -- (0,1.8);
-            \draw[orange!70, thick] (0,0.7) -- (1.3,1.5);
-            \draw[orange!70, thick] (0,1.2) arc (90:50:0.5);
+            \draw[orange!70, thick, dashed] (0,0.6) -- (0,1.5);
+            \draw[orange!70, thick] (0,0.6) -- (1.1,1.3);
+            \draw[orange!70, thick] (0,1.0) arc (90:50:0.4);
             % Action arrow (rotation)
-            \draw[->, thick, orange!70, line width=3pt] (0.6,0.7) arc (0:50:0.6);
+            \draw[->, thick, orange!70, line width=2pt] (0.5,0.6) arc (0:50:0.5);
         \end{scope}
     \end{tikzpicture}
 \end{frame}
@@ -953,41 +953,41 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=0.85]
+    \begin{tikzpicture}[scale=0.65]
         % A* limitations (left)
-        \node[draw, rectangle, rounded corners=10pt, fill=green!15, minimum width=5cm, minimum height=5cm, thick, drop shadow] at (0,0) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=green!15, minimum width=4cm, minimum height=4cm, thick, drop shadow] at (0,0) {};
         % Problem visualization: path too close to obstacle
-        \draw[brown!60, thick, fill=brown!40] (-0.5,1) rectangle (0.5,2);
-        \draw[blue!60, thick, line width=2pt] (-1.5,0) -- (-0.5,1.5) -- (0.5,1.5) -- (1.5,2.5);
-        \draw[red!60, thick, <->] (0,1) -- (0,1.5);
-        \node[red!60, font=\tiny] at (0.4,1.25) {!};
+        \draw[brown!60, thick, fill=brown!40] (-0.4,0.8) rectangle (0.4,1.6);
+        \draw[blue!60, thick, line width=1.5pt] (-1.2,0) -- (-0.4,1.2) -- (0.4,1.2) -- (1.2,2);
+        \draw[red!60, thick, <->] (0,0.8) -- (0,1.2);
+        \node[red!60, font=\tiny] at (0.3,1) {!};
         % Fix indicator
-        \draw[green!60, thick, dashed, line width=2pt] (-1.5,0) -- (-1,0.5) -- (-1,2.5) -- (1.5,2.5);
+        \draw[green!60, thick, dashed, line width=1.5pt] (-1.2,0) -- (-0.8,0.4) -- (-0.8,2) -- (1.2,2);
 
         % Fuzzy limitations (center)
-        \node[draw, rectangle, rounded corners=10pt, fill=orange!15, minimum width=5cm, minimum height=5cm, thick, drop shadow] at (6,0) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=orange!15, minimum width=4cm, minimum height=4cm, thick, drop shadow] at (5,0) {};
         % Problem visualization: oscillation
-        \draw[blue!60, thick, line width=2pt] (4.5,-0.5) sin (5,0.5) cos (5.5,-0.5) sin (6,0.5) cos (6.5,-0.5) sin (7,0.5) cos (7.5,-0.5);
+        \draw[blue!60, thick, line width=1.5pt] (3.5,-0.4) sin (4,0.4) cos (4.5,-0.4) sin (5,0.4) cos (5.5,-0.4) sin (6,0.4) cos (6.5,-0.4);
         % Target
-        \fill[green!60] (7.2,1.5) rectangle (7.5,1.8);
+        \fill[green!60] (6,1.2) rectangle (6.3,1.5);
         % Fix indicator
-        \draw[purple!60, thick] (4.8,-1.5) circle (0.2);
-        \draw[purple!60, thick, ->] (4.8,-1.3) -- (4.8,-1.7);
+        \draw[purple!60, thick] (4,-1.2) circle (0.15);
+        \draw[purple!60, thick, ->] (4,-1.05) -- (4,-1.35);
 
         % CNN limitations (right)
-        \node[draw, rectangle, rounded corners=10pt, fill=blue!15, minimum width=5cm, minimum height=5cm, thick, drop shadow] at (12,0) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=blue!15, minimum width=4cm, minimum height=4cm, thick, drop shadow] at (10,0) {};
         % Problem visualization: lighting variation
-        \draw[yellow!60, thick] (11,2) -- (11.5,1.2);
-        \draw[yellow!60, thick] (11.3,2) -- (11.8,1.2);
-        \draw[yellow!60, thick] (11.6,2) -- (12.1,1.2);
+        \draw[yellow!60, thick] (9.2,1.6) -- (9.6,1);
+        \draw[yellow!60, thick] (9.45,1.6) -- (9.85,1);
+        \draw[yellow!60, thick] (9.7,1.6) -- (10.1,1);
         % Cube with different lighting
-        \fill[red!80] (11.3,0.8) rectangle (11.7,1.2);
-        \fill[red!40] (12.3,0.8) rectangle (12.7,1.2);
+        \fill[red!80] (9.4,0.6) rectangle (9.75,0.95);
+        \fill[red!40] (10.25,0.6) rectangle (10.6,0.95);
         % Confusion indicator
-        \node[font=\Large, gray] at (12,-0.5) {?};
+        \node[font=\normalsize, gray] at (10,-0.4) {?};
         % HSV fallback indicator
-        \draw[purple!60, thick, rounded corners] (11,-1.8) rectangle (13,-1.2);
-        \node[font=\tiny] at (12,-1.5) {HSV};
+        \draw[purple!60, thick, rounded corners] (9.2,-1.4) rectangle (10.8,-1);
+        \node[font=\tiny] at (10,-1.2) {HSV};
     \end{tikzpicture}
 \end{frame}
 
@@ -996,55 +996,55 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=1.0]
+    \begin{tikzpicture}[scale=0.75]
         % Three pillars
-        \node[draw, rectangle, rounded corners=10pt, fill=blue!40, minimum width=4cm, minimum height=3.5cm, thick, drop shadow]
+        \node[draw, rectangle, rounded corners=8pt, fill=blue!40, minimum width=3cm, minimum height=2.8cm, thick, drop shadow]
             (cnn) at (0,0) {};
         % Neural network icon
-        \foreach \y in {-0.4,0,0.4} {
-            \fill[white] (-0.4,\y) circle (0.15);
-            \fill[white] (0.4,\y) circle (0.15);
+        \foreach \y in {-0.3,0,0.3} {
+            \fill[white] (-0.3,\y) circle (0.1);
+            \fill[white] (0.3,\y) circle (0.1);
         }
-        \draw[white, thick] (-0.4,-0.4) -- (0.4,0);
-        \draw[white, thick] (-0.4,0.4) -- (0.4,0);
-        \draw[white, thick] (-0.4,0) -- (0.4,-0.4);
-        \draw[white, thick] (-0.4,0) -- (0.4,0.4);
-        \node[font=\Large\bfseries, white] at (0,1.2) {99.4\%};
+        \draw[white, thick] (-0.3,-0.3) -- (0.3,0);
+        \draw[white, thick] (-0.3,0.3) -- (0.3,0);
+        \draw[white, thick] (-0.3,0) -- (0.3,-0.3);
+        \draw[white, thick] (-0.3,0) -- (0.3,0.3);
+        \node[font=\normalsize\bfseries, white] at (0,0.95) {99.4\%};
 
-        \node[draw, rectangle, rounded corners=10pt, fill=orange!50, minimum width=4cm, minimum height=3.5cm, thick, drop shadow]
-            (fuzzy) at (6,0) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=orange!50, minimum width=3cm, minimum height=2.8cm, thick, drop shadow]
+            (fuzzy) at (5,0) {};
         % Fuzzy curve icon
-        \draw[white, very thick] (5.2,-0.3) -- (5.6,0.5) -- (6.4,0.5) -- (6.8,-0.3);
-        \draw[white, very thick, dashed] (5.5,0) -- (6.5,0);
-        \node[font=\scriptsize\bfseries, white] at (6,1.2) {$\mu(x)$};
+        \draw[white, very thick] (4.3,-0.25) -- (4.6,0.4) -- (5.4,0.4) -- (5.7,-0.25);
+        \draw[white, thick, dashed] (4.4,0) -- (5.6,0);
+        \node[font=\scriptsize\bfseries, white] at (5,0.95) {$\mu(x)$};
 
-        \node[draw, rectangle, rounded corners=10pt, fill=green!50, minimum width=4cm, minimum height=3.5cm, thick, drop shadow]
-            (astar) at (12,0) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=green!50, minimum width=3cm, minimum height=2.8cm, thick, drop shadow]
+            (astar) at (10,0) {};
         % Grid with path icon
-        \draw[white, step=0.4, thick] (11.2,-0.6) grid (12.8,0.6);
-        \draw[white, very thick, ->] (11.4,-0.4) -- (11.4,0.4) -- (12.2,0.4) -- (12.6,0.4);
-        \fill[white] (12.6,0.4) circle (0.15);
+        \draw[white, step=0.3, thick] (9.4,-0.45) grid (10.6,0.45);
+        \draw[white, very thick, ->] (9.55,-0.3) -- (9.55,0.3) -- (10.15,0.3) -- (10.45,0.3);
+        \fill[white] (10.45,0.3) circle (0.1);
 
         % Integration arrows
-        \draw[->, ultra thick, purple!70, line width=4pt] (2.2,0) -- (3.8,0);
-        \draw[->, ultra thick, purple!70, line width=4pt] (8.2,0) -- (9.8,0);
+        \draw[->, ultra thick, purple!70, line width=3pt] (1.7,0) -- (3.3,0);
+        \draw[->, ultra thick, purple!70, line width=3pt] (6.7,0) -- (8.3,0);
 
         % Plus signs
-        \node[font=\Huge, purple!70] at (3,0) {+};
-        \node[font=\Huge, purple!70] at (9,0) {+};
+        \node[font=\Large, purple!70] at (2.5,0) {+};
+        \node[font=\Large, purple!70] at (7.5,0) {+};
 
         % Result arrow
-        \draw[->, ultra thick, purple!70, line width=5pt] (6,-2.2) -- (6,-3.2);
+        \draw[->, ultra thick, purple!70, line width=4pt] (5,-1.8) -- (5,-2.6);
 
         % Result box
-        \node[draw, rectangle, rounded corners=10pt, fill=purple!30, minimum width=14cm, minimum height=2cm, very thick, drop shadow] at (6,-4.5) {};
+        \node[draw, rectangle, rounded corners=8pt, fill=purple!30, minimum width=11cm, minimum height=1.6cm, very thick, drop shadow] at (5,-3.6) {};
         % Robot icon in result
-        \draw[fill=blue!50, thick, rounded corners=3pt] (5.5,-4.8) rectangle (6.5,-4.2);
-        \foreach \dx/\dy in {-0.4/-0.25, -0.4/0.25, 0.4/-0.25, 0.4/0.25} {
-            \fill[gray!70] (6+\dx, -4.5+\dy-0.08) rectangle (6+\dx+0.08, -4.5+\dy+0.08);
+        \draw[fill=blue!50, thick, rounded corners=2pt] (4.6,-3.85) rectangle (5.4,-3.35);
+        \foreach \dx/\dy in {-0.3/-0.2, -0.3/0.2, 0.3/-0.2, 0.3/0.2} {
+            \fill[gray!70] (5+\dx, -3.6+\dy-0.06) rectangle (5+\dx+0.06, -3.6+\dy+0.06);
         }
         % Checkmark
-        \node[font=\Huge, green!60!black] at (8,-4.5) {\checkmark};
+        \node[font=\Large, green!60!black] at (6.8,-3.6) {\checkmark};
     \end{tikzpicture}
 \end{frame}
 
