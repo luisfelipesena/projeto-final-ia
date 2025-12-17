@@ -1023,25 +1023,20 @@ class YouBotController:
                     self._return_last_angle = angle_to_wp
                     self._return_turn_attempts = 0
 
-                    # FIX: Turn toward waypoint based on angle sign, NOT box color
-                    # angle_to_wp > 0 means waypoint is to the LEFT → turn LEFT
-                    # angle_to_wp < 0 means waypoint is to the RIGHT → turn RIGHT
-                    if angle_to_wp > 0:
-                        self._return_committed_dir = 1   # Turn left
-                    else:
-                        self._return_committed_dir = -1  # Turn right
+                    # IMPORTANT: Base uses same sign convention as TO_BOX:
+                    # cmd_omega = -angle_to_wp drives angle toward zero.
+                    # Therefore, if angle_to_wp > 0 (target left) => omega negative.
+                    # If angle_to_wp < 0 (target right) => omega positive.
+                    self._return_committed_dir = -1 if angle_to_wp > 0 else 1
 
                     color_key = getattr(self, '_last_box_color', 'unknown')
-                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
+                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir > 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
                 
                 turn_elapsed = current_time - self._return_turn_start
 
-                # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
-                current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
-                    # Waypoint is now on opposite side, switch direction
-                    self._return_committed_dir = current_dir
-                    print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
+                # NOTE: Do not auto-switch direction based on angle sign.
+                # Around ±180° the wrapped angle sign flips frequently, causing oscillation.
+                # We keep the initial committed direction for this turn attempt.
 
                 # Stuck detection: if turning for >6s without reaching < 70°
                 if turn_elapsed > 6.0:
@@ -1062,7 +1057,8 @@ class YouBotController:
                         # Reset timer and re-evaluate direction
                         print(f"[RETURN] Turn attempt {self._return_turn_attempts}, re-evaluating...")
                         self._return_turn_start = current_time
-                        self._return_committed_dir = current_dir  # Re-evaluate based on current angle
+                        # Re-evaluate using the same (omega = -angle) convention
+                        self._return_committed_dir = -1 if angle_to_wp > 0 else 1
                 
                 # Use committed direction with obstacle checking
                 omega_speed = 0.45
@@ -1081,7 +1077,7 @@ class YouBotController:
                 
                 # Log progress
                 if current_time - self._return_log_time > 1.0:
-                    dir_str = "L" if omega > 0 else "R"
+                    dir_str = "R" if omega > 0 else "L"
                     print(f"[RETURN] Turning {dir_str}: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
                     self._return_log_time = current_time
                 return
