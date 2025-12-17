@@ -197,53 +197,73 @@ def get_return_route(current_pos, from_color):
         # RED box at (2.31, 0.01)
         # Robot was facing EAST, now needs to go WEST
         # KEY INSIGHT: Going SOUTH first (90° right turn) is easier than 180° turn
+        # Obstacles to avoid: B at (1.96, -1.24), A at (0.6, 0.0)
         
         # Strategy: Go SOUTH to clear obstacles, then WEST through southern corridor
-        if x > 1.0:
-            # First go SOUTH - only requires ~90° right turn from EAST
-            waypoints.append((1.20, -0.50))   # South first (easy turn)
-            waypoints.append((0.80, -0.60))   # Continue south-west
+        if x > 1.5:
+            # Far east, need to arc south first avoiding obstacle B
+            waypoints.append((1.40, -0.40))   # South-west, avoiding B
+            waypoints.append((1.00, -0.55))   # Continue south-west
+        elif x > 1.0:
+            # Mid-east
+            waypoints.append((0.80, -0.50))   # Continue south-west
+        
         if x > 0.50:
-            waypoints.append((0.40, -0.50))   # West through southern area
+            # Curve around obstacle A (at 0.6, 0.0)
+            waypoints.append((0.35, -0.45))   # Stay south of A
         if x > 0.0:
-            waypoints.append((0.00, -0.30))   # Curve toward center
-        waypoints.append((-0.30, -0.10))      # Into center corridor
+            waypoints.append((-0.10, -0.25))  # Continue west
+        
+        waypoints.append((-0.40, -0.05))      # Into center corridor
         
     elif from_color == "green":
         # GREEN box at (0.48, 1.58)
         # Robot was facing NORTH, needs to go SOUTH-WEST
+        # Obstacles to avoid: C at (1.95, 1.25), A at (0.6, 0.0)
         
-        if y > 0.80:
-            waypoints.append((0.50, 0.60))   # Arc south
-        if y > 0.40:
-            waypoints.append((0.35, 0.30))   # Continue south
-        waypoints.append((0.10, 0.10))       # Toward center
-        waypoints.append((-0.25, 0.0))       # Center corridor
+        if y > 1.20:
+            # Still very close to box, go south first
+            waypoints.append((0.30, 0.90))    # South, staying west
+            waypoints.append((0.15, 0.55))    # Continue south-west
+        elif y > 0.70:
+            waypoints.append((0.10, 0.45))    # Go south-west
+        
+        if y > 0.30:
+            waypoints.append((0.0, 0.20))     # Continue toward center
+        
+        # Avoid obstacle A, go slightly north of center line
+        if x > 0.20:
+            waypoints.append((-0.20, 0.10))   # West, slight north to avoid A
+        
+        waypoints.append((-0.45, 0.0))        # Center corridor entry
         
     elif from_color == "blue":
         # BLUE box at (0.48, -1.62)
-        # Robot was facing SOUTH, needs to go NORTH-WEST
-        # After retreat, robot may end up at various Y positions
+        # Robot was facing SOUTH, now needs to go WEST toward spawn
+        # After retreat + turn, robot typically ends up around (0.0 to 0.5, -0.3 to -0.8)
+        # 
+        # KEY FIX: Avoid going EAST toward obstacle A at (0.6, 0.0)!
+        # Always guide robot WEST, never back toward the box or obstacle A.
         
-        if y < -0.80:
-            waypoints.append((0.50, -0.60))  # Arc north
-        if y < -0.40:
-            waypoints.append((0.35, -0.30))  # Continue north
+        if y < -1.00:
+            # Still very close to box, need to go north first
+            waypoints.append((0.30, -0.70))   # North, staying west of box
+            waypoints.append((0.15, -0.40))   # Continue north-west
+        elif y < -0.60:
+            # Mid-south area
+            waypoints.append((0.10, -0.35))   # Go north-west (not east!)
         
-        # If robot is already in the center area (y > -0.40), 
-        # we need waypoints that guide it WEST without requiring 180° turn
-        if y > -0.40:
-            # Robot is close to center, avoid obstacle A at (0.6, 0.0)
-            if x > 0.40:
-                # Need to go around obstacle A - go NORTH of it
-                waypoints.append((0.35, 0.35))   # Go north of A
-                waypoints.append((0.0, 0.30))    # Continue west-north
-            elif x > 0.0:
-                waypoints.append((-0.10, 0.15))  # Direct to corridor
-            waypoints.append((-0.40, 0.05))      # Into corridor
-        else:
-            waypoints.append((0.10, -0.10))      # Toward center
-            waypoints.append((-0.25, 0.0))       # Center corridor
+        # Now guide toward center corridor - ALWAYS go WEST
+        if x > 0.20:
+            # If east of center, need to curve west avoiding obstacle A
+            waypoints.append((0.0, -0.20))    # Go west, slight south to avoid A
+            waypoints.append((-0.25, -0.10))  # Continue west
+        elif x > -0.20:
+            # Near center, direct path west
+            waypoints.append((-0.30, -0.05))  # Into corridor
+        
+        # Final approach to corridor
+        waypoints.append((-0.50, 0.0))        # Center corridor entry
     
     # Common path through center corridor to spawn
     # Only add waypoints that are WEST of current x position

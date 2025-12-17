@@ -813,51 +813,15 @@ class YouBotController:
                 print("[DROP] Retreating...")
 
         elif self.stage == 5:
+            # Short retreat from box - just enough to clear the box edge
             self._safe_move(-0.10, 0.0, 0.0)
-            if self.stage_timer >= 2.0:
+            if self.stage_timer >= 1.5:
                 self.base.reset()
                 self.stage += 1
                 self.stage_timer = 0.0
+                print(f"[DROP] Retreating done. Preparing for return navigation...")
 
         elif self.stage == 6:
-            # Longer retreat from box
-            self._safe_move(-0.12, 0.0, 0.0)
-            if self.stage_timer >= 2.5:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-                # Determine turn direction based on box color
-                color = (self.current_color or "").lower()
-                if color == "red":
-                    # RED box is EAST, turn LEFT (toward WEST)
-                    self._post_drop_turn_dir = 1  # positive = left
-                    self._post_drop_turn_target = 2.5  # ~140° turn
-                elif color == "green":
-                    # GREEN box is NORTH, turn RIGHT (toward SOUTH/WEST)
-                    self._post_drop_turn_dir = -1
-                    self._post_drop_turn_target = 2.0  # ~115° turn
-                elif color == "blue":
-                    # BLUE box is SOUTH, turn LEFT (toward NORTH/WEST)
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 2.0
-                else:
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 1.5
-                print(f"[DROP] Retreating done. Turning away from {color.upper()} box...")
-
-        elif self.stage == 7:
-            # Turn away from box before searching
-            turn_dir = getattr(self, '_post_drop_turn_dir', 1)
-            turn_target = getattr(self, '_post_drop_turn_target', 2.0)
-
-            self._safe_move(0.0, 0.0, 0.5 * turn_dir)
-
-            if self.stage_timer >= turn_target:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-
-        elif self.stage == 8:
             color_key = (self.current_color or "").lower()
             if color_key in self.delivered:
                 self.delivered[color_key] += 1
@@ -869,25 +833,27 @@ class YouBotController:
 
             print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
             print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
-            print(f"[DROP] Starting search for next cube...")
 
-            # Go to search mode facing away from box
-            self.mode = "search"
-            self.search_state = "forward"
-            self.turn_progress = 0.0
-
-            # Clear state
+            # CRITICAL FIX: Instead of going directly to search (which fails near obstacles),
+            # use return_to_spawn mode which has robust waypoint-based navigation.
+            # This ensures the robot safely navigates back to spawn area before searching.
+            print(f"[DROP] Navigating back to spawn for next search...")
+            
+            # Save the box color for return route calculation
+            self._last_box_color = color_key
+            
+            # Transition to return_to_spawn mode (uses waypoint navigation)
+            self.mode = "return_to_spawn"
+            
+            # Clear navigation state
             self.current_target = None
             self.active_goal = None
             self._waypoints = []
             self._path_dirty = True
-            self.current_color = None
             self.locked_cube_angle = None
             self.locked_cube_distance = None
-            # Cleanup post-drop turn state
-            for attr in ['_post_drop_turn_dir', '_post_drop_turn_target']:
-                if hasattr(self, attr):
-                    delattr(self, attr)
+            
+            # Keep current_color for route calculation, will be cleared when reaching spawn
             self.base.reset()
             self.stage = 0
 
@@ -928,13 +894,24 @@ class YouBotController:
 
         dist_to_spawn, angle_to_spawn = self._distance_to_point(SPAWN_POSITION)
 
-        # ===== PHASE 0: RETREAT FROM BOX =====
+        # ===== PHASE 0: RETREAT FROM BOX (smart - check if already clear) =====
         if self._return_phase == 0:
             phase_elapsed = current_time - self._return_start
 
             if not hasattr(self, '_retreat_start_pos'):
                 self._retreat_start_pos = (self.pose[0], self.pose[1])
-                self._retreat_substage = 0  # 0=reverse, 1=turn+forward, 2=done
+                self._retreat_substage = 0  # 0=check/reverse, 1=turn+forward, 2=done
+                
+                # SMART CHECK: If already far from box, skip retreat entirely
+                color_key = getattr(self, '_last_box_color', None)
+                if color_key:
+                    box_pos = BOX_POSITIONS.get(color_key)
+                    if box_pos:
+                        dist_to_box = math.hypot(self.pose[0] - box_pos[0], self.pose[1] - box_pos[1])
+                        if dist_to_box > 0.50:
+                            # Already retreated during DROP, skip to route calculation
+                            print(f"[RETURN] Already {dist_to_box:.2f}m from box, skipping retreat")
+                            self._retreat_substage = 2
 
             retreat_dist = math.hypot(
                 self.pose[0] - self._retreat_start_pos[0],
@@ -944,14 +921,14 @@ class YouBotController:
             rear_clear = min_rear > 0.25 and rl_obs > 0.25 and rr_obs > 0.25
             front_clear = min_front > 0.35
 
-            # Substage 0: Try to reverse
+            # Substage 0: Try to reverse (if needed)
             if self._retreat_substage == 0:
-                if retreat_dist < 0.40 and phase_elapsed < 3.0 and rear_clear:
+                if retreat_dist < 0.30 and phase_elapsed < 2.0 and rear_clear:
                     self._safe_move(-0.12, 0.0, 0.0)
                     return
                 else:
                     # Rear blocked or retreated enough, try turning + forward
-                    if retreat_dist < 0.20 and front_clear:
+                    if retreat_dist < 0.15 and front_clear:
                         # Didn't retreat enough, try turning and moving forward
                         self._retreat_substage = 1
                         self._retreat_turn_start = current_time
@@ -965,7 +942,7 @@ class YouBotController:
             # Substage 1: Turn and move forward to escape
             if self._retreat_substage == 1:
                 turn_elapsed = current_time - self._retreat_turn_start
-                if turn_elapsed < 2.5 and front_clear:
+                if turn_elapsed < 2.0 and front_clear:
                     # Turn while moving forward slightly
                     self._safe_move(0.06, 0.0, self._retreat_turn_dir)
                     return
@@ -1107,13 +1084,22 @@ class YouBotController:
                 if gt:
                     self.pose = gt
 
-                # Cleanup
+                # Cleanup all return state
                 for attr in ['_return_phase', '_return_start', '_return_log_time',
                              '_return_waypoints', '_return_waypoint_idx', '_last_box_color',
                              '_return_turn_start', '_return_last_angle', '_return_nav_last_pos',
                              '_return_nav_stuck_time', '_return_turn_attempts', '_return_committed_dir']:
                     if hasattr(self, attr):
                         delattr(self, attr)
+
+                # Clear navigation state for fresh search
+                self.current_color = None
+                self.current_target = None
+                self.active_goal = None
+                self._waypoints = []
+                self._path_dirty = True
+                self.search_state = "forward"
+                self.turn_progress = 0.0
 
                 self.mode = "search"
                 return
