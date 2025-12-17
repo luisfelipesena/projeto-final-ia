@@ -199,64 +199,64 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \begin{tikzpicture}[scale=1.0]
+    \begin{tikzpicture}[scale=0.7]
         % Robot body (top view) - detailed
-        \draw[fill=gray!15, very thick, rounded corners=8pt] (-2.2,-3.2) rectangle (2.2,3.2);
+        \draw[fill=gray!15, very thick, rounded corners=6pt] (-2,-2.8) rectangle (2,2.8);
 
         % Wheels (mecanum pattern)
-        \foreach \x/\y in {-2.2/-2.3, -2.2/2.3, 2.2/-2.3, 2.2/2.3} {
-            \draw[fill=gray!50, thick] (\x-0.25,\y-0.6) rectangle (\x+0.25,\y+0.6);
+        \foreach \x/\y in {-2/-2, -2/2, 2/-2, 2/2} {
+            \draw[fill=gray!50, thick] (\x-0.2,\y-0.5) rectangle (\x+0.2,\y+0.5);
             % Roller pattern
-            \foreach \i in {-0.4,-0.2,0,0.2,0.4} {
-                \draw[gray!30, thick] (\x-0.2,\y+\i) -- (\x+0.2,\y+\i+0.15);
+            \foreach \i in {-0.3,-0.1,0.1,0.3} {
+                \draw[gray!30, thick] (\x-0.15,\y+\i) -- (\x+0.15,\y+\i+0.12);
             }
         }
 
         % LIDAR rays (180 degrees from front) - prominent
-        \foreach \a in {-88,-76,-64,-52,-40,-28,-16,-4,8,20,32,44,56,68,80} {
-            \draw[red!40, ->, line width=1.5pt] (0,3.2) -- ++(\a+90:3.5);
+        \foreach \a in {-80,-60,-40,-20,0,20,40,60,80} {
+            \draw[red!40, ->, line width=1.2pt] (0,2.8) -- ++(\a+90:2.8);
         }
         % LIDAR sensor housing
-        \fill[red!70] (-0.3,3.0) rectangle (0.3,3.4);
+        \fill[red!70] (-0.25,2.6) rectangle (0.25,2.95);
         % LIDAR arc indicator
-        \draw[red!70, very thick] (-3,5.5) arc (150:30:2);
-        \node[red!70, font=\bfseries] at (0,6.8) {180°};
+        \draw[red!70, very thick] (-2.2,4.8) arc (150:30:1.5);
+        \node[red!70, font=\bfseries] at (0,5.8) {180°};
 
         % Camera FOV cone
-        \draw[blue!40, fill=blue!10, line width=2pt] (0,3.2) -- ++(55:2.5) arc (55:125:2.5) -- cycle;
+        \draw[blue!40, fill=blue!10, line width=1.5pt] (0,2.8) -- ++(55:2) arc (55:125:2) -- cycle;
         % Camera lens
-        \fill[blue!70] (-0.15,3.1) rectangle (0.15,3.4);
+        \fill[blue!70] (-0.12,2.7) rectangle (0.12,2.95);
 
         % Front distance sensors (3)
-        \foreach \x in {-1.2, 0, 1.2} {
-            \fill[green!70] (\x,3.2) circle (0.15);
-            \draw[green!50, ->, thick] (\x,3.2) -- (\x,4.2);
+        \foreach \x in {-1, 0, 1} {
+            \fill[green!70] (\x,2.8) circle (0.12);
+            \draw[green!50, ->, thick] (\x,2.8) -- (\x,3.6);
         }
 
         % Rear distance sensors (3)
-        \foreach \x in {-1.2, 0, 1.2} {
-            \fill[green!70] (\x,-3.2) circle (0.15);
-            \draw[green!50, ->, thick] (\x,-3.2) -- (\x,-4.2);
+        \foreach \x in {-1, 0, 1} {
+            \fill[green!70] (\x,-2.8) circle (0.12);
+            \draw[green!50, ->, thick] (\x,-2.8) -- (\x,-3.6);
         }
 
         % Lateral sensors (2) - NEW and highlighted
-        \fill[purple!80] (-2.2,0) circle (0.18);
-        \fill[purple!80] (2.2,0) circle (0.18);
-        \draw[purple!60, ->, very thick] (-2.2,0) -- (-3.8,0);
-        \draw[purple!60, ->, very thick] (2.2,0) -- (3.8,0);
+        \fill[purple!80] (-2,0) circle (0.14);
+        \fill[purple!80] (2,0) circle (0.14);
+        \draw[purple!60, ->, very thick] (-2,0) -- (-3.2,0);
+        \draw[purple!60, ->, very thick] (2,0) -- (3.2,0);
         % Highlight boxes for new sensors
-        \draw[purple!60, dashed, thick, rounded corners] (-2.6,-0.5) rectangle (-1.8,0.5);
-        \draw[purple!60, dashed, thick, rounded corners] (1.8,-0.5) rectangle (2.6,0.5);
+        \draw[purple!60, dashed, thick, rounded corners] (-2.3,-0.4) rectangle (-1.7,0.4);
+        \draw[purple!60, dashed, thick, rounded corners] (1.7,-0.4) rectangle (2.3,0.4);
 
         % Arm base
-        \draw[fill=gray!40, thick] (-0.4,0.5) rectangle (0.4,2);
-        \draw[fill=orange!50, thick] (-0.2,2) rectangle (0.2,2.8);
+        \draw[fill=gray!40, thick] (-0.35,0.4) rectangle (0.35,1.7);
+        \draw[fill=orange!50, thick] (-0.18,1.7) rectangle (0.18,2.4);
 
         % Dimension annotations
-        \draw[<->, thick, gray] (-2.2,-4) -- (2.2,-4);
-        \node[font=\small, gray] at (0,-4.4) {38cm};
-        \draw[<->, thick, gray] (3,-3.2) -- (3,3.2);
-        \node[font=\small, gray, rotate=90] at (3.4,0) {58cm};
+        \draw[<->, thick, gray] (-2,-3.5) -- (2,-3.5);
+        \node[font=\small, gray] at (0,-3.9) {38cm};
+        \draw[<->, thick, gray] (2.6,-2.8) -- (2.6,2.8);
+        \node[font=\small, gray, rotate=90] at (3,0) {58cm};
     \end{tikzpicture}
 \end{frame}
 
@@ -935,16 +935,14 @@
 %-------------------------------------------------
 \begin{frame}{}
     \centering
-    \vspace{1.5em}
-
-    \begin{tikzpicture}
+    \begin{tikzpicture}[scale=0.75]
         % Large play button
-        \node[draw, circle, fill=blue!20, minimum size=8cm, very thick, drop shadow] (play) at (0,0) {};
-        \fill[blue!60] (-0.8,-1.2) -- (-0.8,1.2) -- (1.4,0) -- cycle;
+        \node[draw, circle, fill=blue!20, minimum size=7cm, very thick, drop shadow] (play) at (0,0) {};
+        \fill[blue!60] (-0.7,-1.0) -- (-0.7,1.0) -- (1.2,0) -- cycle;
 
         % Webots logo placeholder
-        \node[draw, rounded corners, fill=gray!20, minimum width=4cm, minimum height=1cm, thick] at (0,-5.5) {};
-        \draw[gray!50, thick] (-1.5,-5.5) -- (-1,-5.2) -- (-0.5,-5.8) -- (0,-5.3) -- (0.5,-5.7) -- (1,-5.4) -- (1.5,-5.5);
+        \node[draw, rounded corners, fill=gray!20, minimum width=4cm, minimum height=1cm, thick] at (0,-4.5) {};
+        \draw[gray!50, thick] (-1.5,-4.5) -- (-1,-4.2) -- (-0.5,-4.8) -- (0,-4.3) -- (0.5,-4.7) -- (1,-4.4) -- (1.5,-4.5);
     \end{tikzpicture}
 \end{frame}
 
