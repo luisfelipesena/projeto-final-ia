@@ -816,80 +816,39 @@ class YouBotController:
             self._safe_move(-0.10, 0.0, 0.0)
             if self.stage_timer >= 2.0:
                 self.base.reset()
-                self.stage += 1
+                
+                # Update statistics
+                color_key = (self.current_color or "").lower()
+                if color_key in self.delivered:
+                    self.delivered[color_key] += 1
+
+                # Sync ground truth
+                gt = self._get_ground_truth_pose()
+                if gt:
+                    self.pose = gt
+
+                print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
+                print(f"[DROP] Transitioning to RETURN_TO_SPAWN logic...")
+
+                # Set state for return sequence
+                self._last_box_color = color_key
+                self.mode = "return_to_spawn"
+                self.stage = 0
                 self.stage_timer = 0.0
 
-        elif self.stage == 6:
-            # Longer retreat from box
-            self._safe_move(-0.12, 0.0, 0.0)
-            if self.stage_timer >= 2.5:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-                # Determine turn direction based on box color
-                color = (self.current_color or "").lower()
-                if color == "red":
-                    # RED box is EAST, turn LEFT (toward WEST)
-                    self._post_drop_turn_dir = 1  # positive = left
-                    self._post_drop_turn_target = 2.5  # ~140° turn
-                elif color == "green":
-                    # GREEN box is NORTH, turn RIGHT (toward SOUTH/WEST)
-                    self._post_drop_turn_dir = -1
-                    self._post_drop_turn_target = 2.0  # ~115° turn
-                elif color == "blue":
-                    # BLUE box is SOUTH, turn LEFT (toward NORTH/WEST)
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 2.0
-                else:
-                    self._post_drop_turn_dir = 1
-                    self._post_drop_turn_target = 1.5
-                print(f"[DROP] Retreating done. Turning away from {color.upper()} box...")
+                # Clear drop/search state
+                self.current_target = None
+                self.active_goal = None
+                self._waypoints = []
+                self._path_dirty = True
+                self.current_color = None
+                self.locked_cube_angle = None
+                self.locked_cube_distance = None
 
-        elif self.stage == 7:
-            # Turn away from box before searching
-            turn_dir = getattr(self, '_post_drop_turn_dir', 1)
-            turn_target = getattr(self, '_post_drop_turn_target', 2.0)
-
-            self._safe_move(0.0, 0.0, 0.5 * turn_dir)
-
-            if self.stage_timer >= turn_target:
-                self.base.reset()
-                self.stage += 1
-                self.stage_timer = 0.0
-
-        elif self.stage == 8:
-            color_key = (self.current_color or "").lower()
-            if color_key in self.delivered:
-                self.delivered[color_key] += 1
-
-            # Sync ground truth after deposit
-            gt = self._get_ground_truth_pose()
-            if gt:
-                self.pose = gt
-
-            print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
-            print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
-            print(f"[DROP] Starting search for next cube...")
-
-            # Go to search mode facing away from box
-            self.mode = "search"
-            self.search_state = "forward"
-            self.turn_progress = 0.0
-
-            # Clear state
-            self.current_target = None
-            self.active_goal = None
-            self._waypoints = []
-            self._path_dirty = True
-            self.current_color = None
-            self.locked_cube_angle = None
-            self.locked_cube_distance = None
-            # Cleanup post-drop turn state
-            for attr in ['_post_drop_turn_dir', '_post_drop_turn_target']:
-                if hasattr(self, attr):
-                    delattr(self, attr)
-            self.base.reset()
-            self.stage = 0
+                # Cleanup post-drop turn state if any
+                for attr in ['_post_drop_turn_dir', '_post_drop_turn_target']:
+                    if hasattr(self, attr):
+                        delattr(self, attr)
 
     def _handle_return_to_spawn(self, dt, lidar_info, rear_info, lateral_info, front_info):
         """
@@ -1037,8 +996,10 @@ class YouBotController:
                 turn_elapsed = current_time - self._return_turn_start
 
                 # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
+                # BUT ignore sign changes if we are near 180 degrees (singularity), where sign flips easily.
+                # Only switch if we are NOT facing away from target (angle < 150 degrees).
                 current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
+                if current_dir != self._return_committed_dir and abs(angle_to_wp) < math.radians(150):
                     # Waypoint is now on opposite side, switch direction
                     self._return_committed_dir = current_dir
                     print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
