@@ -311,7 +311,7 @@ min_front = min(
 )
 ```
 
-## Fluxo Completo (Loop)
+## Fluxo Completo (Loop) - v2 com Early Search
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -341,7 +341,10 @@ min_front = min(
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   RETURN_TO_SPAWN                           │
-│  Waypoints simples → Baliza se preso → Volta ao spawn      │
+│  Waypoints estratégicos → Escapa área do box                │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ EARLY EXIT: x<-1.15 OU timeout 30s → SEARCH        │    │
+│  └─────────────────────────────────────────────────────┘    │
 └─────────────────────┬───────────────────────────────────────┘
                       ▼
                    (LOOP)
@@ -519,7 +522,16 @@ if entering_escape:
 # Direção permanece fixa durante todo o escape
 ```
 
-## Pós-Depósito: Rotação e Retorno
+## Pós-Depósito: Escape Estratégico (Fix v2)
+
+### Problema Anterior
+Após depositar o cubo, o robô transitava diretamente para `search` mode enquanto ainda estava em "zona morta" perto das caixas, cercado por obstáculos. O lawnmower search sem awareness de obstáculos causava colisões imediatas.
+
+### Solução: Usar return_to_spawn com Early Exit
+Em vez de ir direto para `search`, o robô agora:
+1. Transita para `return_to_spawn` mode
+2. Segue waypoints estratégicos para escapar da área do box
+3. Quando atinge "zona segura" (corredor central) OU timeout 30s → `search` mode
 
 ### Sequência de Drop (8 estágios)
 | Stage | Duração | Ação |
@@ -527,7 +539,19 @@ if entering_escape:
 | 0-5 | ~7s | Aproximação, drop, recuo inicial |
 | 6 | 2.5s | Recuo longo (0.12 m/s) |
 | 7 | ~2.0-2.5s | Rotação para evitar box |
-| 8 | - | Transição para search |
+| 8 | - | **Transição para return_to_spawn** (não search!) |
+
+### Early Search Transition (Zona Segura)
+```python
+# Em _handle_return_to_spawn phase 2:
+in_safe_zone = self.pose[0] < -1.15 and abs(self.pose[1]) < 0.8
+timeout_exceeded = return_elapsed > 30.0
+
+if in_safe_zone or timeout_exceeded:
+    self.mode = "search"  # Agora seguro para lawnmower
+```
+
+**Zona segura**: x < -1.15 (13cm oeste de E/F) e |y| < 0.8 (corredor entre E e F)
 
 ### Direção de Rotação por Cor
 ```python

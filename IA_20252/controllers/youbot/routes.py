@@ -212,13 +212,22 @@ def get_return_route(current_pos, from_color):
     elif from_color == "green":
         # GREEN box at (0.48, 1.58)
         # Robot was facing NORTH, needs to go SOUTH-WEST
-        
+        # CRITICAL: Obstacle A at (0.6, 0.0) blocks direct path to center!
+        # Must go WEST first, staying NORTH of A, then curve to corridor
+
         if y > 0.80:
-            waypoints.append((0.50, 0.60))   # Arc south
+            waypoints.append((0.40, 0.60))   # Start south from box
         if y > 0.40:
-            waypoints.append((0.35, 0.30))   # Continue south
-        waypoints.append((0.10, 0.10))       # Toward center
-        waypoints.append((-0.25, 0.0))       # Center corridor
+            waypoints.append((0.25, 0.40))   # Continue south
+
+        # KEY FIX: Stay NORTH of obstacle A (0.6, 0.0) by keeping y > 0.25
+        # Then go WEST before dropping to y=0 corridor
+        if x > 0.0:
+            waypoints.append((-0.10, 0.35))  # Go WEST, stay NORTH of A
+        if x > -0.35:
+            waypoints.append((-0.40, 0.25))  # Continue WEST, clear of A
+        waypoints.append((-0.60, 0.10))      # Approach corridor from north
+        waypoints.append((-0.80, 0.0))       # Into center corridor
         
     elif from_color == "blue":
         # BLUE box at (0.48, -1.62)

@@ -205,12 +205,13 @@ class YouBotController:
     def _safe_move(self, vx, vy, omega):
         """Execute movement with safety limits."""
         vals = [vx, vy, omega]
+        limits = [self._max_cmd, self._max_cmd, 0.6]  # vx, vy, omega
         safe = []
-        for v in vals:
+        for v, lim in zip(vals, limits):
             if v is None or not math.isfinite(v):
                 safe.append(0.0)
             else:
-                safe.append(max(-self._max_cmd, min(self._max_cmd, v)))
+                safe.append(max(-lim, min(lim, v)))
         self.base.move(safe[0], safe[1], safe[2])
 
     def _clamp_cmds(self, vx, vy, omega):
@@ -232,32 +233,43 @@ class YouBotController:
         """
         Skip waypoints that are behind the robot or already within threshold.
         This prevents getting stuck trying to reach waypoints we've passed.
+        CRITICAL: Don't skip to a waypoint requiring 180° turn!
         """
         if not hasattr(self, '_return_waypoints') or not self._return_waypoints:
             return
-        
+
         wp_threshold = 0.45
-        max_skip = min(5, len(self._return_waypoints) - 1)  # Don't skip more than 5
+        max_skip = min(3, len(self._return_waypoints) - 1)  # Reduced from 5 to 3
         skipped = 0
-        
+
         while self._return_waypoint_idx < len(self._return_waypoints) and skipped < max_skip:
             wp = self._return_waypoints[self._return_waypoint_idx]
             dist, angle = self._distance_to_point(wp)
-            
+
+            # Check NEXT waypoint's angle - don't skip if next requires big turn
+            next_idx = self._return_waypoint_idx + 1
+            if next_idx < len(self._return_waypoints):
+                next_wp = self._return_waypoints[next_idx]
+                _, next_angle = self._distance_to_point(next_wp)
+                # Don't skip if next waypoint requires > 100° turn
+                if abs(next_angle) > math.radians(100):
+                    break
+
             # Skip if within threshold OR if behind us (angle > 120°) and close
             should_skip = False
             if dist < wp_threshold:
                 should_skip = True
-            elif abs(angle) > math.radians(120) and dist < 1.0:
+            elif abs(angle) > math.radians(120) and dist < 0.80:
                 # Waypoint is behind us and relatively close - skip it
+                # Reduced threshold from 1.0 to 0.80 to be more conservative
                 should_skip = True
-            
+
             if should_skip:
                 self._return_waypoint_idx += 1
                 skipped += 1
             else:
                 break
-        
+
         if skipped > 0:
             print(f"[RETURN] Skipped {skipped} passed waypoints, now at WP {self._return_waypoint_idx + 1}")
 
@@ -566,56 +578,204 @@ class YouBotController:
         return False
 
     def _search_navigation(self, lidar_info, dt):
-        """Lawnmower search navigation."""
-        front_dist = lidar_info["front"]
-        left_dist = lidar_info["left"]
-        right_dist = lidar_info["right"]
+        """Exploration-based search navigation using search goals + A*."""
+        current_time = self.robot.getTime()
 
-        OBSTACLE_THRESHOLD = 0.50
-        FORWARD_SPEED = 0.15
-        
+        # Wall safety: back away before attempting turns/paths
         left_wall, right_wall, bottom_wall, top_wall = self._wall_clearances()
         min_wall = min(left_wall, right_wall, bottom_wall, top_wall)
-        
-        obstacle_ahead = self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD)
-
         if min_wall < 0.25:
-            return -0.08, 0.0, 0.0
+            return -0.10, 0.0, 0.0
 
-        if self.search_state == "forward":
-            if obstacle_ahead:
-                if left_dist > right_dist:
-                    self.search_direction = 1
-                else:
-                    self.search_direction = -1
-                self.search_state = "turn"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
+        # ===== Initialize explorer state once =====
+        if not hasattr(self, "_search_goals"):
+            # Safe exploration goals distributed across the arena
+            self._search_goals = [
+                (-3.20, 1.00),
+                (-3.20, -1.00),
+                (-1.80, 0.00),
+                (-0.20, 1.20),
+                (-0.20, -1.20),
+                (1.20, 1.00),
+                (1.20, -1.00),
+                (2.00, 0.60),
+                (2.00, -0.60),
+            ]
+            self._search_goal_idx = 0
+            self._search_path = []
+            self._search_path_idx = 0
+            self._search_last_plan_time = -1e9
+            self._search_nav_last_pos = (self.pose[0], self.pose[1])
+            self._search_nav_stuck_time = current_time
+            self._search_stuck_count = 0
+            g = self._search_goals[self._search_goal_idx]
+            print(f"[SEARCH] Explorer goal {self._search_goal_idx + 1}/{len(self._search_goals)}: ({g[0]:.2f}, {g[1]:.2f})")
+
+        # Consolidate sensor distances
+        front_obs = lidar_info.get("front", 2.0)
+        rear_obs = lidar_info.get("rear", 2.0)
+        left_obs = lidar_info.get("left", 2.0)
+        right_obs = lidar_info.get("right", 2.0)
+        min_front = front_obs
+        min_rear = rear_obs
+
+        # ===== Stuck detection (search) =====
+        moved = math.hypot(
+            self.pose[0] - self._search_nav_last_pos[0],
+            self.pose[1] - self._search_nav_last_pos[1],
+        )
+        if moved > 0.15:
+            self._search_nav_last_pos = (self.pose[0], self.pose[1])
+            self._search_nav_stuck_time = current_time
+            self._search_stuck_count = 0
+        elif current_time - self._search_nav_stuck_time > 10.0:
+            self._search_stuck_count += 1
+            self._search_nav_last_pos = (self.pose[0], self.pose[1])
+            self._search_nav_stuck_time = current_time
+
+            # Force replan; if repeatedly stuck, switch goal
+            self._search_path = []
+            self._search_path_idx = 0
+            self._search_last_plan_time = -1e9
+            if self._search_stuck_count >= 2:
+                self._search_goal_idx = (self._search_goal_idx + 1) % len(self._search_goals)
+                self._search_stuck_count = 0
+                g = self._search_goals[self._search_goal_idx]
+                print(f"[SEARCH] Stuck -> switching goal {self._search_goal_idx + 1}/{len(self._search_goals)}: ({g[0]:.2f}, {g[1]:.2f})")
             else:
-                omega_correct = 0.0
-                if left_dist < 0.40:
-                    omega_correct = -0.15
-                elif right_dist < 0.40:
-                    omega_correct = 0.15
-                
-                return FORWARD_SPEED, 0.0, omega_correct
+                g = self._search_goals[self._search_goal_idx]
+                print(f"[SEARCH] Stuck -> replanning to goal ({g[0]:.2f}, {g[1]:.2f})")
 
-        elif self.search_state == "turn":
-            self.turn_progress += dt
-            if self.turn_progress >= 2.5:
-                self.search_state = "forward"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
-            
-            if not self._check_obstacle_ahead(front_dist, OBSTACLE_THRESHOLD + 0.2) and self.turn_progress > 1.0:
-                self.search_state = "forward"
-                self.turn_progress = 0.0
-                return 0.0, 0.0, 0.0
+            # Small escape impulse
+            if min_rear > 0.35:
+                omega_escape = 0.35 if left_obs > right_obs else -0.35
+                return -0.08, 0.0, omega_escape
 
-            return 0.10, 0.0, 0.4 * self.search_direction
+        # ===== Goal management =====
+        goal = self._search_goals[self._search_goal_idx]
+        dist_to_goal = math.hypot(goal[0] - self.pose[0], goal[1] - self.pose[1])
 
-        self.search_state = "forward"
-        return 0.0, 0.0, 0.0
+        if dist_to_goal < 0.55:
+            self._search_goal_idx = (self._search_goal_idx + 1) % len(self._search_goals)
+            self._search_path = []
+            self._search_path_idx = 0
+            self._search_last_plan_time = -1e9
+            goal = self._search_goals[self._search_goal_idx]
+            print(f"[SEARCH] Explorer goal {self._search_goal_idx + 1}/{len(self._search_goals)}: ({goal[0]:.2f}, {goal[1]:.2f})")
+            return 0.0, 0.0, 0.0
+
+        # ===== Path planning (A*) =====
+        need_plan = (not self._search_path) or (self._search_path_idx >= len(self._search_path))
+        if need_plan and (current_time - self._search_last_plan_time > 0.8):
+            path = self.grid.plan_path((self.pose[0], self.pose[1]), goal)
+            self._search_last_plan_time = current_time
+            self._search_path = path
+            self._search_path_idx = 0
+
+            # If no path and not already at goal, switch goal
+            if not path and dist_to_goal > 0.70:
+                self._search_goal_idx = (self._search_goal_idx + 1) % len(self._search_goals)
+                self._search_path = []
+                self._search_path_idx = 0
+                self._search_last_plan_time = -1e9
+                goal = self._search_goals[self._search_goal_idx]
+                print(f"[SEARCH] No path -> switching goal {self._search_goal_idx + 1}/{len(self._search_goals)}: ({goal[0]:.2f}, {goal[1]:.2f})")
+                return 0.0, 0.0, 0.25
+
+        # Current waypoint (fallback to goal if path is empty)
+        if self._search_path and self._search_path_idx < len(self._search_path):
+            target_wp = self._search_path[self._search_path_idx]
+        else:
+            target_wp = goal
+
+        dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
+
+        # Advance waypoint if reached
+        if self._search_path and dist_to_wp < 0.45 and self._search_path_idx < len(self._search_path):
+            self._search_path_idx += 1
+            if self._search_path_idx < len(self._search_path):
+                target_wp = self._search_path[self._search_path_idx]
+                dist_to_wp, angle_to_wp = self._distance_to_point(target_wp)
+
+        # ===== Car-like navigation toward waypoint (RETURN-style) =====
+        left_blocked = left_obs < 0.20
+        right_blocked = right_obs < 0.20
+
+        cmd_speed = 0.0
+        cmd_omega = 0.0
+
+        # Emergency front stop
+        if min_front < 0.22:
+            rear_all_clear = min_rear > 0.30
+            if rear_all_clear:
+                cmd_speed = -0.08
+                if not left_blocked and (right_blocked or left_obs > right_obs):
+                    cmd_omega = 0.4
+                elif not right_blocked:
+                    cmd_omega = -0.4
+            else:
+                cmd_speed = 0.0
+                if not left_blocked:
+                    cmd_omega = 0.5
+                elif not right_blocked:
+                    cmd_omega = -0.5
+
+        # Front danger
+        elif min_front < 0.35:
+            rear_all_clear = min_rear > 0.30
+            if rear_all_clear:
+                cmd_speed = -0.06
+                if not left_blocked and (right_blocked or left_obs > right_obs):
+                    cmd_omega = 0.4
+                elif not right_blocked:
+                    cmd_omega = -0.4
+            else:
+                cmd_speed = 0.02
+                if not left_blocked and (right_blocked or left_obs > right_obs):
+                    cmd_omega = 0.4
+                elif not right_blocked:
+                    cmd_omega = -0.4
+
+        # Rotate toward waypoint if largely misaligned
+        elif abs(angle_to_wp) > math.radians(80):
+            cmd_speed = 0.04 if min_front > 0.40 else 0.0
+            cmd_omega = -0.45 if angle_to_wp > 0 else 0.45
+
+        # Normal navigation
+        else:
+            cmd_omega = -angle_to_wp * 1.2
+            cmd_omega = max(-0.40, min(0.40, cmd_omega))
+
+            # Lateral repulsion
+            if left_obs < 0.35:
+                cmd_omega -= 0.15
+            if right_obs < 0.35:
+                cmd_omega += 0.15
+            cmd_omega = max(-0.45, min(0.45, cmd_omega))
+
+            cmd_speed = 0.12
+            turn_penalty = 1.0 - min(0.3, abs(cmd_omega) / 0.45)
+            cmd_speed *= turn_penalty
+
+        # Final safety: never turn into a blocked side
+        if left_blocked and cmd_omega > 0:
+            cmd_omega = -0.35
+            cmd_speed = min(cmd_speed, 0.03)
+        if right_blocked and cmd_omega < 0:
+            cmd_omega = 0.35
+            cmd_speed = min(cmd_speed, 0.03)
+
+        # Both sides blocked
+        if left_blocked and right_blocked:
+            cmd_omega = 0.0
+            if min_front > 0.35:
+                cmd_speed = 0.04
+            elif min_rear > 0.30:
+                cmd_speed = -0.06
+            else:
+                cmd_speed = 0.0
+
+        return cmd_speed, 0.0, cmd_omega
 
     def _start_grasp(self):
         """Begin grasp sequence."""
@@ -869,12 +1029,11 @@ class YouBotController:
 
             print(f"[DROP] Cube deposited in {self.current_color.upper()} box! (delivered: {self.delivered})")
             print(f"[DROP] Current position: ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
-            print(f"[DROP] Starting search for next cube...")
+            print("[DROP] Navigating away from box, then searching...")
 
-            # Go to search mode facing away from box
-            self.mode = "search"
-            self.search_state = "forward"
-            self.turn_progress = 0.0
+            # Navigate away from box area before searching (use return_to_spawn waypoints)
+            self._last_box_color = color_key
+            self.mode = "return_to_spawn"
 
             # Clear state
             self.current_target = None
@@ -935,6 +1094,19 @@ class YouBotController:
             if not hasattr(self, '_retreat_start_pos'):
                 self._retreat_start_pos = (self.pose[0], self.pose[1])
                 self._retreat_substage = 0  # 0=reverse, 1=turn+forward, 2=done
+
+                # Check if already far from box - skip retreat if so
+                # DROP stages 6-7 already did retreat, additional phase 0 retreat
+                # can push robot INTO obstacle zones (especially near obstacle A)
+                color_key = getattr(self, '_last_box_color', 'red')
+                box_pos = BOX_POSITIONS.get(color_key, (0, 0))
+                dist_from_box = math.hypot(
+                    self.pose[0] - box_pos[0],
+                    self.pose[1] - box_pos[1]
+                )
+                if dist_from_box > 0.80:
+                    print(f"[RETURN] Already {dist_from_box:.2f}m from box, skipping retreat")
+                    self._retreat_substage = 2  # Skip directly to done
 
             retreat_dist = math.hypot(
                 self.pose[0] - self._retreat_start_pos[0],
@@ -1023,25 +1195,20 @@ class YouBotController:
                     self._return_last_angle = angle_to_wp
                     self._return_turn_attempts = 0
 
-                    # FIX: Turn toward waypoint based on angle sign, NOT box color
-                    # angle_to_wp > 0 means waypoint is to the LEFT → turn LEFT
-                    # angle_to_wp < 0 means waypoint is to the RIGHT → turn RIGHT
-                    if angle_to_wp > 0:
-                        self._return_committed_dir = 1   # Turn left
-                    else:
-                        self._return_committed_dir = -1  # Turn right
-
                     color_key = getattr(self, '_last_box_color', 'unknown')
-                    print(f"[RETURN] Starting turn {'RIGHT' if self._return_committed_dir < 0 else 'LEFT'} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
+                    # IMPORTANT: Keep sign convention consistent with the rest of navigation:
+                    # we generally use omega = -k * angle_to_wp. Therefore:
+                    # - angle_to_wp > 0  => waypoint is to the LEFT  => omega should be NEGATIVE
+                    # - angle_to_wp < 0  => waypoint is to the RIGHT => omega should be POSITIVE
+                    self._return_committed_dir = -1 if angle_to_wp > 0 else 1
+                    turn_label = "LEFT" if angle_to_wp > 0 else "RIGHT"
+                    print(f"[RETURN] Starting turn {turn_label} toward waypoint (angle={math.degrees(angle_to_wp):.0f}°, from {color_key})")
                 
                 turn_elapsed = current_time - self._return_turn_start
 
-                # SAFETY: If angle sign changed (waypoint is now on opposite side), re-evaluate direction
-                current_dir = 1 if angle_to_wp > 0 else -1
-                if current_dir != self._return_committed_dir and abs(angle_to_wp) > math.radians(60):
-                    # Waypoint is now on opposite side, switch direction
-                    self._return_committed_dir = current_dir
-                    print(f"[RETURN] Direction switch! Now turning {'LEFT' if current_dir > 0 else 'RIGHT'} (angle={math.degrees(angle_to_wp):.0f}°)")
+                # CRITICAL: NEVER change committed direction during same turn.
+                # Angle wrapping near ±180° would cause oscillation.
+                # Direction is committed once at line 1029/1031 and LOCKED.
 
                 # Stuck detection: if turning for >6s without reaching < 70°
                 if turn_elapsed > 6.0:
@@ -1059,19 +1226,20 @@ class YouBotController:
                         self._skip_passed_waypoints()
                         return
                     else:
-                        # Reset timer and re-evaluate direction
-                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, re-evaluating...")
+                        # Reset timer but KEEP committed direction
+                        turn_label = "RIGHT" if self._return_committed_dir > 0 else "LEFT"
+                        print(f"[RETURN] Turn attempt {self._return_turn_attempts}, continuing {turn_label}...")
                         self._return_turn_start = current_time
-                        self._return_committed_dir = current_dir  # Re-evaluate based on current angle
+                        # CRITICAL: Do NOT re-evaluate direction. Keep original commitment.
                 
                 # Use committed direction with obstacle checking
                 omega_speed = 0.45
                 omega = self._return_committed_dir * omega_speed
                 
                 # Check if direction is blocked
-                if omega > 0 and left_obs < 0.20:
+                if omega > 0 and right_obs < 0.20:
                     omega = omega_speed * 0.3  # Slow down but keep trying
-                elif omega < 0 and right_obs < 0.20:
+                elif omega < 0 and left_obs < 0.20:
                     omega = -omega_speed * 0.3
                 
                 # ALWAYS move forward slightly while turning - prevents getting stuck
@@ -1081,7 +1249,7 @@ class YouBotController:
                 
                 # Log progress
                 if current_time - self._return_log_time > 1.0:
-                    dir_str = "L" if omega > 0 else "R"
+                    dir_str = "R" if omega > 0 else "L"
                     print(f"[RETURN] Turning {dir_str}: angle={math.degrees(angle_to_wp):.0f}° (elapsed {turn_elapsed:.1f}s)")
                     self._return_log_time = current_time
                 return
@@ -1116,6 +1284,36 @@ class YouBotController:
                         delattr(self, attr)
 
                 self.mode = "search"
+                return
+
+            # Track total return time for timeout
+            if not hasattr(self, '_return_total_start'):
+                self._return_total_start = current_time
+
+            return_elapsed = current_time - self._return_total_start
+
+            # Early transition to search when:
+            # 1. In center corridor (safe zone), OR
+            # 2. 30s timeout exceeded (fallback safety)
+            in_safe_zone = self.pose[0] < -1.15 and abs(self.pose[1]) < 0.8
+            timeout_exceeded = return_elapsed > 30.0
+
+            if in_safe_zone or timeout_exceeded:
+                reason = "Center corridor reached" if in_safe_zone else f"Timeout ({return_elapsed:.1f}s)"
+                print(f"[RETURN] {reason} at ({self.pose[0]:.2f}, {self.pose[1]:.2f}), starting search")
+                gt = self._get_ground_truth_pose()
+                if gt:
+                    self.pose = gt
+                # Cleanup return state
+                for attr in ['_return_phase', '_return_start', '_return_log_time',
+                             '_return_waypoints', '_return_waypoint_idx', '_last_box_color',
+                             '_return_turn_start', '_return_last_angle', '_return_nav_last_pos',
+                             '_return_nav_stuck_time', '_return_turn_attempts', '_return_committed_dir',
+                             '_return_total_start']:
+                    if hasattr(self, attr):
+                        delattr(self, attr)
+                self.mode = "search"
+                self.search_state = "forward"
                 return
 
             # Current waypoint
@@ -1184,7 +1382,7 @@ class YouBotController:
             
             # If angle still significant (> 70 degrees), rotate while moving slowly
             if abs(angle_to_wp) > math.radians(70):
-                omega = 0.40 if angle_to_wp > 0 else -0.40
+                omega = -0.40 if angle_to_wp > 0 else 0.40
                 fwd = 0.03 if min_front > 0.40 else 0.0
                 self._safe_move(fwd, 0.0, omega)
                 return
@@ -1501,10 +1699,12 @@ class YouBotController:
                 self.arm.set_height(Arm.RESET)
                 
                 if not hasattr(self, 'tobox_state'):
-                    self.tobox_state = 0
+                    self.tobox_state = -1  # Start with turn-in-place phase
                     self._tobox_maneuver_timer = 0.0
                     self._route_waypoints = None
                     self._current_waypoint_idx = 0
+                    self._tobox_turn_start = None
+                    self._tobox_turn_direction = None
 
                 if not self.active_goal:
                     print("[TO_BOX] No goal defined, returning to search")
@@ -1564,6 +1764,47 @@ class YouBotController:
                     self._current_waypoint_idx += 1
                     next_wp = self._route_waypoints[self._current_waypoint_idx] if self._current_waypoint_idx < len(self._route_waypoints) else self.active_goal
                     print(f"[TO_BOX] Waypoint {self._current_waypoint_idx}/{len(self._route_waypoints)} reached -> next: ({next_wp[0]:.2f}, {next_wp[1]:.2f})")
+                    continue
+
+                # ===== PHASE -1: TURN-IN-PLACE =====
+                if self.tobox_state == -1:
+                    first_wp = self._route_waypoints[0] if self._route_waypoints else self.active_goal
+                    _, angle_to_first_wp = self._distance_to_point(first_wp)
+
+                    TURN_THRESHOLD = math.radians(60)  # Skip if already < 60°
+                    TURN_TIMEOUT = 8.0
+
+                    # Skip immediately if already facing waypoint
+                    if abs(angle_to_first_wp) < TURN_THRESHOLD:
+                        print(f"[TO_BOX] Phase -1: Waypoint ahead ({math.degrees(angle_to_first_wp):.0f}°), skipping turn")
+                        self.tobox_state = 0
+                        continue
+
+                    # Initialize turn direction (once)
+                    if self._tobox_turn_start is None:
+                        self._tobox_turn_start = current_time
+                        self._tobox_turn_direction = 1 if angle_to_first_wp > 0 else -1
+                        print(f"[TO_BOX] Phase -1: Turn {'LEFT' if angle_to_first_wp > 0 else 'RIGHT'} ({math.degrees(angle_to_first_wp):.0f}°)")
+
+                    turn_elapsed = current_time - self._tobox_turn_start
+
+                    # Re-check angle (may have rotated enough)
+                    if abs(angle_to_first_wp) < TURN_THRESHOLD:
+                        print(f"[TO_BOX] Phase -1: Turn complete ({math.degrees(angle_to_first_wp):.0f}°)")
+                        self.tobox_state = 0
+                        self._tobox_turn_start = None
+                        continue
+
+                    # Timeout protection
+                    if turn_elapsed > TURN_TIMEOUT:
+                        print(f"[TO_BOX] Phase -1: Turn timeout ({turn_elapsed:.1f}s), proceeding anyway")
+                        self.tobox_state = 0
+                        self._tobox_turn_start = None
+                        continue
+
+                    # Execute pure rotation
+                    omega = 0.45 * self._tobox_turn_direction
+                    self._safe_move(0.0, 0.0, omega)
                     continue
 
                 if self.tobox_state == 0:
@@ -1641,6 +1882,8 @@ class YouBotController:
                                 )
                                 self._current_waypoint_idx = 0
                                 self._escape_skips = 0
+                                self.tobox_state = -1  # Reset to turn-in-place phase
+                                self._tobox_turn_start = None
 
                             self._tobox_escape_mode = False
                             self._tobox_stuck_pos = (self.pose[0], self.pose[1])
@@ -1657,9 +1900,10 @@ class YouBotController:
                             self.tobox_state = 1
                             self._tobox_maneuver_timer = 0.0
                             self._align_start_time = None
-                            # Cleanup stuck tracking
+                            # Cleanup stuck tracking and turn-in-place state
                             for attr in ['_tobox_stuck_pos', '_tobox_stuck_time', '_tobox_escape_mode',
-                                         '_tobox_escape_start', '_escape_go_left', '_escape_skips']:
+                                         '_tobox_escape_start', '_escape_go_left', '_escape_skips',
+                                         '_tobox_turn_start', '_tobox_turn_direction']:
                                 if hasattr(self, attr):
                                     delattr(self, attr)
                             continue
