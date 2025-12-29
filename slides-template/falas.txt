@@ -64,24 +64,21 @@ O grande desafio e navegar de forma autonoma em um ambiente onde os cubos
 podem ser empurrados acidentalmente, mudando a configuracao do ambiente.
 
 ================================================================================
-SLIDE 5: SENSORES DO YOUBOT (1 minuto 30 segundos)
+SLIDE 5: SENSORES DO YOUBOT (1 minuto)
 ================================================================================
 
 O YouBot possui tres tipos de sensores principais.
 
 O LIDAR tem campo de visao de 180 graus, com 180 feixes de laser. O alcance
-vai de 10 centimetros ate 5 metros, e atualiza a 32 Hz. Usamos o LIDAR
-para detectar obstaculos e construir uma grade de ocupacao em tempo real.
+vai de 10 centimetros ate 5 metros. Temos 4 LIDARs cobrindo 360 graus.
+Usamos o LIDAR para detectar obstaculos e construir uma grade de ocupacao.
 
-A camera RGB tem resolucao de 320 por 240 pixels. Usamos tanto a Recognition
+A camera RGB tem resolucao de 128 por 128 pixels. Usamos tanto a Recognition
 API do Webots para detectar objetos quanto a nossa CNN para classificar cores.
 
-Para deteccao de colisao em curta distancia, temos sensores infravermelhos:
-- 6 sensores frontais/traseiros (3 em cada lado)
-- 2 sensores laterais novos - adicionados para evitar travamentos laterais
-
-Os sensores laterais sao essenciais porque o LIDAR so cobre a frente do robo,
-entao sem eles o robo ficava preso contra obstaculos laterais.
+Para deteccao de colisao em curta distancia, temos 8 sensores infravermelhos:
+6 frontais/traseiros e 2 laterais. Os sensores laterais sao essenciais porque
+o LIDAR frontal nao cobre os lados do robo.
 
 ================================================================================
 SLIDE 6: RECOGNITION API DO WEBOTS (1 minuto)
@@ -114,10 +111,10 @@ reduzem drasticamente o numero de parametros e operacoes.
 Tecnicamente:
 - Convolucao depthwise: um filtro por canal de entrada
 - Convolucao pointwise: 1x1 para combinar canais
-- Isso reduz computacao de O(k²·Ci·Co) para O(k²·Ci + Ci·Co)
+- Isso reduz computacao de O(k2 vezes Ci vezes Co) para O(k2 vezes Ci + Ci vezes Co)
 
 Usamos transfer learning em duas fases:
-1. Backbone congelado, treinar so classificador (256-3 neuronios)
+1. Backbone congelado, treinar so classificador (256 para 3 neuronios)
 2. Fine-tuning completo com learning rate reduzido
 
 Resultado: 99.4% de acuracia. Quando a confianca e baixa, usamos fallback HSV.
@@ -164,13 +161,14 @@ continuos de velocidade linear, lateral e angular.
 SLIDE 10: ALGORITMO A* - VISAO GERAL (1 minuto)
 ================================================================================
 
-Para planejamento global, usamos A* de Hart, Nilsson e Raphael (1968).
+Para planejamento global, usamos A* de Hart, Nilsson e Raphael de 1968.
 
 A funcao de custo e f(n) = g(n) + h(n), onde g e o custo ate aqui e h e a
-heuristica ate o objetivo. Usamos distancia de Manhattan.
+heuristica ate o objetivo. Usamos distancia de Manhattan como heuristica.
 
-A grade de ocupacao tem celulas de 12x12cm (58x33 celulas). O LIDAR atualiza
-continuamente usando raycasting com algoritmo de Bresenham.
+A grade de ocupacao tem celulas de 12 por 12 centimetros, totalizando
+58 por 33 celulas para a arena. O LIDAR atualiza continuamente a grade
+usando raycasting com algoritmo de Bresenham.
 
 No diagrama: S = inicio, G = objetivo. A linha azul mostra o caminho
 encontrado pelo A*, contornando obstaculos pelo caminho de menor custo.
@@ -179,11 +177,13 @@ encontrado pelo A*, contornando obstaculos pelo caminho de menor custo.
 SLIDE 11: INFLACAO DE OBSTACULOS (45 segundos)
 ================================================================================
 
-O robo nao e um ponto - o YouBot tem 58x38cm. Por isso inflamos obstaculos
-por 30cm (metade da largura + margem) para garantir caminhos seguros.
+O robo nao e um ponto - o YouBot tem 58 por 38 centimetros. Por isso inflamos
+os obstaculos por 30 centimetros, que e aproximadamente metade da diagonal
+do robo mais uma margem de seguranca.
 
-No diagrama: marrom = obstaculo real, pontilhado vermelho = zona inflada.
-O A* planeja evitando a zona maior.
+No diagrama: marrom e o obstaculo real, e a area pontilhada vermelha e a
+zona inflada. O A* planeja evitando a zona maior, garantindo que o robo
+inteiro passa com seguranca.
 
 ================================================================================
 SLIDE 12: ARQUITETURA MODULAR (45 segundos)
@@ -210,7 +210,7 @@ Maquina de estados finita com 6 estados:
 - GRASP: descer braco, fechar garra, verificar agarrou
 - TO_BOX: navegar ate caixa de cor correspondente via A*
 - DROP: soltar cubo sobre a caixa
-- RETURN: voltar ao spawn em 3 fases (recuo, rotacao, navegacao)
+- RETURN: voltar ao spawn para buscar proximo cubo
 
 O ciclo repete 15 vezes, uma para cada cubo.
 
@@ -220,11 +220,11 @@ SLIDE 14: PIPELINE COMPLETO (45 segundos)
 
 Este diagrama mostra como os componentes se integram:
 
-Sensores → Processamento → Decisao → Acao
+Sensores -> Processamento -> Decisao -> Acao
 
 - LIDAR alimenta a grade de ocupacao
 - Camera alimenta Recognition API e CNN
-- Sensores de distancia alimentam Fuzzy
+- Sensores de distancia alimentam o controlador Fuzzy
 - Grade vai para A*, CNN vai para FSM
 - FSM decide comandos para motores
 
@@ -264,7 +264,8 @@ Observem:
 - Navegacao A* ate a caixa desviando de obstaculos
 - Deposito e RETORNO ao spawn para buscar proximo cubo
 
-Prestem atencao no sistema de retorno em 3 fases: recuo, rotacao, navegacao.
+Prestem atencao no sistema de navegacao que evita colisoes usando a
+combinacao de A* global com fuzzy local.
 
 [ENCERRAR VIDEO/SIMULACAO]
 
@@ -274,23 +275,20 @@ SLIDE 18: LIMITACOES DOS ALGORITMOS (1 minuto)
 
 Cada algoritmo tem limitacoes conhecidas na literatura:
 
-A* (Hart et al. 1968):
+A* de Hart e colaboradores, 1968:
 - Caminhos podem passar muito perto de obstaculos
 - Muitos nos redundantes, busca pode ser lenta
-- Suavizacao de caminho limitada
-Mitigacao: inflacao de obstaculos por 30cm
+Mitigacao: inflacao de obstaculos por 30 centimetros
 
-Fuzzy (Zadeh 1965):
+Fuzzy de Zadeh, 1965:
 - Pode gerar oscilacoes em navegacao
 - Susceptivel a minimos locais
-- Ponto cego em distancias < 40cm
-Mitigacao: sensores laterais + sistema de escape
+Mitigacao: navegacao car-like com velocidade lateral limitada e timeout de waypoint
 
-CNN/MobileNetV3 (Howard 2019):
-- Trade-off entre precisao e latencia
+CNN MobileNetV3 de Howard, 2019:
 - Sensivel a variacoes de iluminacao
-- Requer pre-processamento especifico
-Mitigacao: fallback HSV quando confianca < 0.5
+- Trade-off entre precisao e latencia
+Mitigacao: fallback HSV quando confianca menor que 0.5
 
 ================================================================================
 SLIDE 19: CONCLUSAO (30 segundos)
@@ -301,16 +299,17 @@ Integracao bem-sucedida de tres tecnicas de IA:
 - Fuzzy: navegacao reativa suave
 - A*: planejamento global de trajetorias
 
-O sistema e robusto, com recuperacao automatica de travamentos no retorno.
+O sistema e robusto, com recuperacao automatica de travamentos.
+A arquitetura modular facilita manutencao e extensao.
 
 ================================================================================
 SLIDE 20: REFERENCIAS E PERGUNTAS (30 segundos)
 ================================================================================
 
 Referencias principais:
-- Hart, Nilsson, Raphael (1968) - Algoritmo A*
-- Zadeh (1965) - Conjuntos Fuzzy
-- Howard et al. (2019) - MobileNetV3
+- Hart, Nilsson, Raphael 1968 - Algoritmo A*
+- Zadeh 1965 - Conjuntos Fuzzy
+- Howard et al. 2019 - MobileNetV3
 
 Obrigado pela atencao. Estou a disposicao para perguntas.
 
@@ -325,6 +324,5 @@ DICAS PARA APRESENTACAO:
 - Referenciar autores: Hart/Nilsson/Raphael (A*), Zadeh (Fuzzy), Howard (MobileNetV3)
 - Explicar que Recognition API e ground truth, CNN e requisito obrigatorio
 - Ressaltar arquitetura modular como boa pratica de engenharia
-- Destacar sistema de retorno em 3 fases com recuperacao de travamentos
 - Conectar teoria com exemplos praticos da simulacao
 - Demonstracao ao vivo e o ponto alto - ter simulacao pronta!

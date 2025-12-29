@@ -138,40 +138,64 @@ def get_route_to_box(current_pos, destination_color):
             waypoints.append((2.05, 0.01))
             waypoints.append(box_pos)
         elif x > 0.9:
-            # Just past A, need gradual return
-            waypoints.append((1.25, 0.35 if y >= 0 else -0.35))
-            waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
-            waypoints.append((1.85, 0.01))
+            # Just past A, still need clearance before curving back
+            if abs(y) > 0.50:
+                # Already at high deviation, can start gradual return
+                waypoints.append((1.30, 0.50 if y >= 0 else -0.50))
+            waypoints.append((1.50, 0.30 if y >= 0 else -0.30))
+            waypoints.append((1.70, 0.15 if y >= 0 else -0.15))
+            waypoints.append((1.90, 0.01))
             waypoints.append((2.05, 0.01))
             waypoints.append(box_pos)
         else:
             # Full route needed - avoid obstacle A
+            # CRITICAL: Start deviation EARLY and GRADUALLY (max 25° angle between waypoints)
+            # Obstacle A at (0.6, 0.0), radius ~0.25m. Robot needs 55cm clearance.
+
             if x < -0.5:
                 waypoints.append((-0.45, 0.0))
-            if x < 0.0:
-                waypoints.append((0.0, 0.0))
 
-            # Detour around A based on current y
+            # GRADUAL CURVE - start deviating BEFORE x=0 to avoid sharp turns
             if y >= 0:
+                # North path - gradual curve with ~20° angle steps
+                if x < -0.25:
+                    waypoints.append((-0.25, 0.10))   # Start slight deviation early
+                if x < 0.0:
+                    waypoints.append((0.0, 0.25))     # Continue gradual curve
                 if x < 0.25:
-                    waypoints.append((0.25, 0.45))
+                    waypoints.append((0.25, 0.45))    # Increase deviation gradually
                 if x < 0.50:
-                    waypoints.append((0.50, 0.55))
+                    waypoints.append((0.50, 0.60))    # Continue north
                 if x < 0.75:
-                    waypoints.append((0.75, 0.55))
-                waypoints.append((1.00, 0.50))
-                waypoints.append((1.25, 0.35))
+                    waypoints.append((0.75, 0.70))    # Peak deviation past A center
+                if x < 1.00:
+                    waypoints.append((1.00, 0.70))    # Maintain - past A edge
+                if x < 1.25:
+                    waypoints.append((1.25, 0.60))    # Start gradual return
+                if x < 1.45:
+                    waypoints.append((1.45, 0.45))    # Continue curve back
+                waypoints.append((1.60, 0.25))        # Almost aligned
             else:
+                # South path - gradual curve with ~20° angle steps
+                if x < -0.25:
+                    waypoints.append((-0.25, -0.10))  # Start slight deviation early
+                if x < 0.0:
+                    waypoints.append((0.0, -0.25))    # Continue gradual curve
                 if x < 0.25:
-                    waypoints.append((0.25, -0.45))
+                    waypoints.append((0.25, -0.45))   # Increase deviation gradually
                 if x < 0.50:
-                    waypoints.append((0.50, -0.55))
+                    waypoints.append((0.50, -0.60))   # Continue south
                 if x < 0.75:
-                    waypoints.append((0.75, -0.55))
-                waypoints.append((1.00, -0.50))
-                waypoints.append((1.25, -0.35))
+                    waypoints.append((0.75, -0.70))   # Peak deviation past A center
+                if x < 1.00:
+                    waypoints.append((1.00, -0.70))   # Maintain - past A edge
+                if x < 1.25:
+                    waypoints.append((1.25, -0.60))   # Start gradual return
+                if x < 1.45:
+                    waypoints.append((1.45, -0.45))   # Continue curve back
+                waypoints.append((1.60, -0.25))       # Almost aligned
 
-            waypoints.append((1.55, 0.15 if y >= 0 else -0.15))
+            waypoints.append((1.75, 0.10 if y >= 0 else -0.10))
             waypoints.append((1.85, 0.01))
             waypoints.append((2.05, 0.01))
             waypoints.append(box_pos)
@@ -182,98 +206,80 @@ def get_route_to_box(current_pos, destination_color):
 def get_return_route(current_pos, from_color):
     """
     Returns strategic waypoints for returning to spawn after depositing a cube.
-    
-    Strategy: Forward-oriented waypoints for car-like navigation.
-    Now takes current_pos into account to generate adaptive waypoints.
-    
-    Key insight: After retreat phase, robot may be in different positions.
-    We generate waypoints based on WHERE the robot actually is, not where
-    we expected it to be.
+
+    IMPROVED: Higher density waypoints (0.40m spacing), better obstacle A avoidance.
+    Obstacle A at (0.6, 0.0) with radius ~0.25m - must keep y > 0.30 or y < -0.30 when x > 0.
     """
     x, y = current_pos[0], current_pos[1]
     waypoints = []
-    
+
     if from_color == "red":
-        # RED box at (2.31, 0.01)
-        # Robot was facing EAST, now needs to go WEST
-        # KEY INSIGHT: Going SOUTH first (90° right turn) is easier than 180° turn
-        
-        # Strategy: Go SOUTH to clear obstacles, then WEST through southern corridor
+        # RED box at (2.31, 0.01) - robot faces EAST, needs to go WEST
+        # Strategy: Go SOUTH first (90° turn easier than 180°), then WEST
+        # FIXED: Only add waypoints if robot is east of them
+        if x > 1.5:
+            waypoints.append((1.30, -0.40))   # South first
         if x > 1.0:
-            # First go SOUTH - only requires ~90° right turn from EAST
-            waypoints.append((1.20, -0.50))   # South first (easy turn)
-            waypoints.append((0.80, -0.60))   # Continue south-west
-        if x > 0.50:
-            waypoints.append((0.40, -0.50))   # West through southern area
-        if x > 0.0:
-            waypoints.append((0.00, -0.30))   # Curve toward center
-        waypoints.append((-0.30, -0.10))      # Into center corridor
-        
+            waypoints.append((0.90, -0.50))   # Continue south-west
+        if x > 0.5:
+            waypoints.append((0.40, -0.40))   # Curve toward corridor
+        if x > -0.05:
+            waypoints.append((0.00, -0.20))   # Clear of A's influence
+        if x > -0.40:
+            waypoints.append((-0.35, 0.00))   # Corridor entry
+
     elif from_color == "green":
-        # GREEN box at (0.48, 1.58)
-        # Robot was facing NORTH, needs to go SOUTH-WEST
-        # CRITICAL: Obstacle A at (0.6, 0.0) blocks direct path to center!
-        # Must go WEST first, staying NORTH of A, then curve to corridor
+        # GREEN box at (0.48, 1.58) - robot faces NORTH, needs to go SOUTH-WEST
+        # CRITICAL: Must stay NORTH of obstacle A (y > 0.30) until x < 0
+        # FIXED: Only add eastern waypoints if robot is actually near the box (x > 0)
+        if y > 0.8 and x > 0.0:
+            waypoints.append((0.35, 0.50))    # Start south from box
+        if y > 0.4 and x > 0.0:
+            waypoints.append((0.15, 0.35))    # SAFE: north of A
+        if x > -0.2 and x < 0.5:
+            waypoints.append((-0.25, 0.30))   # Go WEST, still north of A
+        if x > -0.55:
+            waypoints.append((-0.50, 0.15))   # Continue west
+        if x > -0.75:
+            waypoints.append((-0.70, 0.00))   # Corridor entry
 
-        if y > 0.80:
-            waypoints.append((0.40, 0.60))   # Start south from box
-        if y > 0.40:
-            waypoints.append((0.25, 0.40))   # Continue south
-
-        # KEY FIX: Stay NORTH of obstacle A (0.6, 0.0) by keeping y > 0.25
-        # Then go WEST before dropping to y=0 corridor
-        if x > 0.0:
-            waypoints.append((-0.10, 0.35))  # Go WEST, stay NORTH of A
-        if x > -0.35:
-            waypoints.append((-0.40, 0.25))  # Continue WEST, clear of A
-        waypoints.append((-0.60, 0.10))      # Approach corridor from north
-        waypoints.append((-0.80, 0.0))       # Into center corridor
-        
     elif from_color == "blue":
-        # BLUE box at (0.48, -1.62)
-        # Robot was facing SOUTH, needs to go NORTH-WEST
-        # After retreat, robot may end up at various Y positions
-        
-        if y < -0.80:
-            waypoints.append((0.50, -0.60))  # Arc north
-        if y < -0.40:
-            waypoints.append((0.35, -0.30))  # Continue north
-        
-        # If robot is already in the center area (y > -0.40), 
-        # we need waypoints that guide it WEST without requiring 180° turn
-        if y > -0.40:
-            # Robot is close to center, avoid obstacle A at (0.6, 0.0)
-            if x > 0.40:
-                # Need to go around obstacle A - go NORTH of it
-                waypoints.append((0.35, 0.35))   # Go north of A
-                waypoints.append((0.0, 0.30))    # Continue west-north
-            elif x > 0.0:
-                waypoints.append((-0.10, 0.15))  # Direct to corridor
-            waypoints.append((-0.40, 0.05))      # Into corridor
-        else:
-            waypoints.append((0.10, -0.10))      # Toward center
-            waypoints.append((-0.25, 0.0))       # Center corridor
-    
-    # Common path through center corridor to spawn
-    # Only add waypoints that are WEST of current x position
+        # BLUE box at (0.48, -1.62) - robot faces SOUTH, needs to go NORTH-WEST
+        # FIXED: Only add waypoints if robot is east of them
+        if y < -0.8 and x > 0.3:
+            waypoints.append((0.40, -0.50))   # Arc north
+        if y < -0.3 and x > 0.2:
+            waypoints.append((0.25, -0.25))   # Continue north
+        if y > -0.3 and x > 0.15:
+            # Near center with A nearby - go NORTH of A
+            waypoints.append((0.20, 0.30))    # North of A
+            waypoints.append((-0.10, 0.25))   # Continue west-north
+        if x > -0.45:
+            waypoints.append((-0.40, 0.10))   # Approach corridor
+        if x > -0.70:
+            waypoints.append((-0.65, 0.00))   # Corridor entry
+
+    # Common corridor to spawn - HIGHER DENSITY (0.40m spacing)
     corridor_waypoints = [
-        (-0.60, 0.0),    # Before E/F
-        (-1.30, 0.0),    # Between E and F (corridor)
-        (-1.80, 0.0),    # Past E/F
-        (-2.50, 0.0),    # Clear area
-        (-3.20, 0.0),    # Approaching spawn
-        SPAWN_POSITION   # (-3.91, 0.0)
+        (-0.90, 0.00),    # Before E/F
+        (-1.30, 0.00),    # Between E(-1.02, 0.75) and F(-1.02, -0.74)
+        (-1.70, 0.00),    # Past E/F
+        (-2.10, 0.00),    # Continue west
+        (-2.50, 0.00),    # Clear area
+        (-2.90, 0.00),    # Continue west
+        (-3.30, 0.00),    # Approaching spawn
+        SPAWN_POSITION    # (-3.91, 0.0)
     ]
-    
+
     for wp in corridor_waypoints:
-        # Only add if west of current position (with small margin)
-        if wp[0] < x - 0.30:
+        # Only add if WEST of current position (with margin)
+        if wp[0] < x - 0.25:
             waypoints.append(wp)
-    
-    # Always ensure spawn is the final destination
+
+    # Always ensure spawn is final destination
     if not waypoints or waypoints[-1] != SPAWN_POSITION:
         waypoints.append(SPAWN_POSITION)
-    
+
     return waypoints
 
 

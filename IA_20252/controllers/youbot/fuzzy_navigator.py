@@ -211,18 +211,25 @@ class FuzzyNavigator:
         angle_norm = max(-1.0, min(1.0, angle_norm))
 
         omega_fuzzy = (
-            0.35 * mu_angle_big +
-            0.18 * mu_angle_medium +
-            0.05 * (1.0 - mu_angle_small)
+            0.30 * mu_angle_big +       # Reduced from 0.35
+            0.15 * mu_angle_medium +    # Reduced from 0.18
+            0.04 * (1.0 - mu_angle_small)
         )
         omega = omega_fuzzy * angle_norm
 
-        # Rule 7: Lateral obstacle adjustment
-        omega += 0.2 * (mu_right_close - mu_left_close)
+        # Rule 7: Lateral obstacle adjustment - REDUCED to avoid oscillation
+        omega += 0.12 * (mu_right_close - mu_left_close)  # Reduced from 0.2
+
+        # Rule 8: LIMIT rotation when obstacles are close (prevents spinning into obstacles)
+        obstacle_proximity = max(mu_front_close, mu_left_close, mu_right_close)
+        if obstacle_proximity > 0.3:
+            # Reduce omega proportionally to obstacle proximity
+            omega_limit = 0.4 * (1.0 - 0.5 * obstacle_proximity)  # 0.4 -> 0.2 as obstacle gets closer
+            omega = max(-omega_limit, min(omega_limit, omega))
 
         # Limit velocities
         vx = max(-self.max_speed, min(self.max_speed, vx))
         vy = max(-self.max_speed * 0.8, min(self.max_speed * 0.8, vy))
-        omega = max(-0.6, min(0.6, omega))
+        omega = max(-0.5, min(0.5, omega))  # Reduced from 0.6
 
         return vx, vy, omega

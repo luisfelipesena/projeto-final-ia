@@ -120,6 +120,11 @@ class YouBotController:
         self.locked_cube_angle = None
         self.locked_cube_distance = None
 
+        # GRASP retry mechanism - fallback to horizontal pose after failures
+        self._grasp_attempts = 0
+        self._current_target_id = None  # Track which cube we're trying to grasp
+        self._skipped_cubes = set()  # Cubes that are unreachable (skip after 6 failures)
+
         self.box_positions = BOX_POSITIONS
 
         # Grid / path
@@ -812,7 +817,23 @@ class YouBotController:
                 self.stage_timer = 0.0
 
         elif self.stage == 1:
-            self.arm.set_height(Arm.FRONT_FLOOR)
+            # Track cube identity and select pose based on attempt count
+            cube_id = (round(self.active_goal[0], 2), round(self.active_goal[1], 2)) if self.active_goal else None
+            if cube_id and cube_id != self._current_target_id:
+                self._current_target_id = cube_id
+                self._grasp_attempts = 0
+                print(f"[GRASP] New target cube at {cube_id}")
+
+            # After 3 failed attempts, use horizontal pose for tight spaces
+            if self._grasp_attempts >= 3:
+                self.arm.set_height(Arm.FRONT_CARDBOARD_BOX)
+                if self.stage_timer < 0.1:
+                    print(f"[GRASP] Attempt {self._grasp_attempts+1}/6: Using HORIZONTAL pose (tight space)")
+            else:
+                self.arm.set_height(Arm.FRONT_FLOOR)
+                if self.stage_timer < 0.1:
+                    print(f"[GRASP] Attempt {self._grasp_attempts+1}/6: Using EXTENDED pose")
+
             if self.stage_timer >= 2.0:
                 self.stage += 1
                 self.stage_timer = 0.0
@@ -878,6 +899,10 @@ class YouBotController:
                 del self._grasp_verified
 
             if has_obj:
+                # Success - reset attempts counter
+                self._grasp_attempts = 0
+                self._current_target_id = None
+
                 self.collected += 1
                 print(f"[GRASP] Cube captured! Total: {self.collected}/{self.max_cubes}")
 
@@ -909,10 +934,33 @@ class YouBotController:
                     print(f"[TO_BOX] Color '{self.current_color}' not found, using fallback {fallback}")
                     self._set_goal(fallback)
             else:
-                print("[GRASP] FAILED - empty gripper, reversing to retry")
-                self.gripper.release()
-                self.stage += 1
-                self.stage_timer = 0.0
+                # Failure - increment attempts
+                self._grasp_attempts += 1
+
+                if self._grasp_attempts >= 6:
+                    # Skip this cube after 6 failed attempts
+                    cube_id = self._current_target_id
+                    if cube_id:
+                        self._skipped_cubes.add(cube_id)
+                    print(f"[GRASP] SKIP cube after {self._grasp_attempts} failed attempts - cube unreachable")
+                    self._grasp_attempts = 0
+                    self._current_target_id = None
+                    self.gripper.release()
+                    self.mode = "search"
+                    self.stage = 0
+                    self.stage_timer = 0.0
+                    self.current_color = None
+                    self.locked_cube_angle = None
+                    self.locked_cube_distance = None
+                    self.current_target = None
+                    self.active_goal = None
+                    self._waypoints = []
+                    self._path_dirty = True
+                else:
+                    print(f"[GRASP] FAILED attempt {self._grasp_attempts}/6 - reversing to retry")
+                    self.gripper.release()
+                    self.stage += 1
+                    self.stage_timer = 0.0
 
         elif self.stage == 6:
             self.arm.set_height(Arm.FRONT_PLATE)
@@ -1575,12 +1623,41 @@ class YouBotController:
                 near_wall = min(left, right, bottom, top) < 0.35
 
                 if recognition:
-                    self.current_color = recognition["color"]
-                    self.locked_cube_angle = recognition["angle"]
-                    self.mode = "approach"
-                    self.lost_cube_timer = 0.0
-                    print(f"[SEARCH] Cube detected (color={self.current_color}) dist={recognition['distance']:.2f}m, starting approach")
-                    continue
+                    # Calculate cube world position for skip check
+                    cam_dist = recognition["distance"]
+                    cam_angle = recognition["angle"]
+                    robot_x, robot_y, robot_yaw = self.pose
+
+                    # Camera offset from robot center (~0.27m forward)
+                    cam_offset = 0.27
+                    cam_world_x = robot_x + cam_offset * math.cos(robot_yaw)
+                    cam_world_y = robot_y + cam_offset * math.sin(robot_yaw)
+
+                    # Cube position in world coordinates
+                    cube_angle_world = robot_yaw + cam_angle
+                    cube_world_x = cam_world_x + cam_dist * math.cos(cube_angle_world)
+                    cube_world_y = cam_world_y + cam_dist * math.sin(cube_angle_world)
+                    cube_id = (round(cube_world_x, 2), round(cube_world_y, 2))
+
+                    # Skip cube if already marked as unreachable (with proximity check)
+                    is_skipped = False
+                    for skipped_pos in self._skipped_cubes:
+                        dist_to_skipped = math.hypot(cube_world_x - skipped_pos[0], cube_world_y - skipped_pos[1])
+                        if dist_to_skipped < 0.25:  # 25cm tolerance for position drift
+                            is_skipped = True
+                            self._log_throttled("skip_cube", f"[SEARCH] Ignoring skipped cube near {skipped_pos}", 2.0)
+                            break
+
+                    if is_skipped:
+                        pass  # Continue searching, don't transition to approach
+                    else:
+                        self.current_color = recognition["color"]
+                        self.locked_cube_angle = recognition["angle"]
+                        self.active_goal = (cube_world_x, cube_world_y)  # Set for grasp tracking
+                        self.mode = "approach"
+                        self.lost_cube_timer = 0.0
+                        print(f"[SEARCH] Cube detected (color={self.current_color}) dist={cam_dist:.2f}m at {cube_id}, starting approach")
+                        continue
 
                 vx_cmd, vy_cmd, omega_cmd = self._search_navigation(lidar_info, dt)
                 vx_cmd, vy_cmd, omega_cmd = self._clamp_cmds(vx_cmd, vy_cmd, omega_cmd if not near_wall else 0.0)
@@ -1762,6 +1839,7 @@ class YouBotController:
                 
                 if dist_to_waypoint < waypoint_threshold and not is_final_waypoint:
                     self._current_waypoint_idx += 1
+                    self._tobox_wp_start_time = current_time  # Reset timeout for next waypoint
                     next_wp = self._route_waypoints[self._current_waypoint_idx] if self._current_waypoint_idx < len(self._route_waypoints) else self.active_goal
                     print(f"[TO_BOX] Waypoint {self._current_waypoint_idx}/{len(self._route_waypoints)} reached -> next: ({next_wp[0]:.2f}, {next_wp[1]:.2f})")
                     continue
@@ -1813,96 +1891,46 @@ class YouBotController:
                     right_blocked = right_obs < 0.25
                     rear_clear = rear_min > 0.30
 
-                    # ===== STUCK DETECTION =====
-                    if not hasattr(self, '_tobox_stuck_pos'):
-                        self._tobox_stuck_pos = (self.pose[0], self.pose[1])
-                        self._tobox_stuck_time = current_time
-                        self._tobox_escape_mode = False
+                    # ===== WAYPOINT TIMEOUT (CAR-LIKE - NO ESCAPE MODE) =====
+                    # Trust fuzzy logic for obstacle avoidance. Only skip waypoint after long timeout.
+                    if not hasattr(self, '_tobox_wp_start_time'):
+                        self._tobox_wp_start_time = current_time
+                        self._tobox_wp_skips = 0
 
-                    moved_dist = math.hypot(
-                        self.pose[0] - self._tobox_stuck_pos[0],
-                        self.pose[1] - self._tobox_stuck_pos[1]
-                    )
+                    wp_elapsed = current_time - self._tobox_wp_start_time
 
-                    if moved_dist > 0.12:  # Moved 12cm, reset stuck tracking
-                        self._tobox_stuck_pos = (self.pose[0], self.pose[1])
-                        self._tobox_stuck_time = current_time
-                        self._tobox_escape_mode = False
+                    # Skip waypoint after 15 seconds (truly stuck)
+                    if wp_elapsed > 15.0:
+                        self._tobox_wp_skips += 1
+                        print(f"[TO_BOX] WP{self._current_waypoint_idx + 1} timeout ({wp_elapsed:.1f}s), skipping (total: {self._tobox_wp_skips})")
+                        self._current_waypoint_idx += 1
+                        self._tobox_wp_start_time = current_time
 
-                    stuck_duration = current_time - self._tobox_stuck_time
-
-                    # If stuck for 3+ seconds, enter escape mode
-                    if stuck_duration > 3.0 and not self._tobox_escape_mode:
-                        self._tobox_escape_mode = True
-                        self._tobox_escape_start = current_time
-                        # LOCK escape direction based on current sensor readings
-                        self._escape_go_left = left_obs > right_obs + 0.03
-                        # Track skipped waypoints for re-routing
-                        if not hasattr(self, '_escape_skips'):
-                            self._escape_skips = 0
-                        print(f"[TO_BOX] STUCK! Escape {'LEFT' if self._escape_go_left else 'RIGHT'} (L={left_obs:.2f}, R={right_obs:.2f})")
-
-                    # ===== ESCAPE MODE =====
-                    if self._tobox_escape_mode:
-                        escape_elapsed = current_time - self._tobox_escape_start
-                        go_left = getattr(self, '_escape_go_left', left_obs > right_obs)
-
-                        # Phase 1 (0-1.5s): Aggressive strafe + reverse
-                        if escape_elapsed < 1.5:
-                            vy_escape = 0.15 if go_left else -0.15
-                            vx_escape = -0.08 if rear_clear else 0.0
-                            omega_escape = 0.35 if go_left else -0.35
-                            self._safe_move(vx_escape, vy_escape, omega_escape)
-                            if int(escape_elapsed * 4) % 4 == 0:
-                                print(f"[TO_BOX] Escape P1: strafe {'LEFT' if go_left else 'RIGHT'}")
-                            continue
-
-                        # Phase 2 (1.5-3s): Reverse + strong turn
-                        elif escape_elapsed < 3.0:
-                            if rear_clear:
-                                self._safe_move(-0.15, 0.0, 0.6 if go_left else -0.6)
-                            else:
-                                # Rear blocked - forward strafe
-                                self._safe_move(0.08, 0.12 if go_left else -0.12, 0.4 if go_left else -0.4)
-                            if int(escape_elapsed * 4) % 4 == 0:
-                                print(f"[TO_BOX] Escape P2: reverse+turn {'LEFT' if go_left else 'RIGHT'}")
-                            continue
-
-                        # Phase 3: Skip waypoint
-                        else:
-                            self._escape_skips = getattr(self, '_escape_skips', 0) + 1
-                            print(f"[TO_BOX] Skip WP{self._current_waypoint_idx + 1} (total skips: {self._escape_skips})")
-                            self._current_waypoint_idx += 1
-
-                            # If skipped 3+ waypoints, re-generate route
-                            if self._escape_skips >= 3:
-                                print("[TO_BOX] Too many skips! Re-routing from current position.")
-                                self._route_waypoints = get_route_to_box(
-                                    (self.pose[0], self.pose[1]), self.current_color
-                                )
-                                self._current_waypoint_idx = 0
-                                self._escape_skips = 0
-                                self.tobox_state = -1  # Reset to turn-in-place phase
-                                self._tobox_turn_start = None
-
-                            self._tobox_escape_mode = False
-                            self._tobox_stuck_pos = (self.pose[0], self.pose[1])
-                            self._tobox_stuck_time = current_time
-                            continue
+                        # Re-route after 3 skips
+                        if self._tobox_wp_skips >= 3:
+                            print("[TO_BOX] Too many skips! Re-routing from current position.")
+                            self._route_waypoints = get_route_to_box(
+                                (self.pose[0], self.pose[1]), self.current_color
+                            )
+                            self._current_waypoint_idx = 0
+                            self._tobox_wp_skips = 0
+                            self.tobox_state = -1
+                            self._tobox_turn_start = None
+                        continue
 
                     waypoints_remaining = len(self._route_waypoints) - self._current_waypoint_idx
                     approaching_box = waypoints_remaining <= 3 or dist_to_box < 1.0
 
                     if approaching_box:
-                        if dist_to_box < 0.55 or min_front < 0.18:
+                        # FIXED: Only use dist_to_box, NOT min_front (which triggers on obstacles)
+                        if dist_to_box < 0.55:
                             print(f"[TO_BOX] Arrived at box (dist={dist_to_box:.2f}m). Starting alignment.")
                             self._safe_move(0.0, 0.0, 0.0)
                             self.tobox_state = 1
                             self._tobox_maneuver_timer = 0.0
                             self._align_start_time = None
-                            # Cleanup stuck tracking and turn-in-place state
-                            for attr in ['_tobox_stuck_pos', '_tobox_stuck_time', '_tobox_escape_mode',
-                                         '_tobox_escape_start', '_escape_go_left', '_escape_skips',
+                            # Cleanup timeout tracking and turn-in-place state
+                            for attr in ['_tobox_wp_start_time', '_tobox_wp_skips',
                                          '_tobox_turn_start', '_tobox_turn_direction']:
                                 if hasattr(self, attr):
                                     delattr(self, attr)
@@ -1920,128 +1948,43 @@ class YouBotController:
                         self._safe_move(cmd_speed, 0.0, cmd_omega)
                         continue
 
-                    EMERGENCY_STOP = 0.22
-                    FRONT_DANGER = 0.38  # Increased from 0.35
+                    # ===== WAYPOINT-DIRECTED NAVIGATION =====
+                    # Primary: steer toward waypoint. Secondary: avoid obstacles.
+
+                    # 1. Calculate rotation to face waypoint (PRIORITY)
+                    omega = -angle_to_waypoint * 1.2  # Proportional control
+                    omega = max(-0.4, min(0.4, omega))
+
+                    # 2. Calculate forward speed based on alignment and obstacles
+                    FRONT_DANGER = 0.35
                     FRONT_WARN = 0.55
-                    LATERAL_WARN = 0.35
 
-                    front_left_close = fl_obs < FRONT_WARN
-                    front_right_close = fr_obs < FRONT_WARN
-
-                    cmd_speed = 0.0
-                    cmd_omega = 0.0
-                    cmd_vy = 0.0  # Add lateral velocity
-
-                    if min_front < EMERGENCY_STOP:
-                        self._tobox_maneuver_timer += dt
-
-                        # Use strafe to escape!
-                        if left_obs > right_obs + 0.05:
-                            cmd_vy = 0.10
-                        elif right_obs > left_obs + 0.05:
-                            cmd_vy = -0.10
-
-                        if self._tobox_maneuver_timer > 0.2 and rear_clear:
-                            cmd_speed = -0.10
-                            if not left_blocked and (right_blocked or left_obs > right_obs):
-                                cmd_omega = 0.5
-                            elif not right_blocked:
-                                cmd_omega = -0.5
-
+                    if min_front < 0.20:  # Emergency
+                        vx = -0.08 if rear_clear else 0.0
+                        omega = omega * 0.3
                     elif min_front < FRONT_DANGER:
-                        self._tobox_maneuver_timer += dt
-
-                        # Use strafe + reverse + turn
-                        if left_obs > right_obs + 0.05:
-                            cmd_vy = 0.08
-                        elif right_obs > left_obs + 0.05:
-                            cmd_vy = -0.08
-
-                        if rear_clear:
-                            cmd_speed = -0.12
-                            if not left_blocked and (right_blocked or left_obs > right_obs):
-                                cmd_omega = 0.5
-                            elif not right_blocked:
-                                cmd_omega = -0.5
-                        else:
-                            cmd_speed = 0.0
-                            if not left_blocked:
-                                cmd_omega = 0.5
-                            elif not right_blocked:
-                                cmd_omega = -0.5
-
-                    elif min_front < FRONT_WARN or front_left_close or front_right_close:
-                        self._tobox_maneuver_timer = 0.0
-
-                        # Add strafe for obstacle avoidance
-                        if front_left_close and not front_right_close:
-                            cmd_vy = -0.06
-                        elif front_right_close and not front_left_close:
-                            cmd_vy = 0.06
-
-                        if left_blocked:
-                            cmd_omega = -0.4
-                            cmd_vy = -0.08
-                        elif right_blocked:
-                            cmd_omega = 0.4
-                            cmd_vy = 0.08
-                        elif front_left_close and not front_right_close:
-                            cmd_omega = -0.35
-                        elif front_right_close and not front_left_close:
-                            cmd_omega = 0.35
-                        elif left_obs > right_obs + 0.1:
-                            cmd_omega = 0.3
-                        elif right_obs > left_obs + 0.1:
-                            cmd_omega = -0.3
-                        else:
-                            cmd_omega = -angle_to_waypoint * 0.6
-                            cmd_omega = max(-0.35, min(0.35, cmd_omega))
-
-                        cmd_speed = 0.06 + 0.06 * (min_front / FRONT_WARN)
-
+                        vx = 0.04
+                        # Only turn away from obstacle if NOT aligned with waypoint
+                        if abs(angle_to_waypoint) < math.radians(30):
+                            # Aligned - small avoidance correction
+                            if fl_obs < fr_obs - 0.1:
+                                omega = max(omega - 0.15, -0.4)
+                            elif fr_obs < fl_obs - 0.1:
+                                omega = min(omega + 0.15, 0.4)
+                    elif min_front < FRONT_WARN:
+                        vx = 0.08
                     else:
-                        self._tobox_maneuver_timer = 0.0
+                        # Clear path - full speed adjusted by turn
+                        vx = 0.14 * (1.0 - min(0.5, abs(omega) / 0.4))
 
-                        cmd_omega = -angle_to_waypoint * 1.5
-                        MAX_TURN = 0.45
-                        cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
+                    # 3. Minimal lateral correction (only when obstacle very close)
+                    vy = 0.0
+                    if left_obs < 0.25 and right_obs > 0.35:
+                        vy = -0.04  # Strafe away from left obstacle
+                    elif right_obs < 0.25 and left_obs > 0.35:
+                        vy = 0.04   # Strafe away from right obstacle
 
-                        if abs(angle_to_waypoint) > math.pi/2:
-                            cmd_speed = 0.05
-                            cmd_omega = -angle_to_waypoint * 0.5
-                            cmd_omega = max(-0.30, min(0.30, cmd_omega))
-                        else:
-                            if left_obs < LATERAL_WARN:
-                                cmd_omega -= 0.15 * (LATERAL_WARN - left_obs) / LATERAL_WARN
-                            if right_obs < LATERAL_WARN:
-                                cmd_omega += 0.15 * (LATERAL_WARN - right_obs) / LATERAL_WARN
-                            cmd_omega = max(-MAX_TURN, min(MAX_TURN, cmd_omega))
-
-                            cmd_speed = 0.14
-                            turn_penalty = 1.0 - min(0.25, abs(cmd_omega) / MAX_TURN)
-                            cmd_speed *= turn_penalty
-
-                    if left_blocked and cmd_omega > 0:
-                        cmd_omega = -0.45
-                        cmd_vy = -0.08
-                        cmd_speed = min(cmd_speed, 0.02)
-
-                    if right_blocked and cmd_omega < 0:
-                        cmd_omega = 0.45
-                        cmd_vy = 0.08
-                        cmd_speed = min(cmd_speed, 0.02)
-
-                    if left_blocked and right_blocked:
-                        cmd_omega = 0.0
-                        cmd_vy = 0.0
-                        if min_front > 0.35:
-                            cmd_speed = 0.05
-                        elif rear_clear:
-                            cmd_speed = -0.10
-                        else:
-                            cmd_speed = 0.0
-
-                    self._safe_move(cmd_speed, cmd_vy, cmd_omega)
+                    self._safe_move(vx, vy, omega)
 
                 elif self.tobox_state == 1:
                     if self._align_start_time is None:
@@ -2061,14 +2004,28 @@ class YouBotController:
                     if align_elapsed < 0.1:
                         print(f"[TO_BOX] Alignment: error={math.degrees(heading_error):.0f}°")
                     
-                    ALIGN_TOLERANCE = 0.44
-                    ALIGN_TIMEOUT = 2.0
-                    
+                    ALIGN_TOLERANCE = 0.20  # ~11° (was 0.44 = 25°)
+                    ALIGN_TIMEOUT = 2.5
+
                     if abs(heading_error) < ALIGN_TOLERANCE:
-                        print(f"[TO_BOX] Alignment OK (error={math.degrees(heading_error):.0f}°). Approaching.")
-                        self.tobox_state = 2
-                        self._approach_start_time = None
-                        continue
+                        # Check lateral centering using side sensors
+                        left_lateral = lateral_info.get("left", 1.0)
+                        right_lateral = lateral_info.get("right", 1.0)
+                        lateral_diff = abs(left_lateral - right_lateral)
+
+                        if lateral_diff < 0.15:  # Centered enough
+                            print(f"[TO_BOX] Alignment OK (heading={math.degrees(heading_error):.0f}°, lat_diff={lateral_diff:.2f})")
+                            self.tobox_state = 2
+                            self._approach_start_time = None
+                            continue
+                        else:
+                            # Correct lateral drift
+                            if left_lateral < right_lateral:
+                                self._safe_move(0.0, -0.06, 0.0)  # Strafe right
+                            else:
+                                self._safe_move(0.0, 0.06, 0.0)   # Strafe left
+                            print(f"[TO_BOX] Centering: L={left_lateral:.2f}, R={right_lateral:.2f}")
+                            continue
                     
                     if align_elapsed > ALIGN_TIMEOUT:
                         print(f"[TO_BOX] Alignment timeout. Proceeding (error={math.degrees(heading_error):.0f}°).")
@@ -2095,7 +2052,7 @@ class YouBotController:
                             self._last_approach_log = int(approach_elapsed)
                             print(f"[TO_BOX] Approaching: ds={ds_val:.3f}m, dist_box={dist_to_box:.2f}m")
                     
-                    drop_ready = (0.35 < ds_val < 0.60)
+                    drop_ready = (0.40 < ds_val < 0.55)  # Tighter window
                     timeout_drop = (approach_elapsed > 4.0 and dist_to_box < 0.65)
                     
                     if drop_ready or timeout_drop:
