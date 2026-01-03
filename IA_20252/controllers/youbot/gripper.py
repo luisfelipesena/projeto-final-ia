@@ -122,7 +122,10 @@ class Gripper:
         Detection logic:
         - 3cm cube = 30mm → each finger stops at ~15mm = 0.015m
         - Empty gripper → fingers at ~0.0-0.001m
-        - Threshold 0.003 reliably separates these cases
+        - Collision with obstacle → one finger blocked (max >> avg)
+
+        Key insight: Real cube stops BOTH fingers equally (avg ≈ max).
+        Collision with box blocks ONE finger more (max >> avg, ratio < 0.4).
 
         Args:
             threshold: minimum position indicating object (default 0.003)
@@ -140,8 +143,18 @@ class Gripper:
         avg_pos = sum(samples) / len(samples)
         max_pos = max(samples)
 
-        # Object held if:
-        # 1) Average position > threshold (both fingers stopped by object), OR
-        # 2) Max position > threshold*1.5 (at least one finger clearly stopped)
-        # For 3cm cube: expect ~0.012-0.015, so 0.003 threshold is conservative
+        # Strong grip - definitely has cube
+        if avg_pos > 0.008:
+            return True
+
+        # Check for collision false positive: one finger blocked much more than other
+        # Real cube: both fingers stop equally (ratio > 0.4)
+        # Collision: one finger hits obstacle (ratio < 0.4)
+        if max_pos > 0.005:
+            ratio = avg_pos / max_pos if max_pos > 0 else 0
+            if ratio < 0.4:
+                # One finger blocked much more - likely collision, not cube
+                return False
+
+        # Normal detection with original threshold
         return avg_pos > threshold or max_pos > threshold * 1.5

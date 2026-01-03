@@ -214,6 +214,45 @@ Routes use gradual waypoints (~20° angle change between consecutive points) for
 
 **Waypoint timeout**: If robot cannot reach a waypoint within 15 seconds, it skips to the next one.
 
+## Waypoint-Directed Navigation
+
+TO_BOX mode uses waypoint-directed navigation instead of fuzzy-based for car-like behavior:
+
+```python
+# 1. Rotation: face waypoint (PRIORITY)
+omega = -angle_to_waypoint * 1.2  # Proportional control
+omega = max(-0.4, min(0.4, omega))
+
+# 2. Forward speed: based on alignment and obstacles
+if min_front < 0.20:       # Emergency: reverse
+    vx = -0.08
+elif min_front < 0.35:     # Danger: slow
+    vx = 0.04
+elif min_front < 0.50:     # Warning: medium
+    vx = 0.08
+else:                      # Clear: fast (reduced when rotating)
+    vx = 0.14 * (1.0 - min(0.5, abs(omega) / 0.4))
+
+# 3. Lateral: MINIMAL correction only when side blocked
+vy = 0.0
+if left_obs < 0.25:  vy = -0.04  # Push right
+if right_obs < 0.25: vy = +0.04  # Push left
+```
+
+**Key principle**: Robot always moves primarily forward, using rotation to align with waypoints. Lateral movement is minimal (max 4cm/s) and only used when side obstacles are very close.
+
+## GRASP Arm Pose Selection
+
+GRASP mode selects arm pose based on obstacle proximity and attempt count:
+
+| Condition | Pose | Description |
+|-----------|------|-------------|
+| Obstacle < 0.40m near cube | `FRONT_FLOOR_SHORT` | Shorter reach, avoids hitting boxes |
+| Attempts ≥ 3 | `FRONT_CARDBOARD_BOX` | Horizontal pose for tight spaces |
+| Default | `FRONT_FLOOR` | Maximum reach, extended pose |
+
+After 6 failed attempts, the cube is marked unreachable and skipped.
+
 ## Finite State Machine
 
 ### States
@@ -273,9 +312,11 @@ Routes use gradual waypoints (~20° angle change between consecutive points) for
 | `EMERGENCY_STOP` | 0.20m | Immediate reverse |
 | `WP_ARRIVAL` | 0.35-0.40m | Waypoint reached |
 | `WP_TIMEOUT` | 15s | Skip unreachable waypoint |
+| `APPROACH_TIMEOUT` | 8s | Skip cube blocked by obstacle |
 | `ALIGN_TOLERANCE` | 0.20 rad (~11°) | Heading alignment |
 | `GRASP_ATTEMPTS` | 6 max | Skip cube after failures |
 | `GRASP_FALLBACK` | 3 attempts | Switch to horizontal arm pose |
+| `GRASP_OBSTACLE` | 0.40m | Switch to SHORT pose when obstacle near cube |
 
 ## Code Architecture
 

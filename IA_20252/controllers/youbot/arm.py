@@ -24,11 +24,12 @@ class ArmHeight:
     FRONT_FLOOR = 0
     FRONT_PLATE = 1
     FRONT_CARDBOARD_BOX = 2
-    RESET = 3
-    BACK_PLATE_HIGH = 4
-    BACK_PLATE_LOW = 5
-    HANOI_PREPARE = 6
-    MAX_HEIGHT = 7
+    FRONT_FLOOR_SHORT = 3
+    RESET = 4
+    BACK_PLATE_HIGH = 5
+    BACK_PLATE_LOW = 6
+    HANOI_PREPARE = 7
+    MAX_HEIGHT = 8
 
 
 class ArmOrientation:
@@ -50,6 +51,7 @@ class Arm:
     FRONT_FLOOR = ArmHeight.FRONT_FLOOR
     FRONT_PLATE = ArmHeight.FRONT_PLATE
     FRONT_CARDBOARD_BOX = ArmHeight.FRONT_CARDBOARD_BOX
+    FRONT_FLOOR_SHORT = ArmHeight.FRONT_FLOOR_SHORT
     RESET = ArmHeight.RESET
     BACK_PLATE_HIGH = ArmHeight.BACK_PLATE_HIGH
     BACK_PLATE_LOW = ArmHeight.BACK_PLATE_LOW
@@ -115,6 +117,11 @@ class Arm:
             self.motors[1].setPosition(0.0)
             self.motors[2].setPosition(-0.77)
             self.motors[3].setPosition(-1.21)
+            self.motors[4].setPosition(0.0)
+        elif height == ArmHeight.FRONT_FLOOR_SHORT:
+            self.motors[1].setPosition(-0.50)
+            self.motors[2].setPosition(-1.30)
+            self.motors[3].setPosition(-0.85)
             self.motors[4].setPosition(0.0)
         elif height == ArmHeight.RESET:
             self.motors[1].setPosition(1.57)
