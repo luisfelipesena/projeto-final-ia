@@ -1693,6 +1693,7 @@ class YouBotController:
 
             # ===== MODE: APPROACH =====
             if self.mode == "approach":
+                current_time = self.robot.getTime()
                 front_obstacle = min(
                     front_info["front"],
                     front_info["front_left"],
@@ -1994,15 +1995,88 @@ class YouBotController:
 
                         # Re-route after 3 skips
                         if self._tobox_wp_skips >= 3:
-                            print("[TO_BOX] Too many skips! Re-routing from current position.")
+                            print("[TO_BOX] Too many skips! Triggering escape maneuver.")
+                            # Instead of just re-routing, enter escape mode
+                            self._tobox_escape_phase = 0  # 0=reverse, 1=strafe, 2=re-route
+                            self._tobox_escape_start = current_time
+                            self._tobox_escape_count = getattr(self, '_tobox_escape_count', 0) + 1
+                            # Determine escape direction based on obstacles
+                            self._tobox_escape_dir = 1 if left_obs > right_obs else -1
+                            self._tobox_wp_skips = 0
+                        continue
+
+                    # ===== ESCAPE MANEUVER (when stuck in obstacle loop) =====
+                    # Full bypass: reverse → rotate 60° → advance → re-route
+                    if hasattr(self, '_tobox_escape_phase') and self._tobox_escape_phase is not None:
+                        escape_elapsed = current_time - self._tobox_escape_start
+                        escape_count = getattr(self, '_tobox_escape_count', 0)
+
+                        # Safety: if too many escapes, drop cube and return
+                        if escape_count > 5:
+                            print(f"[TO_BOX] ABORT: {escape_count} escape attempts failed! Dropping cube.")
+                            self._tobox_escape_phase = None
+                            self._tobox_escape_count = 0
+                            self.state = "DROP"
+                            self.drop_state = 0
+                            continue
+
+                        if self._tobox_escape_phase == 0:
+                            # Phase 0: Reverse (0.6s)
+                            if escape_elapsed < 0.6:
+                                self._safe_move(-0.12, 0.0, 0.0)
+                                self._log_throttled("escape_rev", f"[TO_BOX] ESCAPE {escape_count}: Reversing...", 0.3)
+                                continue
+                            else:
+                                self._tobox_escape_phase = 1
+                                self._tobox_escape_start = current_time
+                                # Record start heading for rotation tracking
+                                self._tobox_escape_start_yaw = self.pose[2]
+
+                        if self._tobox_escape_phase == 1:
+                            # Phase 1: Rotate 60° toward clear side (1.2s max)
+                            rotation_target = math.radians(60) * self._tobox_escape_dir
+                            current_rotation = wrap_angle(self.pose[2] - self._tobox_escape_start_yaw)
+                            rotation_done = abs(current_rotation) >= math.radians(50)
+
+                            if escape_elapsed < 1.2 and not rotation_done:
+                                omega = 0.5 * self._tobox_escape_dir
+                                self._safe_move(-0.02, 0.0, omega)  # Slight reverse while rotating
+                                dir_name = "LEFT" if self._tobox_escape_dir > 0 else "RIGHT"
+                                self._log_throttled("escape_rot", f"[TO_BOX] ESCAPE {escape_count}: Rotating {dir_name} ({math.degrees(current_rotation):.0f}°)...", 0.3)
+                                continue
+                            else:
+                                print(f"[TO_BOX] ESCAPE {escape_count}: Rotated {math.degrees(current_rotation):.0f}°")
+                                self._tobox_escape_phase = 2
+                                self._tobox_escape_start = current_time
+
+                        if self._tobox_escape_phase == 2:
+                            # Phase 2: Advance forward in new direction (1.0s)
+                            if escape_elapsed < 1.0:
+                                # Check if front is clear enough
+                                if min_front > 0.25:
+                                    self._safe_move(0.14, 0.0, 0.0)  # Forward
+                                    self._log_throttled("escape_adv", f"[TO_BOX] ESCAPE {escape_count}: Advancing...", 0.3)
+                                else:
+                                    # Front blocked, strafe instead
+                                    vy = 0.10 * self._tobox_escape_dir
+                                    self._safe_move(0.0, vy, 0.0)
+                                    self._log_throttled("escape_strafe", f"[TO_BOX] ESCAPE {escape_count}: Front blocked, strafing...", 0.3)
+                                continue
+                            else:
+                                self._tobox_escape_phase = 3
+
+                        if self._tobox_escape_phase == 3:
+                            # Phase 3: Re-route from new position
+                            print(f"[TO_BOX] ESCAPE {escape_count}: Complete. Re-routing from ({self.pose[0]:.2f}, {self.pose[1]:.2f})")
                             self._route_waypoints = get_route_to_box(
                                 (self.pose[0], self.pose[1]), self.current_color
                             )
                             self._current_waypoint_idx = 0
-                            self._tobox_wp_skips = 0
+                            self._tobox_escape_phase = None
                             self.tobox_state = -1
                             self._tobox_turn_start = None
-                        continue
+                            self._tobox_wp_start_time = current_time
+                            continue
 
                     waypoints_remaining = len(self._route_waypoints) - self._current_waypoint_idx
                     approaching_box = waypoints_remaining <= 3 or dist_to_box < 1.0
@@ -2015,9 +2089,12 @@ class YouBotController:
                             self.tobox_state = 1
                             self._tobox_maneuver_timer = 0.0
                             self._align_start_time = None
-                            # Cleanup timeout tracking and turn-in-place state
+                            # Cleanup timeout tracking, escape state, and turn-in-place state
                             for attr in ['_tobox_wp_start_time', '_tobox_wp_skips',
-                                         '_tobox_turn_start', '_tobox_turn_direction']:
+                                         '_tobox_turn_start', '_tobox_turn_direction',
+                                         '_tobox_escape_phase', '_tobox_escape_start',
+                                         '_tobox_escape_dir', '_tobox_escape_count',
+                                         '_tobox_escape_start_yaw']:
                                 if hasattr(self, attr):
                                     delattr(self, attr)
                             continue

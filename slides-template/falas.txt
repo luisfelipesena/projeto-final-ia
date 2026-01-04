@@ -64,21 +64,27 @@ O grande desafio e navegar de forma autonoma em um ambiente onde os cubos
 podem ser empurrados acidentalmente, mudando a configuracao do ambiente.
 
 ================================================================================
-SLIDE 5: SENSORES DO YOUBOT (1 minuto)
+SLIDE 5: SENSORES DO YOUBOT (1 minuto 15 segundos)
 ================================================================================
 
 O YouBot possui tres tipos de sensores principais.
 
-O LIDAR tem campo de visao de 180 graus, com 180 feixes de laser. O alcance
-vai de 10 centimetros ate 5 metros. Temos 4 LIDARs cobrindo 360 graus.
-Usamos o LIDAR para detectar obstaculos e construir uma grade de ocupacao.
+O LIDAR 2D configurado no estilo de LIDARs industriais como o
+SICK LMS ou Hokuyo URG. Funciona por raycasting: emite 180 feixes de laser
+em um arco de 180 graus, e mede o tempo de retorno para calcular distancias.
+Alcance de 10 centimetros ate 5 metros. Temos 4 LIDARs - frontal, traseiro,
+esquerdo e direito - cobrindo 360 graus completos. Cada LIDAR tem uma unica
+camada, ou seja, mede apenas em um plano horizontal.
 
 A camera RGB tem resolucao de 128 por 128 pixels. Usamos tanto a Recognition
 API do Webots para detectar objetos quanto a nossa CNN para classificar cores.
 
-Para deteccao de colisao em curta distancia, temos 8 sensores infravermelhos:
-6 frontais/traseiros e 2 laterais. Os sensores laterais sao essenciais porque
-o LIDAR frontal nao cobre os lados do robo.
+Para deteccao de colisao em curta distancia, temos 8 sensores infravermelhos
+no estilo Sharp GP2D - sensores IR que medem distancia por triangulacao.
+No Webots, usamos uma lookupTable que mapeia o valor bruto do sensor para
+distancia em metros. Sao 3 frontais, 3 traseiros e 2 laterais. Os laterais
+sao essenciais porque o LIDAR frontal nao cobre os lados do robo durante
+manobras de strafe.
 
 ================================================================================
 SLIDE 6: RECOGNITION API DO WEBOTS (1 minuto)
@@ -326,3 +332,15 @@ DICAS PARA APRESENTACAO:
 - Ressaltar arquitetura modular como boa pratica de engenharia
 - Conectar teoria com exemplos praticos da simulacao
 - Demonstracao ao vivo e o ponto alto - ter simulacao pronta!
+
+DETALHES TECNICOS DOS SENSORES (para perguntas):
+- LIDAR: Configuracao similar a SICK LMS/Hokuyo URG (2D, 180 rays, 1 layer)
+  - Raycasting no Webots simula tempo de voo (ToF) do laser
+  - Resolucao angular: 1 grau (180 rays / 180 graus)
+  - 4 unidades cobrindo 360 graus (nao existe LIDAR 360 nativo no Webots)
+- Distance Sensors: Tipo infra-red, similar a Sharp GP2D120/GP2Y0A series
+  - Principio: triangulacao IR (emissor + receptor posicionados)
+  - lookupTable no Webots: [distancia, valor_bruto, incerteza]
+  - Alcance: 5cm a 1m (curta distancia, complementa LIDAR)
+  - 8 sensores: ds_front, ds_front_left, ds_front_right, ds_rear,
+    ds_rear_left, ds_rear_right, ds_left, ds_right

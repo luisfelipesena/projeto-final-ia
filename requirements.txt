@@ -1,0 +1,16 @@
+# YouBot Cube Collector - Dependencies
+# UFBA MATA64 - Inteligencia Artificial
+
+# === SIMULACAO (obrigatorio) ===
+numpy>=1.20.0
+onnxruntime>=1.15.0
+
+# === TREINAMENTO (opcional, so se for re-treinar CNN) ===
+# pip install torch torchvision pillow
+# torch>=2.0.0
+# torchvision>=0.15.0
+# pillow>=9.0.0
+
+# === WEBOTS ===
+# O modulo 'controller' vem com Webots R2023b+
+# Nao precisa instalar separadamente
